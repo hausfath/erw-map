@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERW Atlas — enhanced rock weathering deployment potential</title>
+<meta name="description" content="Global gridded map of enhanced rock weathering potential on croplands, with live re-weighting.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <header>
+      <h1>ERW Atlas</h1>
+      <p class="sub">Enhanced rock weathering deployment potential</p>
+      <p class="res" id="res-label"></p>
+    </header>
+
+    <section class="group">
+      <h2>Map layer</h2>
+      <div class="seg" id="mode-seg">
+        <button class="seg-btn active" data-mode="score">Suitability</button>
+        <button class="seg-btn" data-mode="limiting">Limiting factor</button>
+        <button class="seg-btn" data-mode="cascade">Cascade baseline</button>
+      </div>
+      <p class="hint" id="mode-hint"></p>
+    </section>
+
+    <section class="group" id="weights-group">
+      <h2>Weights <span class="tag" id="weight-tag">Neutral</span></h2>
+      <p class="hint">
+        Equal weights are a refusal to assert a preference ordering, not a claim
+        that these factors matter equally. Only ratios matter — raising every
+        slider together changes nothing.
+      </p>
+      <div id="sliders"></div>
+      <div class="btn-row">
+        <button class="mini" id="btn-reset">Reset to neutral</button>
+        <button class="mini" id="btn-random">Randomise</button>
+      </div>
+      <p class="hint stability" id="stability"></p>
+    </section>
+
+    <section class="group">
+      <h2>Eligibility <span class="tag" id="elig-version"></span></h2>
+      <label class="check"><input type="checkbox" id="chk-elig" checked>
+        <span>Show protocol screens</span></label>
+      <p class="hint" id="elig-hint"></p>
+    </section>
+
+    <section class="group">
+      <h2>Legend</h2>
+      <div id="legend"></div>
+    </section>
+
+    <section class="group">
+      <button class="link-btn" id="open-method">Methods, caveats &amp; sources &rsaquo;</button>
+    </section>
+
+    <footer>
+      <div class="stat"><span id="stat-main">—</span>
+        <label id="stat-label">cropland in scope</label></div>
+    </footer>
+  </aside>
+
+  <main id="map-wrap">
+    <canvas id="gl"></canvas>
+    <div id="readout" class="hidden"></div>
+    <div id="zoomcap" class="hidden">Beyond supported resolution — see Methods</div>
+    <div class="mapctl">
+      <button id="zin" title="Zoom in">+</button>
+      <button id="zout" title="Zoom out">−</button>
+      <button id="zreset" title="Reset view">⟳</button>
+    </div>
+    <div id="attrib"></div>
+  </main>
+
+  <div id="method-modal" class="modal hidden">
+    <div class="modal-inner">
+      <button class="close" id="method-close">&times;</button>
+      <div id="method-body"></div>
+    </div>
+  </div>
+</div>
+
+<script src="engine_constants.js"></script>
+<script src="land.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

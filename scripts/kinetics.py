@@ -1,0 +1,298 @@
+"""
+Mineral dissolution kinetics and carbonate-system efficiency for the ERW Atlas.
+
+Two independent pieces, deliberately kept separate because they are calibrated
+and validated differently:
+
+  rate_ca_mg_release()  -- how fast base cations come out of the rock.
+                           Palandri & Kharaka three-mechanism law.
+                           Validated against Gudbrandsson et al. 2011 with NO
+                           free parameters (see test_kinetics.py).
+
+  eta_dic()             -- what fraction of that released alkalinity actually
+                           carries carbon, from carbonate equilibria.
+                           Zero free parameters. This is the term Cascade's
+                           index omits.
+
+The product of the two is the reactivity index. They must stay separate because
+the field-trial calibration target (Beerling's CDRpot) is a cation-loss upper
+bound that already assumes eta_dic = 1; folding eta_dic in before fitting would
+double-count it.
+
+All functions are numpy-vectorised and safe on 2-D arrays with NaN.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+import constants as C
+
+__all__ = [
+    "arrhenius_factor",
+    "mineral_rate",
+    "rate_ca_mg_release",
+    "carbonate_constants",
+    "eta_dic",
+    "ph_half",
+    "eta_transport",
+    "cascade_baseline_index",
+]
+
+
+# ---------------------------------------------------------------------------
+# Palandri & Kharaka three-mechanism rate law
+# ---------------------------------------------------------------------------
+def arrhenius_factor(ea_kj: float, T_K):
+    """exp[-(Ea/R)(1/T - 1/T_ref)].
+
+    This is the form PHREEQC's RATE_PK uses. The expression as *printed* in
+    OFR 2004-1068 eqn 7 is `exp(-E/(R(T-298.15)))`, which is dimensionally
+    incoherent and singular at the reference temperature; it is a typo in the
+    report. See constants.PK_MINERALS docstring.
+    """
+    ea = ea_kj * 1000.0
+    return np.exp(-(ea / C.R_GAS) * (1.0 / np.asarray(T_K, dtype=float) - 1.0 / C.T_REF))
+
+
+def mineral_rate(mineral: str, pH, T_K):
+    """Dissolution rate of one mineral, mol m-2 s-1, far from equilibrium.
+
+    Sums the acid, neutral and base mechanisms that the source actually
+    tabulates. Mechanisms recorded as "--" contribute nothing rather than being
+    silently filled in.
+
+    The affinity term (1 - Omega^p)^q is dropped, i.e. Omega -> 0. Palandri &
+    Kharaka select far-from-equilibrium data for exactly this reason (p.6), so
+    it is internally consistent -- but it is also optimistic in slow-draining
+    and arid soils, which is what eta_transport() exists to temper.
+    """
+    try:
+        spec = C.PK_MINERALS[mineral]
+    except KeyError:
+        raise KeyError(
+            f"{mineral!r} is not in constants.PK_MINERALS. Note that basaltic "
+            "glass is deliberately absent -- it is not in Palandri & Kharaka. "
+            "Use the Gislason & Oelkers parameters instead."
+        ) from None
+
+    a_h = np.power(10.0, -np.asarray(pH, dtype=float))
+    total = np.zeros(np.broadcast(a_h, np.asarray(T_K, dtype=float)).shape)
+
+    for mech in ("acid", "neut", "base"):
+        params = spec.get(mech)
+        if params is None:
+            continue
+        log_k25, ea_kj, n = params
+        total = total + (
+            np.power(10.0, log_k25) * arrhenius_factor(ea_kj, T_K) * np.power(a_h, n)
+        )
+    return total
+
+
+# Divalent Ca + Mg cations per formula unit. CDR is driven by Ca+Mg release,
+# not Si release -- Gudbrandsson et al. 2011 show Si, Ca, Mg and Fe have
+# different pH dependences from the same basalt, so there is no single
+# whole-rock rate law that represents CDR.
+#
+# IRON IS DELIBERATELY EXCLUDED, and this is a real divergence from Bertagni &
+# Porporato. Their Table 1 assigns Fe2SiO4 the same alkalinity yield as Mg2SiO4
+# (n = 4), which is correct as pure aqueous chemistry: Fe2+ release does raise
+# alkalinity. But in an oxic agricultural soil that alkalinity is transient --
+#     Fe2+ + 1/4 O2 + 5/2 H2O -> Fe(OH)3 + 2 H+
+# returns the protons as the iron oxidises and precipitates as ferrihydrite or
+# goethite, so no durable carbon is stored. The crediting protocols agree:
+# Isometric's feedstock characterisation module computes CO2 potential from CaO,
+# MgO, Na2O and K2O only, with no FeO term.
+#
+# Consequence: fayalite scores 0 here (vs n = 4 in B&P Table 1), and augite is
+# discounted to ~1.6 of a nominal 2 to reflect its Fe content. If a future
+# version credits Fe, it must also model the oxidation sink, not just the
+# release.
+DIVALENT_PER_FORMULA = {
+    "anorthite": 1.0,      # CaAl2Si2O8
+    "bytownite": 0.8,      # ~An80
+    "labradorite": 0.6,    # ~An60
+    "andesine": 0.4,       # ~An40
+    "oligoclase": 0.2,     # ~An20
+    "albite": 0.0,         # NaAlSi3O8 -- releases Na, no CDR by this route
+    "forsterite": 2.0,     # Mg2SiO4
+    "fayalite": 0.0,       # Fe2SiO4 -- Fe, not an alkaline earth
+    "diopside": 2.0,       # CaMgSi2O6
+    "augite": 1.6,         # (Ca,Mg,Fe)2Si2O6, Fe-bearing
+    "enstatite": 1.0,      # MgSiO3
+    "bronzite": 1.0,       # ~(Mg,Fe)SiO3
+    "wollastonite": 1.0,   # CaSiO3
+}
+
+
+def rate_ca_mg_release(archetype: str, pH, T_K, *, return_parts: bool = False):
+    """Charge-equivalent Ca+Mg release rate for a feedstock archetype.
+
+    Returns mol charge m-2 s-1 per unit reactive surface area, summed over the
+    archetype's constituent minerals weighted by volume fraction and by
+    divalent cations per formula unit.
+
+    This is an INTENSIVE quantity: per unit surface area, with no application
+    rate and no specific surface area in it. Converting to t CO2/ha/yr requires
+    SSA, which is the dominant uncertainty in the whole product (geometric vs
+    BET differ by 130-670x at ERW grain sizes), so that conversion lives in the
+    L3 chain and is presented as a calibrated illustration, never a prediction.
+    """
+    spec = C.FEEDSTOCK_ARCHETYPES[archetype]
+    fracs = spec["minerals"]
+    norm = sum(fracs.values())
+
+    parts = {}
+    total = None
+    for mineral, frac in fracs.items():
+        contrib = (
+            (frac / norm)
+            * DIVALENT_PER_FORMULA[mineral]
+            * 2.0  # charge per divalent cation
+            * mineral_rate(mineral, pH, T_K)
+        )
+        parts[mineral] = contrib
+        total = contrib if total is None else total + contrib
+
+    return (total, parts) if return_parts else total
+
+
+# ---------------------------------------------------------------------------
+# Carbonate system -> alkalinity-to-DIC conversion efficiency
+# ---------------------------------------------------------------------------
+def _pb82(coeffs, T_K):
+    a, b, c, d, e = coeffs
+    T = np.asarray(T_K, dtype=float)
+    return np.power(10.0, a + b * T + c / T + d * np.log10(T) + e / (T * T))
+
+
+def carbonate_constants(T_K):
+    """(K1, K2, K_H, Kw) from Plummer & Busenberg 1982. Verified to reproduce
+    the standard 25 C values to <=0.0005 log units (test_kinetics.py)."""
+    return (
+        _pb82(C.PB82_K1, T_K),
+        _pb82(C.PB82_K2, T_K),
+        _pb82(C.PB82_KH, T_K),
+        _pb82(C.PB82_KW, T_K),
+    )
+
+
+def eta_dic(pH, pco2_uatm, T_K):
+    """Fraction of released base-cation charge that carries carbon as DIC.
+
+    Open system at fixed soil pCO2 -- the correct idealisation for soil, where
+    pCO2 is buffered by root and microbial respiration rather than by a finite
+    DIC pool. With h = a_H+ and Cs = K_H * pCO2:
+
+        DIC = Cs (1 + K1/h + K1 K2/h^2)
+        Alk = Cs (K1/h + 2 K1 K2/h^2) + Kw/h - h
+
+    Both depend only on h at fixed pCO2, so
+
+        eta = (dDIC/dh) / (dAlk/dh)
+            = Cs(K1 + 2 K1 K2/h) / [ Cs(K1 + 4 K1 K2/h) + Kw + h^2 ]
+
+    Zero free parameters.
+
+    This is the Alkalinization Carbon-capture Efficiency (ACE) of Bertagni &
+    Porporato 2022, STE 838, 156524.
+
+    VERIFIED against the paper (Appendix A, "Derivation of ACE"). Their
+    definitions are identical to the above:
+        [DIC] = K_H pCO2 (1 + K1/[H+] + K1 K2/[H+]^2)
+        [Alk] = K1 K_H pCO2/[H+] + 2 K1 K2 K_H pCO2/[H+]^2
+                + [BT] K_B/([H+]+K_B) + Kw/[H+] - [H+]
+    and their eqn A.7 takes ACE as the ratio of the two partial derivatives with
+    respect to [H+], which is exactly the construction used here.
+
+    ONE DELIBERATE DIFFERENCE: they carry a borate term, we do not. That is
+    correct for our domain and the paper says so -- "in freshwater the variation
+    in alkalinity may be completely associated with the carbonate buffer (max of
+    ACE ~ 1), in seawater the variation in alkalinity is partially associated
+    with the borate buffer (max of ACE < 1)". Soil solution is the freshwater
+    case. Our maximum is 0.999, matching their freshwater limit.
+
+    Independent confirmation that the derivation is right rather than merely
+    plausible: the paper states ACE "decays again to ~0.5 (at pH>pK2) as
+    bicarbonates are substituted by carbonates". This implementation reproduces
+    that asymptote without it being built in -- 0.600 at pK2, 0.503 at pH 12 --
+    because it falls out of the K2 term. Tested in test_kinetics.py gate 2b.
+
+    Worth flagging: Cascade cites this paper as the source of a "normalized
+    weathering flux potential framework" while implementing only kinetics. The
+    paper's actual title is "The Carbon-Capture Efficiency of Natural Water
+    Alkalinization", and it contains no kinetic index -- it is precisely the
+    efficiency term their formulation omits.
+    """
+    K1, K2, KH, Kw = carbonate_constants(T_K)
+    h = np.power(10.0, -np.asarray(pH, dtype=float))
+    Cs = KH * (np.asarray(pco2_uatm, dtype=float) * 1e-6)
+
+    num = Cs * (K1 + 2.0 * K1 * K2 / h)
+    den = Cs * (K1 + 4.0 * K1 * K2 / h) + Kw + h * h
+    return num / den
+
+
+def ph_half(pco2_uatm, T_K):
+    """pH at which eta_dic = 1/2, i.e. -log10(sqrt(K_H * pCO2 * K1)).
+
+    This lands within 0.12 pH units of Isometric's own 5.2 screening threshold
+    at their mandated 4,000 uatm, and drops to ~4.53 at their mandated 50,000
+    uatm for saturated systems -- which is why paddies tolerate more acidity.
+    The protocols' screening criteria fall out of the chemistry rather than
+    being imposed as an ad hoc penalty.
+    """
+    K1, _, KH, _ = carbonate_constants(T_K)
+    return -np.log10(np.sqrt(KH * (np.asarray(pco2_uatm, dtype=float) * 1e-6) * K1))
+
+
+# ---------------------------------------------------------------------------
+# Transport limitation
+# ---------------------------------------------------------------------------
+def eta_transport(q_m_yr, D_w=None):
+    """q / (q + D_w), after Maher & Chamberlain 2014 (Science 343, 1502).
+
+    Recasts their [HCO3-] = [HCO3-]_eq / (1 + q/D_w) as a multiplier on a
+    kinetic rate, where the kinetic limit is q -> infinity. In arid cells q -> 0
+    and the penalty is severe; in the humid tropics eta -> 1 and Cascade's
+    far-from-equilibrium assumption is recovered.
+
+    The functional form is well grounded. D_w is NOT constrained by the
+    literature -- treat it as a sensitivity parameter over
+    constants.DAMKOHLER_DW_RANGE and do not present a single value as known.
+
+    q must include irrigation return flow on irrigated cells, not just
+    precipitation surplus, or the Indo-Gangetic Plain is wrongly penalised.
+    """
+    if D_w is None:
+        D_w = C.DAMKOHLER_DW_M_YR
+    q = np.asarray(q_m_yr, dtype=float)
+    return q / (q + D_w)
+
+
+# ---------------------------------------------------------------------------
+# Cascade baseline, for like-for-like comparison
+# ---------------------------------------------------------------------------
+def cascade_baseline_index(pH, T_K, moisture, ea_kj: float = 68.8):
+    """Cascade Climate's published form: r ~ s * [H+] * exp(-Ea/RT).
+
+    Reproduced so our critique is testable rather than asserted. Not our
+    default, for two reasons documented in docs/METHODOLOGY.md:
+
+      1. First order in [H+] spans 1e4 across cropland pH 4-8, while the
+         Arrhenius term spans only ~20x across 0-30 C, so the index is ~500x
+         more sensitive to pH than to temperature -- effectively a rescaled
+         soil-pH map. The three-mechanism law compresses that to ~37x.
+      2. It omits eta_dic, so it rewards strongly acidic soils that both the
+         Isometric and Puro.earth protocols penalise.
+
+    In fairness: the effective Ea of a basalt mixture for Ca+Mg release works
+    out to 65.6-67.9 kJ/mol, so 68.8 is a reasonable number for whole-basalt
+    CDR. Its stated provenance (White & Blum 1995, "representative of basaltic
+    glass") is unclear -- that paper reports 59.4 and 62.5 kJ/mol for granitoid
+    catchments -- and the primary laboratory value for basaltic glass is
+    25.5 kJ/mol.
+    """
+    a_h = np.power(10.0, -np.asarray(pH, dtype=float))
+    return np.asarray(moisture, dtype=float) * a_h * arrhenius_factor(ea_kj, T_K)

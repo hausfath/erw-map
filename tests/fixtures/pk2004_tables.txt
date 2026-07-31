@@ -1,0 +1,70 @@
+# Extract of USGS OFR 2004-1068 (Palandri & Kharaka 2004) parameter rows.
+# Source: https://pubs.usgs.gov/of/2004/1068/pdf/OFR_2004_1068.pdf
+# Public domain (US Government work). Committed as a test fixture so
+# test_kinetics.py gate 4 can re-verify every kinetic constant offline
+# rather than trusting a hand transcription.
+#
+# Columns, per the source table footnotes:
+#   log k : rate constant at 25 C, pH = 0, mol m-2 s-1
+#   E     : Arrhenius activation energy, kJ mol-1
+#   n     : reaction order with respect to H+
+
+Albite          -10.16 65.0     0.457                  -12.56     69.8          -15.60     71.0   -0.572
+Oligoclase       -9.67   65.0   0.457                  -11.84     69.8             --        --      --
+Andesine         -8.88   53.5   0.541                  -11.47     57.4             --        --      --
+Labradorite      -7.87   42.1   0.626                  -10.91     45.2             --        --      --
+Bytownite        -5.85   29.3   1.018                   -9.82     31.5             --        --      --
+Anorthite        -3.50   16.6   1.411                   -9.12     17.8             --        --      --
+   Leucite        -10.40    -9.0    0.700                     -13.00      -12.2           -11.40    -10.8   -0.200
+Nepheline          -2.73    62.9   1.130                       -8.56     65.4            -10.76    37.8   -0.200
+Leucite            -6.00   132.2   0.700                       -9.20     75.5            -10.66    56.6   -0.200
+Forsterite        -6.85    67.2   0.470                   -10.64      79.0                    --        --      --
+Fayalite          -4.80    94.4                           -12.80      94.4                    --        --      --
+Almandine         -5.20    94.4   1.000                   -10.70     103.8                 -13.71     37.8   -0.350
+Grossular         -5.10    85.0   1.000                   -10.70     103.8                    --        --      --
+Andradite         -5.20    94.4   1.000                   -10.70     103.8                    --        --      --
+Kyanite          -10.17   -53.9   1.268                   -17.44      53.9                    --        --      --
+Staurolite        -6.90    18.9   1.000                   -12.20     56.6                  -14.90     47.2   -0.300
+Epidote          -10.60    71.1   0.338                   -11.99     70.7                  -17.33     79.1   -0.556
+Zoisite           -7.50    66.1   0.500                   -11.20      66.1                    --        --      --
+              Cordierite            -3.80   113.3   1.000                  -11.20     28.3
+              Tourmaline            -6.50    75.5   1.000                  -11.20     85.0
+       augite                     -6.82      78.0    0.700                                -11.97      78.0
+       bronzite                   -8.30      47.2    0.650                                -11.70      66.1
+       diopside                   -6.36      96.1    0.710                                -11.11      40.6
+       enstatite                  -9.02      80.0    0.600                                -12.72      80.0
+       jadeite                    -6.00     132.2    0.700                                 -9.50      94.4
+       spodumene                  -4.60      94.4    0.700                                 -9.30      66.1
+       wollastonite               -5.37      54.7    0.400                                 -8.88      54.7
+           anthophyllite      -11.94      51.0    0.440                                  -14.24     51.0
+           glaucophane         -5.60      85.0    0.700                                  -10.10     94.4
+           hornblende          -7.00      75.5    0.600                                  -10.30     94.4
+           riebeckite          -7.70      56.6    0.700                                  -12.20     47.2
+           tremolite           -8.40      18.9    0.700                                  -10.60     94.4
+biotite           -9.84     22.0   0.525                 -12.55     22.0       --        --      --
+glauconite        -4.80     85.0   0.700                  -9.10     85.0       --        --      --
+muscovite        -11.85     22.0   0.370                 -13.55     22.0    -14.55     22.0   -0.220
+kaolinite        -11.31   65.9   0.777                         -13.18     22.2    -17.05    17.9  -0.472
+ montmorillonite -12.71   48.0   0.220                         -14.41     48.0    -14.41     48.  -0.130
+ smecite         -10.98   23.6   0.340                         -12.78     35.0    -16.52    58.9  -0.400
+lizardite           -5.70    75.5  0.800                -12.40     56.6                    --         --      --
+  chlorite         -11.11    88.0  0.500                -12.52     88.0                    --         --      --
+prehnite           -10.66    80.5  0.256                -13.16     93.4                 -14.86      93.4   -0.200
+              hematite                    -9.39     66.2   1.000                      -14.60     66.2
+              magnetite                   -8.59     18.6   0.279                      -10.78     18.6
+              ilmenite                    -8.35     37.9   0.421                      -11.16     37.9
+brucite             -4.73    59.0  0.500                 -8.24     42.0       --         --      --
+gibbsite            -7.65    47.5  0.992                -11.50     61.2    -16.65      80.1   -0.784
+calcite             -0.30    14.4   1.000                  -5.81     23.5    -3.48     35.4  1.000
+  dolomite          -3.19    36.1   0.500                  -7.53     52.2    -5.11     34.8  0.500
+ dolomite           -3.76    56.7   0.500                  -8.60     95.3    -5.37     45.7  0.500
+magnesite           -6.38    14.4   1.000                  -9.34     23.5    -5.22     62.8  1.000
+              anglesite                -5.58    31.3   0.298                          -6.50      31.3
+              barite                   -6.90    30.8   0.220                          -7.90      30.8
+              celestite                -5.66    23.8   0.109                            --        --
+pyrite       -7.52 56.9 -0.500             0.500         -4.55   56.9 0.500                 --      --     --
+ pyrrhotite -8.04 50.8 -0.597              0.355         --      --     --                  --      --     --
+  pyrrhotite -6.79 63.0 -0.090             0.356         --      --     --                  --      --     --
+          hydroxyapatite          -4.29     250.0  0.171                         -6.00       250.0
+          fluorapatite            -3.73     250.0  0.613                         -8.00       250.0
+            fluorite                -7.14    73.0   1.000                          -13.79      73.0

@@ -1,0 +1,39 @@
+# Raw source data: downloaded, derived from, then deleted. Never committed.
+data/raw/
+data/interim/
+
+# Derived rasters. Large; regenerate with scripts/build_all.sh.
+data/processed/*.tif
+data/processed/*.vrt
+data/processed/*.npy
+data/processed/*.npz
+
+# Display tiles. Built by scripts/tiles.py; hosting decided per docs/METHODOLOGY.md.
+src/tiles/
+*.pmtiles
+*.mbtiles
+
+# Google Earth Engine exports land here before local processing.
+data/raw/gee/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# Working notes, not part of the reproducible pipeline
+to_do.md
+scratch/
+
+# Third-party paper: copyrighted, not ours to redistribute. Fetch from the DOI.
+*.pdf
+
+# Verification-report-derived delivery data. Contains per-operator results that
+# are not ours to publish. scripts/analyse_deployments.py skips when absent.
+cross_deployment_comparison.md
+tests/fixtures/deployments_2026.csv

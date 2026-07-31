@@ -1,0 +1,282 @@
+# ERW Atlas
+
+A global gridded map of enhanced rock weathering (ERW) deployment potential on
+croplands: where the chemistry works, where crushed basalt can actually be
+delivered, and where a project would be creditable under the current carbon
+protocols.
+
+**Status: v0 preview — the map runs on real global data.**
+
+```bash
+./scripts/fetch_v0.sh      # ~25 MB of inputs, server-side resampled
+python3 scripts/build_v0.py
+./scripts/serve.sh         # http://localhost:8000/index.html
+```
+
+The interactive map has three layers — a suitability composite, a limiting-factor
+view, and Cascade's published formulation on the same inputs for a like-for-like
+comparison — plus live weight sliders that recolour ~5 million cells in a WebGL2
+fragment shader with no fetch and no server. Hovering any cell reports every
+input value, the composite score, the limiting factor, and which protocol screens
+it fails. The whole deployable site is 4.8 MB.
+
+**Read the in-app Methods panel before drawing conclusions.** Four inputs in v0
+are documented stand-ins and one whole dimension — feedstock supply and delivered
+haul cost — is not built yet. The most consequential known problems are listed
+under "Honest status of v0" below.
+
+> **Resolution, stated honestly.** v0 runs on a **0.1° grid (~11 km at the
+> equator)**; the 1 km target belongs to the full build. Either way, grid spacing
+> is not resolution — effective resolution will be roughly 10–50 km because the
+> feedstock component is limited by quarry-inventory completeness rather than by
+> pixel size. Nothing below ~1 km² (100 ha) should be read as site-specific, and
+> the map caps zoom on purpose rather than inviting you to look up your field.
+
+## What this adds to the state of the art
+
+The starting point is Cascade Climate's [Weathering Potential
+Explorer](https://cascadeclimate.org/blog/weathering-potential-explorer), which
+is the right foundation and is admirably explicit about what it leaves out. This
+project changes four things.
+
+**1. Feedstock and delivered cost.** Cascade states plainly that it carries "no
+information on rock type, mineral composition, or proximity to quarries or
+mines," and that "it is the economic and operational conditions, rather than
+weathering potential alone, that determine whether ERW is viable." A map that
+recommends deployment areas has to include them.
+
+**2. Three-mechanism dissolution kinetics.** Cascade's index is first order in
+hydrogen-ion activity. Across cropland pH 4–8 that spans 10⁴, while its
+Arrhenius term spans only ~20× across 0–30 °C, so the index is ~500× more
+sensitive to pH than to temperature — effectively a rescaled soil-pH map. Using
+the standard three-parallel-mechanism law from [Palandri & Kharaka
+2004](https://pubs.usgs.gov/of/2004/1068/) compresses that pH leverage to ~36×,
+comparable to the temperature range. Measured in `scripts/test_kinetics.py`:
+Cascade's form overstates pH leverage by **281×**.
+
+In fairness, their activation energy of 68.8 kJ/mol turns out to be a reasonable
+number for whole-basalt Ca+Mg release (65.6–67.9 kJ/mol), reached by an unclear
+route.
+
+**3. The alkalinity-to-DIC efficiency term.** Fast dissolution at low pH does
+not produce carbon removal, because DIC speciation shifts toward aqueous CO₂
+rather than bicarbonate. Cascade cites Bertagni & Porporato (2022) as the source
+of their framework — but that paper is *The Carbon-Capture Efficiency of Natural
+Water Alkalinization*, and it defines exactly the efficiency term their index
+omits. Adding it, with zero free parameters, **derives the protocols' own
+screening thresholds** rather than imposing a penalty:
+
+| Soil pCO₂ | Source | pH at half efficiency |
+|---|---|---|
+| 4,000 µatm | Isometric v1.2, mandated for unsaturated cropping | **5.08** (vs their 5.20 screening threshold) |
+| 50,000 µatm | Isometric v1.2, mandated for saturated systems | **4.53** (why paddies tolerate more acidity) |
+
+The largest modelled consequence is that rice paddies move from mid-pack to
+top-ranked, which Cascade's formulation cannot see because soil pCO₂ is absent
+from it. **That prediction is not yet supported by observation, and is mildly
+challenged** — see "What the verified deliveries say" below. It is recorded as a
+pre-registered concern rather than presented as a result.
+
+The verification also closed a caveat: η_DIC was derived from B&P's definition
+rather than transcribed, so it needed checking against the paper. It now
+reproduces their Appendix A structure exactly, and independently reproduces their
+stated (and non-obvious) result that efficiency decays to ≈0.5 above pK₂ as
+bicarbonate gives way to carbonate — 0.5003 at pH 13, which falls out of the K₂
+term rather than being built in.
+
+**4. Protocol eligibility as a mapped layer.** Soil organic carbon above 5 wt%
+excludes a site from crediting (Puro.earth ERW 2025 rule 3.9.1c), and the
+gridded inputs have real uncertainty, so eligibility is rendered as three states
+— excluded, marginal, passes — from exceedance probabilities, rather than as a
+binary mask on a point estimate.
+
+## What the verified deliveries say
+
+Eight independently verified basalt deliveries from the 2026 reporting round,
+across three soil and climate regimes, were analysed with
+`scripts/analyse_deployments.py`.
+
+**The input data is not in this repository.** It derives from an independent
+verification report and its cross-operator comparison, and carries per-operator
+results that are not ours to publish. The script is here and exits with the
+expected CSV schema if the fixture is absent, so the method stays reviewable even
+though the inputs are not redistributed. Only aggregate findings appear below.
+
+**1. Fraction weathered is not a site property — it falls with application rate.**
+Within a single regime the relationship is perfectly monotonic across four
+deliveries, and across all eight it fits `fw ~ rate^-0.58` (R² 0.48, n = 8). This
+is the self-limiting behaviour you would expect as soil pH rises and alkalinity
+export becomes drainage-limited rather than kinetically limited. **Design
+consequence:** the map must never present fraction weathered as a suitability
+metric, and any cross-site comparison of it has to hold application rate fixed.
+
+**2. Real delivered basalt is less CO₂-dense than a fresh-basalt idealisation.**
+Averaged over the deliveries carrying an independent CDR measurement, implied CO₂
+potential is **0.289 tCO₂ per tonne of rock**. A `delivered_basalt` archetype
+anchored to that is now the default; a textbook fresh basalt would have been 14%
+optimistic, and the nominal 0.33 tCO₂/t commonly applied overstates by 20–25%.
+
+**3. The regime ordering does not yet support the paddy prediction.** After
+adjusting for application rate, the tropical-Oxisol regime comes out marginally
+ahead of the temperate one, which comes out ahead of the acidic-paddy regime — the
+opposite of what the model predicts. But the whole rate-adjusted spread across all
+eight deliveries is only 3.35×, and the test has very little power:
+
+- Particle size spans 67–500 µm and is not resolved per delivery. That alone can
+  span 7.5× in geometric surface area, and up to 33× once distribution width is
+  allowed for — larger than every regime difference in the data.
+- One regime is represented by a single delivery, and one programme contributes
+  three bins that may be particle-size bins within a single site rather than
+  independent samples.
+- P16 spreads are enormous — one row is 23.9% at P50 but 0.9% at P16.
+- Measurement methods differ across operators and are known to disagree by ~2×.
+
+There is also a structural reason first-year data cannot settle this: over a
+~12-month period, fraction weathered is dominated by dissolution of the fine tail
+of the particle-size distribution, which is fast and roughly site-independent,
+whereas the rate law being tested describes the long-run steady rate. And all
+eight sites are humid and acidic-to-near-neutral — none is arid, alkaline or cold,
+which is exactly where this model departs most from Cascade's.
+
+The cleanest experiment that *would* test the mechanism is a flooded-versus-drained
+pair at one site with the same feedstock and application rate.
+
+## Honest status of v0
+
+What is real: the kinetics, the efficiency term, the eligibility probabilities,
+the cropland mask and the area weighting. Global cropland reproduces Potapov et
+al. (2022) to within 0.1% (1.215 vs 1.216 Gha), which validates the area pipeline
+independently of any ERW science.
+
+What is not, in order of how much it matters:
+
+| Problem | Effect |
+|---|---|
+| **Drainage is a placeholder** — a fixed runoff coefficient on annual precipitation, not a runoff product | Median η ≈ 0.32 almost everywhere, so it is the limiting factor across most of the map and it drags the absolute level down. Treat the pattern as more meaningful than the level |
+| **Indicative CO₂ runs ~6× below the verified deliveries** | Normalised to a common rate, 2026 deliveries imply ~1.9 tCO₂/ha at 20 t/ha; this build's median is 0.32. Deliberately **not** tuned to close the gap, because that needs per-deployment particle-size distributions we don't have |
+| **~73% of cropland is "marginal" on the SOC screen** | A point estimate would exclude 0.2%; carrying SoilGrids' predictive spread honestly leaves most cropland unresolvable. That says more about the width of those intervals than about the soils. Also, averaging quantiles onto a coarser grid is not valid uncertainty propagation |
+| **Air temperature stands in for soil temperature; precipitation for soil moisture** | These are Cascade's own inputs, so the baseline comparison is like-for-like — but our claimed soil-temperature improvement is not yet realised |
+| **No paddy mask** | Every cell uses the unsaturated soil pCO₂, so the headline paddy prediction cannot currently appear on the map at all |
+| **No feedstock or haul-cost layer** | The single biggest gap versus a deployment-recommendation tool |
+| **Grid is 0.1° (~11 km), not 1 km** | The header says so. Effective resolution is coarser again |
+
+Weight sensitivity is not hidden: moving reactivity from equal weighting to 77%
+changes the decile of **63.7% of cropland area**. The sidebar reports that number
+live, because a suitability map whose ranking is that weight-contingent should say
+so rather than present one weighting as the answer.
+
+## What it deliberately does not claim
+
+- **No layer is called "validated."** With one fitted scaling constant and fewer
+  than twenty short field trials worldwide, using different feedstocks, grain
+  sizes and mutually disagreeing measurement methods, the honest claim is that
+  the model is not grossly inconsistent with observation. See
+  `docs/VALIDATION.md`.
+- The CO₂ layer is **gross alkalinity generation potential**, not net CDR. The
+  gap between them (in-soil carbonate precipitation, riverine re-release,
+  strong-acid competition) is plausibly 20–80% and spatially variable.
+- Specific surface area is the dominant uncertainty in that layer: geometric and
+  BET values differ by 130–670× at ERW grain sizes. It is one global multiplier,
+  so it sets the map's *level* and cancels in any relative comparison — which is
+  why the suitability ranking is the product and the CO₂ number is an
+  illustration.
+- Not a site-selection tool.
+
+## Running it
+
+```bash
+# Kinetics gates. Run these first; they gate everything downstream.
+python3 scripts/test_kinetics.py
+
+# Re-verify the kinetic constants against the primary USGS report
+# (downloads the PDF, extracts the parameter rows, deletes the PDF)
+./scripts/fetch_pk_tables.sh
+```
+
+Requires Python 3.13, `numpy`, `rasterio` (which bundles GDAL, so the GDAL CLI
+is not needed), `pyproj`, `Pillow`, `scipy`. Building the data layers also needs
+a free Google Earth Engine account — see "Reproducibility caveat" below.
+
+## Layout
+
+```
+scripts/
+  constants.py            every tunable in one place; the single source of truth
+  kinetics.py             Palandri-Kharaka rate law, eta_DIC, transport limitation
+  test_kinetics.py        11 pre-registered gates -- run before anything else
+  analyse_deployments.py  what the verified 2026 deliveries can and cannot test
+  fetch_v0.sh             v0 inputs (SoilGrids WCS, WorldClim, Potapov cropland)
+  build_v0.py             layers, area gate, PNG textures, generated JS constants
+  serve.sh                local HTTP server for the map
+  extract_pk_fixture.py   re-extracts kinetic constants from the primary PDF
+  fetch_pk_tables.sh      regenerates the test fixture from source
+src/                      the deployable site (4.8 MB): index.html, app.js,
+                          styles.css, generated engine_constants.js, textures/
+gee/                      Earth Engine reduction scripts (stage 0, for the 1 km build)
+tests/fixtures/           USGS OFR 2004-1068 extract; verified 2026 deliveries
+docs/                     METHODOLOGY, KINETICS, VALIDATION, SENSITIVITY
+```
+
+`src/engine_constants.js` is **generated** by `build_v0.py` from `constants.py`,
+and it carries the colour ramp that both the shader and the sidebar legend read —
+so a value cannot be defined twice and drift. That is the failure mode that broke
+the sibling [BiCRS Atlas](../BiCRS%20Map) in production.
+
+`constants.py` is the single source of truth. `emit_constants.py` will generate
+the browser's copy so a value cannot be defined twice and drift — a failure mode
+that broke the sibling [BiCRS Atlas](../BiCRS%20Map) in production.
+
+## Reproducibility caveat
+
+Four layers are practically Earth Engine only: cropland fraction (ESA
+WorldCover is 10 m and 124 GB globally, so local aggregation is not viable),
+soil moisture (the 1 km global archive is 779 GB with no published climatology),
+the Weiss et al. friction surface (no anonymous HTTP endpoint), and GSHTD. The
+Earth Engine scripts are committed, but **the pipeline cannot run end to end
+from a bare clone without a free GEE account.** Coarser local fallbacks (ESA
+CCI-LC 300 m, ERA5-Land) exist and double as ensemble members.
+
+Raw source data is downloaded, derived from, and deleted; only small derived
+products are kept, sufficient to regenerate every figure without re-downloading.
+
+## Sanity gates
+
+Thresholds are set before the pipeline runs, and violations are published even
+if we release anyway. Current status:
+
+`python3 scripts/test_kinetics.py` — 11 gates, all passing:
+
+| Gate | Result |
+|---|---|
+| Plummer & Busenberg carbonate constants at 25 °C | max deviation 0.00047 log units |
+| η_DIC derives protocol pH thresholds | 5.08 vs Isometric's 5.20 |
+| η_DIC high-pH asymptote vs B&P Appendix A | 0.5003 at pH 13 vs their stated ≈0.5 |
+| Charge per mole vs B&P Table 1 | agrees, except Fe by design (see below) |
+| pH leverage compressed vs Cascade's n=1 form | 36× vs 10,000× |
+| Kinetic constants match the primary USGS report | 12/12 rows |
+| Basaltic glass absent from Palandri & Kharaka | confirmed |
+| Per-mineral CO₂ capacity vs Puro.earth Table 1.1 | max deviation 4.7% |
+| `delivered_basalt` vs verified deliveries | 0.290 vs 0.289 tCO₂/t measured |
+
+One gate failed on first run and was informative: a stoichiometric ceiling set
+from basalt, which ultramafic legitimately exceeded. The threshold was wrong, not
+the chemistry, so it was replaced with the published-value comparison above.
+
+**One deliberate divergence from the literature.** B&P's Table 1 assigns Fe₂SiO₄
+the same alkalinity yield as Mg₂SiO₄, which is correct as aqueous chemistry — Fe²⁺
+release does raise alkalinity. But in oxic agricultural soil that alkalinity is
+undone as the iron oxidises and precipitates (`Fe²⁺ + ¼O₂ + 5/2H₂O → Fe(OH)₃ +
+2H⁺`), so no durable carbon is stored. The crediting protocols agree: Isometric
+computes CO₂ potential from CaO, MgO, Na₂O and K₂O with no FeO term. Iron is
+therefore excluded here, and the gate asserts the divergence is intentional rather
+than silently tolerating it.
+
+Outstanding and gating the next phase: the **Gudbrandsson et al. 2011
+no-free-parameter test** of Ca and Mg release against pH at 5–25 °C. It is the
+only genuinely independent test of the kinetics, separate from any field
+calibration.
+
+## License
+
+Code MIT. Input datasets keep their own licenses and are not redistributed; see
+[LICENSE](LICENSE) and `docs/METHODOLOGY.md`.
