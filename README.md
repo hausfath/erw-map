@@ -212,12 +212,46 @@ figure assumes an untruncated fine tail; with a physical 1 µm floor it is small
 
 ### Feedstock and delivered cost
 
-Built from full-resolution GLiM (93,220 basic-igneous polygons) plus USGS MRDS
-operating stone producers cross-filtered against that lithology, since MRDS has no
-basalt commodity code. Two constructs, because quarry inventories are uneven:
-globally an outcrop-distance **upper bound**, and where MRDS is usable the
-quarry distance that actually sets cost. Inside the trusted area quarry distance
-is **2.0× outcrop distance**, and that *measured* ratio scales the bound elsewhere.
+Built from full-resolution GLiM (93,220 basic-igneous polygons) plus a quarry
+point inventory cross-filtered against that lithology. Two constructs, because
+inventory completeness is uneven: globally an outcrop-distance **upper bound**, and
+where the inventory is usable the quarry distance that actually sets cost. Inside
+the trusted area quarry distance is **1.9× outcrop distance**, and that *measured*
+ratio scales the bound elsewhere.
+
+The inventory is **5,295 mafic-hosted quarries** from three sources of differing
+standing. **USGS MRDS** (1,829) is the US national register, with no basalt
+commodity code, so producers are cross-filtered against lithology. **ANM SIGMINE**
+(1,681) is Brazil's mining-title register, queried over its ArcGIS REST endpoint;
+it carries an explicit substance field, so basalt, diabase and gabbro are selected
+directly rather than inferred, and a phase field, so only extraction-authorised
+titles are kept. They concentrate in Rio Grande do Sul, Paraná, Santa Catarina and
+São Paulo, which is the Paraná flood-basalt province and a good sanity check.
+**OpenStreetMap** (1,785) is crowd-sourced and the only global option.
+
+Three limits on this, stated because they all push the same way:
+
+- **A title is not a producing quarry.** ANM titles are legal boundaries and OSM
+  `landuse=quarry` includes disused pits. Both overstate active supply — in the same
+  direction as the outcrop bound they replace, just less so. MRDS is worse on
+  currency: it stopped systematic updates in 2011.
+- **India has no authoritative source and is the real gap.** GSI Bhukosh timed out,
+  the National Geoscience Data Repository returned 403, and no state portal yielded
+  coordinates, so India's 934 mask quarries are OSM-only. That matters because it is
+  an active deployment geography.
+- **The OSM pull is an undercount.** The public Overpass endpoint throttles hard:
+  50 of 106 tiles still failed after retries with backoff. Retrying lifted the raw
+  pull from 14,259 to 18,467 points (+30%, and +59% for India), but the residual
+  failures are reported rather than allowed to silently shrink the inventory. A
+  Geofabrik plus osmium pass would remove the throttling entirely and is the next
+  step.
+
+Worth knowing how little of that inventory growth reaches the map: the +30% in raw
+points added only ~107 quarries to the mask and moved the area-weighted median
+delivered cost from $45/t to $43/t. The binding filter is the mafic-lithology
+intersection, not the inventory size — only **24.8%** of stone producers sit on
+GLiM-mapped basic igneous rock. Inventory completeness is therefore not currently
+the limiting uncertainty in the cost surface; lithology resolution is.
 
 Haul is **truck only**: basalt is rarely railed for ERW today, and even where rail
 exists there is still a first- and last-mile trucking leg.
