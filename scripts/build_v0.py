@@ -328,7 +328,8 @@ def main() -> int:
         # is no transport to charge for.
         v_cost = np.clip(np.nan_to_num(C.cost_value(cost_usd_t),
                                        nan=C.COST_FLOOR), C.COST_FLOOR, 1.0)
-        feed_source = "GLiM mafic outcrop + MRDS mafic-hosted quarries, truck/rail"
+        feed_source = ("GLiM mafic outcrop + MRDS/ANM/OSM mafic-hosted "
+                       "quarries, truck only")
     else:
         cost_usd_t = np.full_like(ph, np.nan)
         cost_conf = np.zeros_like(ph)
@@ -593,6 +594,23 @@ RAMP = [  # viridis-like, colour-blind safe, legible in light and dark
     (0.60, "#3fa66b"), (0.80, "#a8c93a"), (1.00, "#f7e94a"),
 ]
 
+# Fraction weathered gets its OWN ramp, magma-like, because it is a different
+# KIND of quantity from suitability: a physical prediction with a defined unit and
+# an observable counterpart, not a normative score. Sharing viridis would invite
+# reading one as a restatement of the other. Both are monotonic in lightness and
+# so stay colour-blind safe; they differ in hue family (magenta-orange against
+# teal-green), which is the part that distinguishes them at a glance.
+# Extra stops below 0.2 on purpose. The scale stays LINEAR in percent, because
+# that is what makes it readable against reported field values, but a quarter of
+# cropland area falls below 6% weathered and a plain magma bottom renders all of
+# it as near-black. Lifting and spreading the low end distinguishes 2% from 6% --
+# a real 3x difference -- without touching the mapping from value to position.
+RAMP_FRAC = [
+    (0.00, "#1c1233"), (0.07, "#3a1a5c"), (0.14, "#5e1f79"),
+    (0.28, "#8c2981"), (0.50, "#c9457b"), (0.75, "#f1705d"),
+    (1.00, "#fdc98a"),
+]
+
 
 def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
             clim_source="unknown", monthly=False, n_quarries=0,
@@ -612,7 +630,8 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
             {"key": "reactivity", "label": "Dissolution rate",
              "hint": "Palandri-Kharaka Ca+Mg release, relative to pH 6.5 / 15 C"},
             {"key": "eta_dic", "label": "Alkalinity retained as DIC",
-             "hint": "Carbonate-equilibrium efficiency; the term Cascade omits"},
+             "hint": "Carbonate-equilibrium efficiency: what share of released "
+                     "alkalinity is actually held as dissolved inorganic carbon"},
             {"key": "drainage", "label": "Drainage / transport",
              "hint": "q/(q+Dw) on WaterGAP recharge; low where water residence limits export"},
         ],
@@ -622,11 +641,13 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
             {"key": "reactivity", "tex": 1, "ch": 0, "label": "Weathering reactivity",
              "hint": "Palandri-Kharaka Ca+Mg release rate, relative to pH 6.5 / 15 C"},
             {"key": "eta_dic", "tex": 1, "ch": 1, "label": "Alkalinity retained as DIC",
-             "hint": "Carbonate-equilibrium efficiency; the term Cascade omits"},
+             "hint": "Carbonate-equilibrium efficiency: what share of released "
+                     "alkalinity is actually held as dissolved inorganic carbon"},
             {"key": "drainage", "tex": 1, "ch": 2, "label": "Drainage / transport",
              "hint": "q/(q+Dw); low where water residence limits export"},
         ],
         "ramp": RAMP,
+        "rampFrac": RAMP_FRAC,
         "cdrKnots": C.CDR_SUITABILITY_KNOTS,
         "cdrNegligible": C.CDR_NEGLIGIBLE_T_HA_YR,
         "dissolvedFracAtRef": C.DISSOLVED_FRAC_AT_REF,
@@ -707,7 +728,8 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
             "drainage": "WaterGAP2-2e groundwater recharge via ISIMIP3a, 0.5 deg",
             "paddy": "GRPI Landsat inundation months x SPAM2010 irrigated rice",
             "feedstock": ("GLiM full-resolution basic igneous outcrop + USGS MRDS "
-                          "mafic-hosted stone producers; truck/rail haul, not routed"),
+                          "mafic-hosted stone producers, ANM SIGMINE titles "
+                          "(Brazil) and OSM quarries; truck-only haul, not routed"),
             # Generated from the actual build state, never hardcoded: an earlier
             # version listed stand-ins that had already been replaced, and the
             # deployed page said so for one commit.

@@ -18,7 +18,7 @@ window.ERW = {
     {
       "key": "eta_dic",
       "label": "Alkalinity retained as DIC",
-      "hint": "Carbonate-equilibrium efficiency; the term Cascade omits"
+      "hint": "Carbonate-equilibrium efficiency: what share of released alkalinity is actually held as dissolved inorganic carbon"
     },
     {
       "key": "drainage",
@@ -41,7 +41,7 @@ window.ERW = {
       "tex": 1,
       "ch": 1,
       "label": "Alkalinity retained as DIC",
-      "hint": "Carbonate-equilibrium efficiency; the term Cascade omits"
+      "hint": "Carbonate-equilibrium efficiency: what share of released alkalinity is actually held as dissolved inorganic carbon"
     },
     {
       "key": "drainage",
@@ -75,6 +75,36 @@ window.ERW = {
     [
       1.0,
       "#f7e94a"
+    ]
+  ],
+  "rampFrac": [
+    [
+      0.0,
+      "#1c1233"
+    ],
+    [
+      0.07,
+      "#3a1a5c"
+    ],
+    [
+      0.14,
+      "#5e1f79"
+    ],
+    [
+      0.28,
+      "#8c2981"
+    ],
+    [
+      0.5,
+      "#c9457b"
+    ],
+    [
+      0.75,
+      "#f1705d"
+    ],
+    [
+      1.0,
+      "#fdc98a"
     ]
   ],
   "cdrKnots": [
@@ -606,7 +636,7 @@ window.ERW = {
     "cropland": "Potapov et al. 2022 percent-cropland, 3 km",
     "drainage": "WaterGAP2-2e groundwater recharge via ISIMIP3a, 0.5 deg",
     "paddy": "GRPI Landsat inundation months x SPAM2010 irrigated rice",
-    "feedstock": "GLiM full-resolution basic igneous outcrop + USGS MRDS mafic-hosted stone producers; truck/rail haul, not routed",
+    "feedstock": "GLiM full-resolution basic igneous outcrop + USGS MRDS mafic-hosted stone producers, ANM SIGMINE titles (Brazil) and OSM quarries; truck-only haul, not routed",
     "substitutions": [
       "soil moisture is root-zone storage in mm, not a saturation fraction: porosity normalisation not yet applied",
       "kinetics over-predict measured basalt release; activation energy is ~2x too high (see the kinetics test)"

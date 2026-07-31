@@ -13,23 +13,35 @@ python3 scripts/build_v0.py
 ./scripts/serve.sh         # http://localhost:8000/index.html
 ```
 
-The interactive map has three layers — a suitability composite, a limiting-factor
-view, and Cascade's published formulation on the same inputs for a like-for-like
-comparison — plus live weight sliders that recolour ~5 million cells in a WebGL2
-fragment shader with no fetch and no server. Hovering any cell reports every
-input value, the composite score, the limiting factor, and which protocol screens
-it fails. The whole deployable site is 4.8 MB.
+The interactive map has three layers, plus live sliders that recolour ~5 million
+cells in a WebGL2 fragment shader with no fetch and no server:
 
-**Read the in-app Methods panel before drawing conclusions.** Four inputs in v0
-are documented stand-ins and one whole dimension — feedstock supply and delivered
-haul cost — is not built yet. The most consequential known problems are listed
-under "Honest status of v0" below.
+- **Suitability** — a value function of gross CO₂ removal on absolute breakpoints
+  in tCO₂/ha/yr, so zero removal is zero suitability by construction.
+- **Limiting factor** — which of the three physical terms costs the most at each
+  cell.
+- **Fraction weathered** — the share of applied rock predicted to weather in year
+  one, on its own colour ramp because it is a different kind of quantity: a
+  physical prediction with an observable counterpart, and therefore the layer the
+  field deliveries can actually check.
+
+Hovering any cell reports every input value, the composite score, the limiting
+factor, and which protocol screens it fails. The whole deployable site is 5 MB.
+
+A like-for-like reproduction of Cascade's published formulation is retained in the
+pipeline and still backs the comparison numbers quoted below, but it is no longer a
+map layer: it answers a question about our method rather than about where to
+deploy.
+
+**Read the in-app Methods panel before drawing conclusions.** Two inputs in v0 are
+documented stand-ins and the kinetics fail their independent test. The most
+consequential known problems are listed under "Honest status of v0" below.
 
 > **Resolution, stated honestly.** v0 runs on a **0.1° grid (~11 km at the
 > equator)**; the 1 km target belongs to the full build. Either way, grid spacing
 > is not resolution — effective resolution will be roughly 10–50 km because the
-> feedstock component is limited by quarry-inventory completeness rather than by
-> pixel size. Nothing below ~1 km² (100 ha) should be read as site-specific, and
+> feedstock component is limited by the resolution of mapped mafic lithology rather
+> than by pixel size. Nothing below ~1 km² (100 ha) should be read as site-specific, and
 > the map caps zoom on purpose rather than inviting you to look up your field.
 
 ## What this adds to the state of the art

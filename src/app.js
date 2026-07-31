@@ -34,12 +34,13 @@
            "tCO₂/ha/yr. Zero removal is zero suitability by construction.",
     limiting: "Which of the three physical terms costs the most at each cell — " +
               "the largest negative contribution to the log of the product.",
-    cascade: "Cascade Climate's published form, r ∝ s·[H⁺]·exp(−Ea/RT), on the " +
-             "same inputs. Shown so the comparison is testable, not asserted.",
+    frac: "Fraction of the applied rock predicted to weather in the first year, " +
+          "at the current grind. A physical prediction with an observable " +
+          "counterpart, so it is the layer the field deliveries can check.",
   };
   const FACTOR_COLORS = ["#e0704f", "#4f9fe0", "#8fd14f"];
 
-  let gl, prog, quad, texA, texB, texC, texRamp, cpu = null;
+  let gl, prog, quad, texA, texB, texC, texRamp, texRampFrac, cpu = null;
   let mode = "score";
   let showQuarries = false;
   // Term exponents, NOT importance weights. Default 1 means the composite is
@@ -94,8 +95,8 @@
     return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16),
             parseInt(h.slice(5, 7), 16)];
   }
-  function rampColorAt(t) {
-    const r = E.ramp;
+  function rampColorAt(t, stops) {
+    const r = stops || E.ramp;
     t = clamp(0, t, 1);
     for (let i = 1; i < r.length; i++) {
       if (t <= r[i][0]) {
@@ -107,7 +108,7 @@
     }
     return hex2rgb(r[r.length - 1][1]);
   }
-  const rampCss = (t) => "rgb(" + rampColorAt(t).join(",") + ")";
+  const rampCss = (t, stops) => "rgb(" + rampColorAt(t, stops).join(",") + ")";
 
   /* ---------------- shader ---------------- */
   const VS = `#version 300 es
@@ -125,12 +126,12 @@
   in vec2 vUV;
   out vec4 fragColor;
 
-  uniform sampler2D uA, uB, uC, uRamp;
+  uniform sampler2D uA, uB, uC, uRamp, uRampFrac;
   uniform vec4 uGeo;              // lon0, lat0, lonSpan, latSpan of the visible box
   uniform vec4 uGrid;             // west, north, dlon, dlat of the data grid
   uniform vec2 uGridSize;
   uniform vec3 uExp;              // term exponents; 1,1,1 == the physics
-  uniform int  uMode;             // 0 suitability, 1 limiting, 2 cascade
+  uniform int  uMode;             // 0 suitability, 1 limiting, 2 fraction weathered
   uniform vec2 uL1Enc;            // lo, hi of the stored L1 range
   uniform float uSsaShift;        // log10(SSA(d50,width) / SSA(ref))
   uniform float uKdiss;           // -ln(1 - dissolved fraction at reference)
@@ -176,12 +177,6 @@
       return;
     }
 
-    if (uMode == 2) {                          // Cascade baseline, own channel
-      vec3 cb = texture(uRamp, vec2(clamp(cc.r, 0.0, 1.0), 0.5)).rgb;
-      fragColor = vec4(cb, 1.0);
-      return;
-    }
-
     // Dequantise the RAW physical terms. Value 0 is reserved for masked cells,
     // so data occupies 5..255 -- and a decoded zero is a true zero, which
     // matters because zero really does mean no carbon.
@@ -208,6 +203,17 @@
     // zero suitability by construction rather than by tuning a floor.
     float X = exp(lr + ld + lt);
     float frac = 1.0 - exp(-uKdiss * X);       // saturates at 1, no flat top
+
+    // Fraction weathered on its OWN ramp. No economics multiplier and no
+    // negligible cutoff: this is a physical quantity whose zero is meaningful on
+    // the ramp itself, so masking the bottom would hide real information rather
+    // than protect against over-reading a near-zero score.
+    if (uMode == 2) {
+      vec3 fc = texture(uRampFrac, vec2(clamp(frac, 0.0, 1.0), 0.5)).rgb;
+      fragColor = vec4(fc, 1.0);
+      return;
+    }
+
     float cdr = frac * uCdrPerFrac * pow(10.0, uSsaShift);
 
     if (cdr < uNegligible) { fragColor = NEGLIGIBLE; return; }
@@ -288,15 +294,15 @@
     return { tex: t, bmp: bmp };
   }
 
-  function makeRampTexture() {
+  function makeRampTexture(stops, unit) {
     // Built from the SAME array the legend reads, so they cannot disagree.
     const n = 256, px = new Uint8Array(n * 4);
     for (let i = 0; i < n; i++) {
-      const c = rampColorAt(i / (n - 1));
+      const c = rampColorAt(i / (n - 1), stops);
       px[i * 4] = c[0]; px[i * 4 + 1] = c[1]; px[i * 4 + 2] = c[2]; px[i * 4 + 3] = 255;
     }
     const t = gl.createTexture();
-    gl.activeTexture(gl.TEXTURE3);
+    gl.activeTexture(unit);
     gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, n, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, px);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -384,6 +390,8 @@
     gl.uniform1i(u("uC"), 2);
     gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, texRamp);
     gl.uniform1i(u("uRamp"), 3);
+    gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, texRampFrac);
+    gl.uniform1i(u("uRampFrac"), 4);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
     drawLand(box);
@@ -716,24 +724,30 @@
         `<span class="lbl">${c.label}</span></div>`).join("") + eligRows();
       return;
     }
-    const grad = E.ramp.map(([t, c]) => `${c} ${(t * 100).toFixed(0)}%`).join(", ");
-    const isCascade = mode === "cascade";
+    const isFrac = mode === "frac";
+    const stops = isFrac ? E.rampFrac : E.ramp;
+    const grad = stops.map(([t, c]) => `${c} ${(t * 100).toFixed(0)}%`).join(", ");
+    const obs = E.dissolvedFracObserved;
     L.innerHTML =
       `<div class="ramp" style="background:linear-gradient(90deg,${grad})"></div>` +
-      `<div class="ends"><span>${isCascade ? "low" : "0"}</span>` +
-      `<span>${isCascade ? "relative reactivity" : "suitability"}</span>` +
-      `<span>${isCascade ? "high" : "100"}</span></div>` +
-      (isCascade ? "" :
-        `<p class="hint">Anchored to gross CO₂: ` +
-        E.cdrKnots.map(([x, y]) => `${(y * 100).toFixed(0)}&nbsp;=&nbsp;${x}`).join(", ") +
-        ` tCO₂ gross/ha/yr at ${E.feedstock.rateTHaYr}&nbsp;t/ha.</p>` +
-        `<div class="lrow"><span class="sw" style="background:#292b30"></span>` +
-        `<span class="lbl">Negligible: &lt; ${E.cdrNegligible} tCO₂/ha/yr</span></div>`) +
-      (isCascade
-        ? `<p class="hint">Cascade's index spans ~4 orders of magnitude, so most
-             cropland sits near the bottom of any linear ramp. That flatness is
-             the point of the comparison, not a rendering fault.</p>`
-        : "") +
+      `<div class="ends"><span>0</span>` +
+      `<span>${isFrac ? "% weathered in year 1" : "suitability"}</span>` +
+      `<span>100</span></div>` +
+      (isFrac
+        ? `<p class="hint">Linear in percent, so it reads directly against
+             reported field values. First-period fraction weathered across the
+             verified 2026 deliveries spans roughly
+             <b>${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%</b>;
+             those are well-sited projects, and at the current
+             <b>${psd.d50.toFixed(0)}&nbsp;µm</b> grind most cropland sits below
+             that band, which is expected rather than a contradiction. Moves with
+             the grind slider, because rate is linear in reactive surface
+             area.</p>`
+        : `<p class="hint">Anchored to gross CO₂: ` +
+          E.cdrKnots.map(([x, y]) => `${(y * 100).toFixed(0)}&nbsp;=&nbsp;${x}`).join(", ") +
+          ` tCO₂ gross/ha/yr at ${E.feedstock.rateTHaYr}&nbsp;t/ha.</p>` +
+          `<div class="lrow"><span class="sw" style="background:#292b30"></span>` +
+          `<span class="lbl">Negligible: &lt; ${E.cdrNegligible} tCO₂/ha/yr</span></div>`) +
       eligRows();
   }
 
@@ -823,9 +837,10 @@
       <code>${E.eligibility.version}</code>.</p>
 
       <div class="flagbox"><p><b>This is a v0 preview.</b> The physics core is
-      built and gated, but four inputs are stand-ins and one whole dimension —
-      feedstock supply and delivered haul cost — is not built yet. Read the
-      substitutions below before drawing any conclusion from the map.</p></div>
+      built and gated, and feedstock supply and delivered haul cost are now built
+      too, but ${p.substitutions.length} input${p.substitutions.length === 1 ? " is a stand-in" : "s are stand-ins"}
+      and the kinetics fail their independent test. Read the substitutions and the
+      kinetics section below before drawing any conclusion from the map.</p></div>
 
       <h3>What this does differently from Cascade</h3>
       <p><b>Three-mechanism kinetics.</b> Cascade's index is first order in
@@ -834,6 +849,10 @@
       rescaled soil-pH map. Using the three-parallel-mechanism law of Palandri
       &amp; Kharaka (2004, USGS OFR 2004-1068) compresses that to ~36×. Measured:
       Cascade overstates pH leverage by 281×.</p>
+      <p class="hint">The like-for-like Cascade reproduction is retained in the
+      pipeline as an internal diagnostic and still backs the numbers quoted here,
+      but it is no longer a map layer: it answers a question about our method
+      rather than about where to deploy.</p>
       <p><b>An alkalinity-to-DIC efficiency term.</b> Fast dissolution at low pH
       does not store carbon, because DIC speciation shifts toward aqueous CO₂.
       Cascade cites Bertagni &amp; Porporato (2022) as the source of its
@@ -844,6 +863,31 @@
       4,000 µatm soil pCO₂, against their 5.20 screen.</p>
       <p><b>Protocol eligibility as a mapped layer,</b> from exceedance
       probabilities on SoilGrids quantiles rather than a point estimate.</p>
+
+      <h3>Protocol screens <code>${E.eligibility.version}</code></h3>
+      <p>Cells are flagged where the probability of crossing the
+      <b>SOC &gt; ${E.eligibility.socThreshold} wt%</b> exclusion exceeds
+      ${E.eligibility.pExcluded}, computed from a lognormal fitted to the SoilGrids
+      q05/q50/q95 at ~2.8 km with the <i>probability</i> averaged onto the analysis
+      grid. Averaging the quantiles instead, as an earlier version did, is not valid
+      uncertainty propagation.</p>
+      <p><b>The screen turns out to be close to a non-constraint on cropland.</b>
+      Only <b>${(E.eligibility.excludedShareCropland * 100).toFixed(2)}%</b> of
+      cropland area is confidently excluded, and 96% of the cells flagged worldwide
+      sit north of 50°N: SOC above ${E.eligibility.socThreshold} wt% is a peatland
+      and boreal-forest phenomenon, not a farmland one. The screen is therefore
+      always on and has no toggle — there is nothing for a toggle to reveal.</p>
+      <p>An earlier version also drew a <i>marginal</i> class wherever that
+      probability fell between ${E.eligibility.pPasses} and
+      ${E.eligibility.pExcluded}. It covered
+      <b>${(E.eligibility.marginalShareCropland * 100).toFixed(0)}%</b> of cropland,
+      which made it the visual centre of the map while saying almost nothing a
+      developer could act on, so it is reported here rather than drawn. That figure
+      is mostly a statement about how wide SoilGrids' predictive intervals are: on a
+      point estimate the same number is ~0.2%. Two caveats stand either way — the
+      quantiles describe a ~250 m <i>block average</i> rather than a sampled field,
+      so they understate how often an individual field crosses the threshold, and
+      this is a screening likelihood, not a calibrated eligibility probability.</p>
 
       <h3>The independent kinetics test, and what it found</h3>
       <div class="flagbox"><p><b>This test fails, and it is the most important open
@@ -879,11 +923,11 @@
 
       <h3>Remaining stand-ins</h3>
       <ul>${p.substitutions.map((s) => `<li>${s}</li>`).join("")}</ul>
-      <p>These mean the temperature and moisture terms are still <i>Cascade's own
-      inputs</i>, so the "Cascade baseline" comparison is like-for-like, but our
-      claim to a soil-temperature improvement is not yet realised. Planned:
-      Lembrechts et al. (2022) monthly soil temperature at 30 arc-second, and a
-      monthly soil-moisture climatology.</p>
+      <p>The soil-temperature substitution is now <b>resolved</b>: the model runs
+      on Lembrechts et al. (2022) monthly soil temperature at 5–15 cm rather than
+      air temperature, integrated month by month rather than annually. What remains
+      is the moisture term, which is root-zone storage in millimetres rather than a
+      saturation fraction, so the porosity normalisation is not yet applied.</p>
 
       <h3>Suitability is now anchored to gross CO₂</h3>
       <p><b>The defect.</b> Suitability used to be a weighted geometric mean of
@@ -1004,18 +1048,6 @@
       <p>Still not routed: distance is great-circle times a tortuosity factor.
       Real routing needs a friction surface or a road graph.</p>
 
-      <h3>The SOC screen, computed correctly</h3>
-      <p>Previously the q05/q50/q95 quantiles were resampled to the analysis grid
-      and the probability computed from the <i>averaged quantiles</i>. Averaging
-      quantiles is not averaging distributions, so that was not valid uncertainty
-      propagation, and it widened the apparent spread. The probability is now
-      computed at ~2.8 km and the <b>probability</b> is averaged, which is valid —
-      the result is the expected area fraction of the cell that exceeds.</p>
-      <p>Reduced but not removed: SoilGrids quantiles describe a ~250 m block
-      average while the protocol threshold applies to a sampled field, so this
-      remains a screening likelihood rather than a calibrated eligibility
-      probability.</p>
-
       <h3>Fixed earlier in this preview</h3>
       <p><b>Drainage is now real recharge, and the Damköhler coefficient was
       wrong.</b> Transport limitation previously used a fixed runoff coefficient
@@ -1114,10 +1146,12 @@
     document.querySelectorAll("#mode-seg .seg-btn").forEach((b) =>
       b.classList.toggle("active", b.dataset.mode === m));
     $("mode-hint").textContent = MODE_HINT[m];
-    $("weights-group").classList.toggle("hidden", m !== "score");
-    // Grind does not apply to Cascade's index: their formulation has no surface
-    // area term at all, which is part of the point of showing it.
-    $("psd-group").classList.toggle("hidden", m === "cascade");
+    // Grind and term sensitivity both feed the dissolution product, so they act
+    // on the fraction-weathered layer too. Economics does not: fraction weathered
+    // is a physical prediction, and discounting it by haul cost would be a
+    // category error.
+    $("weights-group").classList.toggle("hidden", m === "limiting");
+    $("psd-group").classList.toggle("hidden", false);
     $("econ-group").classList.toggle("hidden", m !== "score" || !E.cost);
     refresh();
   }
@@ -1162,13 +1196,6 @@
   async function main() {
     $("res-label").textContent =
       `${E.labels.build} · ${E.labels.grid} · ${E.labels.effectiveRes}`;
-    $("elig-version").textContent = E.eligibility.version;
-    $("elig-hint").innerHTML =
-      `Flags only outright failures: P &gt; ${E.eligibility.pExcluded} of crossing ` +
-      `SOC ${E.eligibility.socThreshold} wt%. That is ` +
-      `<b>${(E.eligibility.excludedShareCropland * 100).toFixed(2)}% of cropland` +
-      `</b> \u2014 the screen is close to a non-constraint on farmland, because ` +
-      `SOC above 5 wt% is a peatland and boreal-forest phenomenon.`;
     $("stat-main").textContent = E.stats.croplandGha.toFixed(2) + " Gha";
     const nq = (window.QUARRIES && window.QUARRIES.points.length) || 0;
     const bySrc = {};
@@ -1191,7 +1218,8 @@
     $("method-body").innerHTML = methodsHTML();
 
     initGL();
-    texRamp = makeRampTexture();
+    texRamp = makeRampTexture(E.ramp, gl.TEXTURE3);
+    texRampFrac = makeRampTexture(E.rampFrac, gl.TEXTURE4);
     const [a, b, cTex] = await Promise.all([
       loadTexture("textures/tex1.png", 0), loadTexture("textures/tex2.png", 1),
       loadTexture("textures/tex3.png", 2),
