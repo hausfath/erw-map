@@ -60,7 +60,18 @@ body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font); }
 .slider .name { font-size: 12.5px; }
 .slider .val { font-family: var(--mono); font-size: 11px; color: var(--accent); }
 .slider input[type=range] { width: 100%; margin: 5px 0 0; accent-color: var(--accent); }
-.slider .why { font-size: 10.5px; color: var(--ink3); margin-top: 2px; }
+.slider .why { font-size: 11.5px; color: var(--ink3); margin-top: 2px; }
+
+/* advanced disclosure */
+#advanced summary {
+  cursor: pointer; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.9px; color: var(--ink2); font-weight: 600;
+  display: flex; align-items: center; gap: 8px; list-style: none;
+}
+#advanced summary::-webkit-details-marker { display: none; }
+#advanced summary::before { content: "\25B8"; color: var(--ink3); font-size: 10px; }
+#advanced[open] summary::before { content: "\25BE"; }
+#advanced[open] summary { margin-bottom: 4px; }
 
 .btn-row { display: flex; gap: 8px; margin-top: 14px; }
 .mini {
@@ -97,6 +108,7 @@ body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font); }
   box-shadow: 0 6px 22px rgba(0,0,0,.45);
 }
 #readout .rt { font-weight: 600; margin-bottom: 5px; font-size: 12px; }
+#readout .rt-ll { font-weight: 400; color: #9fb0c0; font-size: 11px; }
 #readout table { border-collapse: collapse; width: 100%; }
 #readout td { padding: 1px 0; }
 #readout td.k { color: #9fb0c0; padding-right: 10px; }
@@ -104,6 +116,16 @@ body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font); }
 #readout .flag { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--line); font-size: 10.5px; }
 #readout .flag.warn { color: var(--warn); }
 #readout .flag.bad { color: var(--bad); }
+#readout .pin-hint { color: #6e7f8f; border-top: 0; padding-top: 2px; margin-top: 4px; }
+#readout.pinned { border-color: var(--accent); }
+
+#loading {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  color: var(--ink2); font-size: 13px; z-index: 3;
+}
+
+.ext { color: var(--accent); text-decoration: none; }
+.ext:hover { text-decoration: underline; }
 
 .mapctl { position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 5px; z-index: 4; }
 .mapctl button {

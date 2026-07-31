@@ -30,13 +30,11 @@
   const G = E.grid;
 
   const MODE_HINT = {
-    score: "A value function of gross CO₂ removal, on absolute breakpoints in " +
-           "tCO₂/ha/yr. Zero removal is zero suitability by construction.",
-    limiting: "Which of the three physical terms costs the most at each cell — " +
-              "the largest negative contribution to the log of the product.",
-    frac: "Fraction of the applied rock predicted to weather in the first year, " +
-          "at the current grind. A physical prediction with an observable " +
-          "counterpart, so it is the layer the field deliveries can check.",
+    score: "Overall ERW potential, 0–100, scaled from gross CO₂ " +
+           "removal per hectare.",
+    limiting: "The factor that most limits CO₂ removal at each location.",
+    frac: "Share of the applied rock predicted to weather in the first year, " +
+          "at the current grind.",
   };
   const FACTOR_COLORS = ["#e0704f", "#4f9fe0", "#8fd14f"];
 
@@ -311,6 +309,30 @@
     return t;
   }
 
+  /* Region ids for the readout header, CPU-only: admin.png packs a 16-bit
+     Natural Earth admin-1 id into R,G. Optional — the readout falls back to
+     bare coordinates if the texture or the name table is missing. */
+  let adminIds = null;
+  async function loadAdminIds() {
+    try {
+      const blob = await (await fetch("textures/admin.png")).blob();
+      const bmp = await createImageBitmap(blob, {
+        premultiplyAlpha: "none", colorSpaceConversion: "none",
+      });
+      const cv = document.createElement("canvas");
+      cv.width = G.width; cv.height = G.height;
+      const ctx = cv.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(bmp, 0, 0);
+      adminIds = ctx.getImageData(0, 0, G.width, G.height).data;
+    } catch (e) { adminIds = null; }
+  }
+
+  function regionNameAt(i) {
+    if (!adminIds || !window.ADMIN) return null;
+    const id = adminIds[i] + (adminIds[i + 1] << 8);
+    return id ? window.ADMIN.names[id] || null : null;
+  }
+
   /* ---------------- CPU-side copy for the readout ---------------- */
   function decodeToCPU(bmpA, bmpB, bmpC) {
     const cv = document.createElement("canvas");
@@ -543,25 +565,22 @@
   }
 
   function buildPsdSliders() {
-    const P = E.psd, host = $("psd-sliders");
+    const P = E.psd;
+    // d50 lives in the Feedstock grind group; the distribution-width slider is
+    // an expert control and lives under Advanced. Full rationale for both, and
+    // the roughness-multiplier check, is in Methods.
     const rows = [
-      {k: "d50", label: "d50 \u2014 half the mass is finer", unit: " \u00b5m",
+      {k: "d50", host: "psd-sliders",
+       label: "Grain size d50 (\u00b5m)",
        min: P.d50Range[0], max: P.d50Range[1], step: 5,
-       why: `p50, because that is what the field reports. Measured 2026 ` +
-            `deliveries span ${P.deliveryRangeUm[0]}\u2013${P.deliveryRangeUm[1]} \u00b5m ` +
-            `(finest ${P.deliveryP50.lithos}, coarsest ${P.deliveryP50.mati}). ` +
-            `Default ${P.refD50} \u00b5m sits mid-range.`},
-      {k: "width", label: "Distribution width", unit: "",
+       why: `Half the rock mass is finer than this. 2026 field deliveries ` +
+            `span ${P.deliveryRangeUm[0]}\u2013${P.deliveryRangeUm[1]} \u00b5m.`},
+      {k: "width", host: "adv-psd-slider",
+       label: "Grind distribution width",
        min: P.widthRange[0], max: P.widthRange[1], step: 0.05,
-       why: "Rosin\u2013Rammler n: low is a broad grind with more fines. " +
-            "This is the DOMINANT unknown here \u2014 across this range it moves " +
-            "surface area several-fold at fixed d50. " +
-            (P.refWidthAssumed
-              ? "The default is ASSUMED, and narrow for a commercial crush, so it " +
-                "probably understates reactive surface."
-              : "")},
+       why: "Rosin\u2013Rammler n: lower is a broader grind with more fines " +
+            "and more reactive surface at the same d50."},
     ];
-    host.innerHTML = "";
     rows.forEach((r) => {
       const d = document.createElement("div");
       d.className = "slider";
@@ -570,7 +589,7 @@
         `<span class="val" id="pv-${r.k}"></span></div>` +
         `<input type="range" id="ps-${r.k}" min="${r.min}" max="${r.max}" step="${r.step}">` +
         `<div class="why">${r.why}</div>`;
-      host.appendChild(d);
+      $(r.host).appendChild(d);
       const inp = d.querySelector("input");
       inp.value = psd[r.k];
       inp.addEventListener("input", () => { psd[r.k] = +inp.value; refresh(); });
@@ -582,25 +601,10 @@
     const d = $("pv-d50"), w = $("pv-width");
     if (d) d.textContent = psd.d50.toFixed(0) + " \u00b5m";
     if (w) w.textContent = psd.width.toFixed(2);
-    const ssa = ssaNow();
     const rel = Math.pow(10, ssaShift());
-    // Show the implied roughness multiplier that a BET-scale area would demand.
-    // If a fit ever needs lambda far outside 1-100 the model is being asked
-    // something unphysical -- that is a falsification bound, not a knob.
-    // lambda is now reported against a MEASURED BET, not an assumed 1-5 m2/g
-    // range. The old readout implied lambda 39-197 at the reference grind, which
-    // straddled the falsification ceiling and made our own default look
-    // unphysical -- an artefact of the unsourced anchor, not of the model.
-    const lamNeeded = P.betMeasured / ssa;
-    const inBounds = lamNeeded >= P.lambdaRange[0] && lamNeeded <= P.lambdaRange[1];
-    $("psd-readout").innerHTML =
-      `geometric SSA ${ssa.toFixed(4)} m\u00b2/g &nbsp;\u00b7&nbsp; ` +
-      `${rel >= 1 ? rel.toFixed(2) + "\u00d7 faster" : (1 / rel).toFixed(2) + "\u00d7 slower"} ` +
-      `than reference<br>` +
-      `<span style="opacity:.75">to match the measured ${P.betMeasured} m\u00b2/g BET of a ` +
-      `real crushed basalt, roughness \u03bb \u2248 <b>${lamNeeded.toFixed(0)}</b> ` +
-      `(bound ${P.lambdaRange[0]}\u2013${P.lambdaRange[1]}${inBounds ? "" : ", OUT OF BOUNDS"}). ` +
-      `Their fines were sieved out, so a real crush at this d50 would need less.</span>`;
+    $("psd-readout").textContent =
+      (rel >= 1 ? rel.toFixed(2) + "\u00d7 faster" : (1 / rel).toFixed(2) + "\u00d7 slower")
+      + " weathering than the reference grind";
     const atRef = Math.abs(psd.d50 - P.refD50) < 2.5
                   && Math.abs(psd.width - P.refWidth) < 0.01;
     $("psd-tag").textContent = atRef ? "Reference" : "Custom";
@@ -611,11 +615,9 @@
     // A two-state toggle, not a continuous slider: there is no principled middle
     // value, and inventing one would be an unlabelled thumb on the scale.
     $("econ-sliders").innerHTML =
-      `<p class="why" style="margin-top:10px">Gate $${E.cost.gateUsdT}/t plus ` +
-      `truck at $${E.cost.truckUsdTKm}/t-km over ${E.cost.tortuosity}\u00d7 ` +
-      `great-circle distance. <b>Truck only</b> \u2014 basalt is rarely railed for ` +
-      `ERW today, and rail would still need a first- and last-mile truck leg. ` +
-      `Not network routing.</p>`;
+      `<p class="why" style="margin-top:10px">$${E.cost.gateUsdT}/t at the ` +
+      `quarry gate plus trucking at $${E.cost.truckUsdTKm}/t-km from the ` +
+      `nearest mafic quarry.</p>`;
     document.querySelectorAll("#econ-seg .seg-btn").forEach((b) => {
       b.addEventListener("click", () => {
         econ.costExp = +b.dataset.econ ? E.cost.expOn : 0;
@@ -630,12 +632,9 @@
     document.querySelectorAll("#econ-seg .seg-btn").forEach((b) =>
       b.classList.toggle("active", (+b.dataset.econ > 0) === on));
     $("econ-tag").textContent = on ? "On" : "Off";
-    $("econ-readout").innerHTML = on
-      ? `Where no quarry inventory is usable, outcrop distance is scaled by ` +
-        `${E.cost.outcropToQuarry}\u00d7 to approximate quarry distance \u2014 a ratio ` +
-        `<i>measured</i> inside the trusted inventory area, not assumed.`
-      : `Suitability currently reflects physical potential only. Turn cost on to ` +
-        `see how much of the map is reachable at what delivered price.`;
+    $("econ-readout").textContent = on
+      ? "Hover the map to see delivered cost per tonne of rock and per tCO\u2082."
+      : "Off: the map shows physical potential only.";
   }
 
   function syncSliders() {
@@ -662,51 +661,49 @@
     return { gx, gy, lon, lat, i: (gy * G.width + gx) * 4 };
   }
 
+  let pinned = false;
   function onMove(ev) {
+    if (pinned) return;
     const box = document.getElementById("readout");
     const cell = cpu ? screenToCell(ev) : null;
     if (!cell) { box.classList.add("hidden"); return; }
-    const A = cpu.A, B = cpu.B, i = cell.i;
+    const B = cpu.B, i = cell.i;
     const flags = B[i + 1];
     if (!(flags & 1)) { box.classList.add("hidden"); return; }
 
     const t = termsAt(i);
     const g = grossCdr(t.rel, t.eDic, t.eTr);
-    const scorePhys = suitabilityOf(g.cdr);
-    const score = scorePhys * Math.pow(t.vCost, econ.costExp);
+    const econOn = econ.costExp > 0;
+    const score = suitabilityOf(g.cdr) * Math.pow(t.vCost, econ.costExp);
     // Limiting term = the largest negative contribution to log X.
     let lo = 0;
     for (let k = 1; k < 3; k++) if (g.contrib[k] < g.contrib[lo]) lo = k;
 
-    const cropPct = (B[i] / 255 * 100);
     const cdr = g.cdr;
     const pe = E.phEncoding;
     const soilPh = pe.lo + (cpu.C[i + 1] / 255) * (pe.hi - pe.lo);
+    const usdT = costUsdT(t.vCost);
 
     let flagHtml = "";
-    if (flags & 2) flagHtml += `<div class="flag bad">Fails the SOC &gt; ${E.eligibility.socThreshold} wt% screen (P &gt; ${E.eligibility.pExcluded})</div>`;
-    if (flags & 8) flagHtml += `<div class="flag warn">Soil pH &lt; 5.2: Isometric screens pH at validation (annotation only, no score effect)</div>`;
+    if (flags & 2) flagHtml += `<div class="flag bad">Excluded: soil organic carbon likely &gt; ${E.eligibility.socThreshold} wt%</div>`;
+    if (flags & 8) flagHtml += `<div class="flag warn">Soil pH &lt; 5.2 — Isometric screens this at validation</div>`;
 
+    const region = regionNameAt(i);
     box.innerHTML =
-      `<div class="rt">${cell.lat.toFixed(1)}°, ${cell.lon.toFixed(1)}°</div>` +
+      `<div class="rt">${region ? region : `${cell.lat.toFixed(1)}°, ${cell.lon.toFixed(1)}°`}` +
+      `${region ? `<span class="rt-ll"> · ${cell.lat.toFixed(1)}°, ${cell.lon.toFixed(1)}°</span>` : ""}</div>` +
       `<table>` +
-      `<tr><td class="k">Dissolution rate, R/R_ref</td><td class="v">${t.rel < 0.01 ? t.rel.toExponential(1) : t.rel.toFixed(2)}×</td></tr>` +
-      `<tr><td class="k">Alkalinity retained</td><td class="v">${t.eDic.toFixed(3)}</td></tr>` +
-      `<tr><td class="k">Drainage / transport</td><td class="v">${t.eTr.toFixed(3)}</td></tr>` +
-      `<tr><td class="k">Dissolved this year</td><td class="v">${(g.frac * 100).toFixed(1)}%</td></tr>` +
-      `<tr><td class="k"><b>Gross CO₂</b></td><td class="v"><b>${cdr < 0.01 ? cdr.toExponential(1) : cdr.toFixed(2)}</b></td></tr>` +
-      `<tr><td class="k">Delivered feedstock</td><td class="v">$${(costUsdT(t.vCost) || 0).toFixed(0)}/t</td></tr>` +
-      `<tr><td class="k">&nbsp;&nbsp;per tCO₂ gross</td><td class="v">$${((costUsdT(t.vCost) || 0) / E.cost.tco2PerT).toFixed(0)}</td></tr>` +
-      `<tr><td class="k">Suitability, physics</td><td class="v">${(scorePhys * 100).toFixed(0)}</td></tr>` +
-      `<tr><td class="k"><b>Suitability, with cost</b></td><td class="v"><b>${(score * 100).toFixed(0)}</b></td></tr>` +
-      `<tr><td class="k">Limiting term</td><td class="v">${CRIT[lo].label}</td></tr>` +
-      `<tr><td class="k">Soil pH (0–15 cm)</td><td class="v">${soilPh.toFixed(2)}</td></tr>` +
-      `<tr><td class="k">Cropland</td><td class="v">${cropPct.toFixed(0)}%</td></tr>` +
+      `<tr><td class="k">Suitability${econOn ? " (with cost)" : ""}</td><td class="v"><b>${(score * 100).toFixed(0)}</b></td></tr>` +
+      `<tr><td class="k">Gross CO₂ removal</td><td class="v"><b>${cdr < 0.01 ? cdr.toExponential(1) : cdr.toFixed(2)}</b> tCO₂/ha/yr</td></tr>` +
+      `<tr><td class="k">Weathered in year 1</td><td class="v">${(g.frac * 100).toFixed(1)}%</td></tr>` +
+      `<tr><td class="k">Limiting factor</td><td class="v">${CRIT[lo].label}</td></tr>` +
+      `<tr><td class="k">Soil pH (0–15 cm)</td><td class="v">${soilPh.toFixed(1)}</td></tr>` +
+      (econOn && usdT !== null
+        ? `<tr><td class="k">Delivered rock</td><td class="v">$${usdT.toFixed(0)}/t · $${(usdT / E.cost.tco2PerT).toFixed(0)}/tCO₂</td></tr>`
+        : ``) +
       `</table>` +
-      `<div class="flag">Suitability is a value function OF gross CO₂ ` +
-      `(tCO₂ gross/ha/yr at ${E.feedstock.rateTHaYr} t/ha), so zero removal is ` +
-      `zero suitability. Gross, not net; low confidence.</div>` +
-      flagHtml;
+      flagHtml +
+      `<div class="flag pin-hint">Click to ${pinned ? "release" : "pin"}</div>`;
     box.classList.remove("hidden");
     const wrap = $("map-wrap").getBoundingClientRect();
     let x = ev.clientX - wrap.left + 14, y = ev.clientY - wrap.top + 14;
@@ -734,18 +731,14 @@
       `<span>${isFrac ? "% weathered in year 1" : "suitability"}</span>` +
       `<span>100</span></div>` +
       (isFrac
-        ? `<p class="hint">Linear in percent, so it reads directly against
-             reported field values. First-period fraction weathered across the
-             verified 2026 deliveries spans roughly
-             <b>${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%</b>;
-             those are well-sited projects, and at the current
-             <b>${psd.d50.toFixed(0)}&nbsp;µm</b> grind most cropland sits below
-             that band, which is expected rather than a contradiction. Moves with
-             the grind slider, because rate is linear in reactive surface
-             area.</p>`
-        : `<p class="hint">Anchored to gross CO₂: ` +
-          E.cdrKnots.map(([x, y]) => `${(y * 100).toFixed(0)}&nbsp;=&nbsp;${x}`).join(", ") +
-          ` tCO₂ gross/ha/yr at ${E.feedstock.rateTHaYr}&nbsp;t/ha.</p>` +
+        ? `<p class="hint">Measured year-one weathering across the verified 2026
+             deliveries spans <b>${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%</b>.
+             Moves with the grind setting.</p>`
+        : `<p class="hint">Score &rarr; gross CO₂ removal: ` +
+          E.cdrKnots.filter(([, y]) => y > 0)
+            .map(([x, y]) => `${(y * 100).toFixed(0)}&nbsp;=&nbsp;${x}`).join(", ") +
+          ` tCO₂/ha/yr at ${E.feedstock.rateTHaYr}&nbsp;t/ha applied.
+          Gross removal, not net.</p>` +
           `<div class="lrow"><span class="sw" style="background:#292b30"></span>` +
           `<span class="lbl">Negligible: &lt; ${E.cdrNegligible} tCO₂/ha/yr</span></div>`) +
       eligRows();
@@ -821,8 +814,7 @@
     const pct = tot ? moved / tot : 0;
     $("stability").textContent =
       pct < 0.001
-        ? "At unit exponents, i.e. the physical product. Lower a term to see how "
-          + "much of the map depends on trusting it."
+        ? "At the physical defaults."
         : `${(pct * 100).toFixed(1)}% of cropland area changes decile vs the `
           + `unweighted physical product.`;
     $("weight-tag").textContent = pct < 0.001 ? "Physics" : "Down-weighted";
@@ -831,286 +823,146 @@
   /* ---------------- methods modal ---------------- */
   function methodsHTML() {
     const p = E.provenance;
+    const obs = E.dissolvedFracObserved;
+    const knots = E.cdrKnots.filter(([, y]) => y > 0)
+      .map(([x, y]) => `${(y * 100).toFixed(0)} = ${x}`).join(", ");
     return `
       <h2>Methods, caveats &amp; sources</h2>
-      <p class="hint">${E.labels.grid}, ${E.labels.effectiveRes}. Version
+      <p class="hint">${E.labels.grid}, ${E.labels.effectiveRes}. Protocol screens
       <code>${E.eligibility.version}</code>.</p>
 
-      <div class="flagbox"><p><b>This is a v0 preview.</b> The physics core is
-      built and gated, and feedstock supply and delivered haul cost are now built
-      too, but ${p.substitutions.length} input${p.substitutions.length === 1 ? " is a stand-in" : "s are stand-ins"}
-      and the kinetics fail their independent test. Read the substitutions and the
-      kinetics section below before drawing any conclusion from the map.</p></div>
+      <div class="flagbox"><p><b>This is a v0 preview.</b> The kinetics
+      over-predict an independent laboratory test, one input is a stand-in, and
+      the absolute CO₂ scale is uncertain to a factor of a few (see Known
+      limitations). Treat the map as a relative ranking, not a site-level
+      prediction.</p></div>
 
-      <h3>What this does differently from Cascade</h3>
-      <p><b>Three-mechanism kinetics.</b> Cascade's index is first order in
-      hydrogen-ion activity, which spans 10⁴ across cropland pH 4–8 while its
-      temperature term spans only ~20× across 0–30 °C — so it is close to a
-      rescaled soil-pH map. Using the three-parallel-mechanism law of Palandri
-      &amp; Kharaka (2004, USGS OFR 2004-1068) compresses that to ~36×. Measured:
-      Cascade overstates pH leverage by 281×.</p>
-      <p class="hint">The like-for-like Cascade reproduction is retained in the
-      pipeline as an internal diagnostic and still backs the numbers quoted here,
-      but it is no longer a map layer: it answers a question about our method
-      rather than about where to deploy.</p>
-      <p><b>An alkalinity-to-DIC efficiency term.</b> Fast dissolution at low pH
-      does not store carbon, because DIC speciation shifts toward aqueous CO₂.
-      Cascade cites Bertagni &amp; Porporato (2022) as the source of its
-      framework; that paper is <i>The Carbon-Capture Efficiency of Natural Water
-      Alkalinization</i> and it derives precisely the term the index omits. Added
-      here with zero free parameters, it reproduces the protocols' own screening
-      thresholds: half efficiency falls at pH 5.08 at Isometric's mandated
-      4,000 µatm soil pCO₂, against their 5.20 screen.</p>
-      <p><b>Protocol eligibility as a mapped layer,</b> from exceedance
-      probabilities on SoilGrids quantiles rather than a point estimate.</p>
+      <h3>What this map shows</h3>
+      <p>For each ~11 km cell of the world's cropland, the map estimates how much
+      CO₂ crushed basalt spread on that land could remove in its first year, from
+      the physics of rock weathering: how fast the rock dissolves in that soil
+      and climate, how much of the released alkalinity is stored as dissolved
+      inorganic carbon, and whether drainage carries it out of the soil. The
+      three layers are three views of the same calculation:
+      <b>Suitability</b>, a 0–100 score of gross CO₂ removal;
+      <b>Limiting factor</b>, the term that costs each cell the most; and
+      <b>Weathered in year&nbsp;1</b>, the fraction of applied rock predicted to
+      dissolve — the quantity field trials can measure.</p>
+      <p>It is a screening map, not a site-selection tool: zoom is capped on
+      purpose, and every CO₂ figure is gross removal, before in-soil carbonate
+      precipitation, riverine re-release and strong-acid competition.</p>
 
-      <h3>Protocol screens <code>${E.eligibility.version}</code></h3>
-      <p>Cells are flagged where the probability of crossing the
-      <b>SOC &gt; ${E.eligibility.socThreshold} wt%</b> exclusion exceeds
-      ${E.eligibility.pExcluded}, computed from a lognormal fitted to the SoilGrids
-      q05/q50/q95 at ~2.8 km with the <i>probability</i> averaged onto the analysis
-      grid. Averaging the quantiles instead, as an earlier version did, is not valid
-      uncertainty propagation.</p>
-      <p><b>The screen turns out to be close to a non-constraint on cropland.</b>
-      Only <b>${(E.eligibility.excludedShareCropland * 100).toFixed(2)}%</b> of
-      cropland area is confidently excluded, and 96% of the cells flagged worldwide
-      sit north of 50°N: SOC above ${E.eligibility.socThreshold} wt% is a peatland
-      and boreal-forest phenomenon, not a farmland one. The screen is therefore
-      always on and has no toggle — there is nothing for a toggle to reveal.</p>
-      <p>An earlier version also drew a <i>marginal</i> class wherever that
-      probability fell between ${E.eligibility.pPasses} and
-      ${E.eligibility.pExcluded}. It covered
-      <b>${(E.eligibility.marginalShareCropland * 100).toFixed(0)}%</b> of cropland,
-      which made it the visual centre of the map while saying almost nothing a
-      developer could act on, so it is reported here rather than drawn. That figure
-      is mostly a statement about how wide SoilGrids' predictive intervals are: on a
-      point estimate the same number is ~0.2%. Two caveats stand either way — the
-      quantiles describe a ~250 m <i>block average</i> rather than a sampled field,
-      so they understate how often an individual field crosses the threshold, and
-      this is a screening likelihood, not a calibrated eligibility probability.</p>
+      <h3>How it is computed</h3>
+      <ol>
+      <li><b>Dissolution rate.</b> The Palandri &amp; Kharaka (2004,
+      USGS OFR 2004-1068) three-mechanism rate law for basalt, driven by soil pH
+      (SoilGrids, 0–15 cm) and monthly soil temperature (Lembrechts et al. 2022,
+      5–15 cm), moisture-limited from a TerraClimate root-zone climatology. The
+      rate is computed month by month and then averaged, because weathering needs
+      warm and wet at the same time. (An index first-order in hydrogen-ion
+      activity, as in Cascade, is close to a rescaled soil-pH map; the
+      three-mechanism law compresses that pH leverage by more than two orders of
+      magnitude.)</li>
+      <li><b>Reactive surface area.</b> A Rosin–Rammler particle-size
+      distribution from the grind controls (reference d50 ${E.psd.refD50} µm,
+      width ${E.psd.refWidth}). Geometric area, not BET; rate is linear in
+      surface area.</li>
+      <li><b>Alkalinity retained as DIC.</b> The carbonate-equilibrium efficiency
+      of Bertagni &amp; Porporato (2022), with zero free parameters. Fast
+      dissolution in very acid soil stores little carbon; this term is why. Soil
+      pCO₂ is raised in rice paddies, mapped as Landsat inundation months ×
+      SPAM irrigated-rice area.</li>
+      <li><b>Drainage.</b> η = q/(q + D_w) on WaterGAP2-2e groundwater recharge
+      (Maher &amp; Chamberlain 2014; D_w = ${p.dw ? p.dw.value : "?"} m/yr):
+      bicarbonate must percolate below the root zone to count as exported.</li>
+      <li><b>Gross CO₂ removal.</b> The product of the terms sets the fraction of
+      rock dissolved in year one, 1 − exp(−k·X), anchored so the reference case
+      sits at the midpoint of verified field deliveries
+      (${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}% weathered).
+      At ${E.feedstock.rateTHaYr} t/ha of basalt holding
+      ${E.feedstock.tco2PerT} tCO₂/t, that fraction becomes tCO₂/ha/yr.</li>
+      <li><b>Suitability.</b> A piecewise-linear score of gross CO₂ removal —
+      ${knots} tCO₂/ha/yr — so zero removal scores zero by construction. The
+      Advanced exponents lower one term at a time to test how much of the map
+      depends on trusting it; they are not importance weights, because the terms
+      are not substitutable.</li>
+      <li><b>Delivered cost (optional).</b> $${E.cost.gateUsdT}/t at the quarry
+      gate plus trucking at $${E.cost.truckUsdTKm}/t-km over
+      ${E.cost.tortuosity}× great-circle distance to the nearest mafic-hosted
+      quarry (US MRDS, Brazil ANM, OSM). Where no quarry inventory is usable,
+      distance to mafic outcrop (GLiM) is scaled by ${E.cost.outcropToQuarry}×,
+      the quarry-to-outcrop ratio measured where both are known. The discount
+      applies to the haul increment only — every site must buy and crush rock, so
+      the gate cost carries no spatial information — and it never zeroes a cell
+      with real physical potential. Truck only, not network-routed.</li>
+      <li><b>Protocol screen.</b> Cells whose soil organic carbon likely exceeds
+      ${E.eligibility.socThreshold} wt% (exceedance probability &gt;
+      ${E.eligibility.pExcluded} on SoilGrids quantiles; the Puro.earth and
+      Isometric exclusion) are drawn dark red. Only
+      ${(E.eligibility.excludedShareCropland * 100).toFixed(2)}% of cropland is
+      confidently excluded — high-SOC soils are a peatland and boreal phenomenon,
+      not a farmland one.</li>
+      </ol>
 
-      <h3>The independent kinetics test, and what it found</h3>
-      <div class="flagbox"><p><b>This test fails, and it is the most important open
-      problem in the model.</b> It also caught us conceding something to Cascade
-      that the data does not support.</p></div>
-      <p>Gudbrandsson et al. (2011) measured crystalline-basalt release rates across
-      pH 2–11 and 5–75 °C. That isolates the rate law in a way the field trials
-      cannot, since grain size and loss terms there absorb any error.</p>
-      <p>Against the pre-registered 0.5 log-unit tolerance, our Palandri–Kharaka
-      mixture <b>over-predicts</b>: Ca by +0.5 log units, Mg by +0.8 to +1.6. The
-      residuals are structured, not noisy, in two separate ways.</p>
-      <p><b>By temperature</b>, the bias grows from +0.01 at 5 °C to +1.58 at 75 °C.
-      That is an activation-energy error. Gudbrandsson measure an apparent Ea for
-      whole-rock basalt of <b>~36 kJ/mol</b> (24–54 across pH). Our mixture gives
-      46–63, and Cascade uses 68.8. <b>We previously called Cascade's 68.8 "a
-      reasonable number reached by an unclear route" — that concession was wrong.</b>
-      It is roughly 2× too high, and so is ours.</p>
-      <p>This matters geographically, because temperature sensitivity is what drives
-      the tropical tilt. At 36 kJ/mol a soil 20 °C warmer is 2.7× faster; at 68 it
-      is 6.7×. <b>The tropics-versus-temperate contrast is about 2.5× smaller than
-      either formulation implies.</b></p>
-      <p><b>By pH</b>, Mg over-prediction peaks at pH 4–8 (+1.4 to +2.1) and nearly
-      vanishes below 4 and above 8 — the signature of secondary Mg/Fe phases
-      precipitating near neutral pH, where they are least soluble, removing Mg from
-      the solution the experiment measures.</p>
-      <p><b>Why an independent test was necessary.</b> The CO₂ layer sits ~2.3×
-      <i>below</i> field observations while the kinetics over-predict lab rates by
-      3–7×. Those pull opposite ways, so the surface-area multiplier has been
-      quietly absorbing a kinetics error. Comparing against field trials alone
-      could never have shown that. Neither problem is corrected in the default
-      model: recorded rather than silently retuned, because the fix is a modelling
+      <h3>Key assumptions</h3>
+      <table>
+        <tr><th>Assumption</th><th>Value</th></tr>
+        <tr><td>Application rate</td><td>${E.feedstock.rateTHaYr} t/ha/yr</td></tr>
+        <tr><td>Feedstock</td><td>delivered basalt, ${E.feedstock.tco2PerT} tCO₂/t
+          (anchored to verified deliveries)</td></tr>
+        <tr><td>Reference grind</td><td>d50 ${E.psd.refD50} µm, width
+          ${E.psd.refWidth} (width assumed; narrow for a commercial crush)</td></tr>
+        <tr><td>Year-1 dissolved fraction at reference</td>
+          <td>${(E.dissolvedFracAtRef * 100).toFixed(0)}%, anchored to verified
+          deliveries (${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%)</td></tr>
+        <tr><td>Quarry gate cost</td><td>$${E.cost.gateUsdT}/t, from
+          operator-reported quarry-fines prices</td></tr>
+        <tr><td>Trucking</td><td>$${E.cost.truckUsdTKm}/t-km ×
+          ${E.cost.tortuosity} road tortuosity</td></tr>
+        <tr><td>D_w (transport limitation)</td><td>${p.dw ? p.dw.value : "?"} m/yr
+          (published range ${p.dw ? p.dw.range.join("–") : "?"})</td></tr>
+      </table>
+
+      <h3>Known limitations</h3>
+      <p><b>The kinetics over-predict an independent laboratory test.</b> Against
+      Gudbrandsson et al. (2011) crystalline-basalt dissolution (pH 2–11,
+      5–75 °C), the rate mixture over-predicts Ca release by about +0.5 log units
+      and Mg by +0.8 to +1.6, and the bias grows with temperature: the apparent
+      activation energy here (46–63 kJ/mol) is roughly 2× the measured
+      ~${E.kinetics.measuredEaKJ} kJ/mol (${E.kinetics.measuredEaRange[0]}–${E.kinetics.measuredEaRange[1]}
+      across pH); Cascade's ${E.kinetics.cascadeEaKJ} has the same problem.
+      Temperature sensitivity drives the tropical tilt of the map, so the
+      tropics-versus-temperate contrast shown is likely ~2.5× too strong. This is
+      recorded rather than silently retuned, because the fix is a modelling
       decision that needs its own review.</p>
-
-      <h3>Remaining stand-ins</h3>
-      <ul>${p.substitutions.map((s) => `<li>${s}</li>`).join("")}</ul>
-      <p>The soil-temperature substitution is now <b>resolved</b>: the model runs
-      on Lembrechts et al. (2022) monthly soil temperature at 5–15 cm rather than
-      air temperature, integrated month by month rather than annually. What remains
-      is the moisture term, which is root-zone storage in millimetres rather than a
-      saturation fraction, so the porosity normalisation is not yet applied.</p>
-
-      <h3>Suitability is now anchored to gross CO₂</h3>
-      <p><b>The defect.</b> Suitability used to be a weighted geometric mean of
-      value-function transforms of the same three physical terms that make up CO₂
-      removal, with a uniform 0.02 quantisation floor applied as though it were a
-      physical floor. The consequence: a cell with <i>zero</i> reactivity — hence
-      zero carbon removed — scored <code>exp(ln 0.02 / 3) × 100 = 27</code>, not 0.
-      The floor existed to stop 8-bit quantisation swinging the score; it should
-      never have manufactured suitability where the physics says none. 3.5% of
-      cropland area was affected.</p>
-      <p><b>The fix.</b> Suitability is now a value function <i>of</i> gross CO₂
-      removal, on absolute breakpoints in tCO₂/ha/yr, so zero removal is zero
-      suitability by construction rather than by tuning a floor. That also removed
-      three sets of arbitrary per-term breakpoints and replaced them with one set
-      on a quantity that has units and can be argued about.</p>
-      <p><b>Why the sliders changed meaning.</b> They are now exponents on a
-      physical product, defaulting to 1. The old scheme was wrong in kind: it let
-      excellent alkalinity retention partly offset zero reactivity, when both are
-      required multiplicatively for any carbon to be stored. You cannot prefer
-      dissolution rate over alkalinity retention. Weights become meaningful again
-      once genuinely substitutable economic factors exist — delivered feedstock
-      cost, MRV cost — because those <i>are</i> tradeable.</p>
-      <p><b>A second defect found while fixing the first.</b> The dissolved
-      fraction was hard-clipped at 0.6, which pinned <b>18.9% of cropland area at
-      an identical CO₂ value</b> — a flat top across a fifth of the map. It is now
-      a first-order decay, <code>1 − exp(−k·X)</code>, bounded by 1 for the right
-      reason: you cannot dissolve more rock than you applied. The reference
-      dissolved fraction is anchored to the midpoint of observation (first-period
-      fraction weathered across the verified deliveries spans roughly 15–56%),
-      which also means our own 20% cap constant was falsified by the data.</p>
-
-      <h3>Monthly soil temperature and moisture</h3>
-      <p>Both stand-ins are gone. Soil temperature is Lembrechts et al. (2022) at
-      5–15 cm, natively 30 arc-second and monthly — the deeper layer because
-      Isometric's near-field zone is the deeper of 20 cm or tillage depth plus
-      5–10 cm. Moisture is a ten-year TerraClimate root-zone climatology.</p>
-      <p>The rate is now computed <b>each month and the rate averaged</b>, never
-      the drivers. Two reasons: the rate is convex in temperature, so the mean of
-      the rate exceeds the rate at the mean (Jensen); and weathering needs warm
-      <i>and</i> wet simultaneously, which annual means destroy.</p>
-      <p><b>The effect is real but smaller than we predicted, and we were wrong
-      about the size.</b> Literature estimates based on air-temperature amplitude
-      suggested ~1.4×. Measured here: median 1.04, range 0.89–1.33. Soil
-      temperature at 5–15 cm is strongly damped relative to air, so the Jensen
-      term is much weaker than an air-based estimate implies — and the covariance
-      term pulls the other way in places, partly cancelling it.</p>
-      <p>It is spatially structured as the mechanism predicts: Mediterranean
-      climates come out <i>below</i> 1 (Andalusia 0.85, Central Valley 0.93), where
-      annual means flatter a site whose warm and wet seasons never coincide;
-      monsoon and continental cropland come out above (Punjab 1.19, Iowa 1.18);
-      the wet tropics sit at ~1, having little seasonality to lose.</p>
-
-      <h3>Feedstock and delivered cost</h3>
-      <p>The largest gap versus a deployment tool, and it needed two constructs
-      rather than one. Lithology is <i>not</i> delivered cost: basalt under a field
-      is irrelevant if nobody quarries it within haul range. But usable quarry
-      inventories are very uneven — USGS MRDS is the only large open one, it is
-      reliable mainly for the United States, and USGS stopped systematic updates
-      in 2011 while itself counting 3,531 operating US crushed-stone quarries in
-      2023.</p>
-      <p>So the map carries both: globally, distance to mafic outcrop from
-      full-resolution GLiM (1.24 million polygons, 93,220 of them basic igneous),
-      which is an <b>upper bound</b> since outcrop is not a quarry; and where MRDS
-      is usable, distance to a mafic-hosted quarry, which is what actually sets
-      cost. Having both in one region lets us <b>measure</b> the gap instead of
-      asserting a caveat: quarry distance is <b>2.0× outcrop distance</b> there,
-      and that measured ratio is what scales the outcrop bound elsewhere.</p>
-      <p><b>Truck only.</b> Basalt is rarely railed for ERW today, and even where
-      rail exists there is still a first- and last-mile trucking leg, so a rail
-      rate would flatter how this material actually moves. Gate cost $25/t plus
-      truck at $0.12/t-km over 1.35× great-circle distance gives
-      <b>$28 / $61 / $138</b> per tonne at the 10th/50th/90th percentile of
-      cropland. About <b>23% of cropland area sits above $100/t</b> and 3.5% above
-      $200/t.</p>
-      <div class="flagbox"><p><b>This reverses an earlier change, and the earlier
-      reasoning was bad.</b> A rail mode was added because a truck-only median of
-      $252/t "looked implausible". Two errors: that $252 was the median over
-      <i>all land</i>, not cropland — cropland sits far closer to quarries, and its
-      truck-only median is $61/t, which was always plausible. And having misread
-      the number, the response was to add a mechanism that made the output look
-      better rather than to find out why it looked odd. When a number looks wrong,
-      diagnose before changing the model.</p></div>
-      <p><b>The penalty applies to the haul increment only.</b> A site sitting at
-      the $25/t gate cost takes no penalty at all, because you have to buy and
-      crush rock wherever you are — charging a site for that is charging it for
-      something unavoidable that carries no spatial information. From there the
-      multiplier declines as <code>1/(1 + (cost − gate)/S)</code> with S = $100/t,
-      so the half-penalty point is $125/t delivered.</p>
-      <p><b>The gate cost was revised down from $25/t to $10/t, because the old
-      figure priced the wrong product.</b> ERW does not buy graded construction
-      aggregate; it buys quarry <i>fines</i> — crusher dust and screenings — which
-      are the cheapest class a quarry makes and in many markets an unsold byproduct
-      it stockpiles. The old $25 started from the USGS blended crushed-stone unit
-      value (~$15–18/t, averaged across all graded products) and then reasoned
-      <i>upward</i> for finer grinding. Both halves were wrong: fines sit below that
-      average, not above it, and ERW target sizes largely overlap what fines already
-      deliver, so little extra grinding is needed. Operators report ~$12/t (Lithos),
-      &lt;$10/t (Isometric's own figure), ~$10/t (InPlanet); Brazilian pó de pedra
-      runs $8–10/t and Indian raw crusher dust as little as $2–3/t. UNDO, Mati and
-      Silicate all supply free, so the floor genuinely reaches $0.</p>
-      <p>Because the penalty applies to the haul increment only, the gate cost
-      <i>cancels out of the multiplier</i> — so this correction changes the reported
-      $/t and $/tCO₂, which were overstated, without perturbing the map at all.</p>
-      <p>That replaced five hand-placed breakpoints which, while also 1.0 at the
-      gate,
-      ramped hard enough that a cell at the <i>cropland median</i> haul lost 38%.
-      It now loses 27%. One stated parameter instead of five, and S is an
-      editorial choice rather than a derived one — which is why the readout also
-      reports feedstock cost per tonne of CO₂, so the trade-off can be judged in
-      units that mean something. At the gate that is $35/tCO₂ gross; at the
-      cropland median haul, $159.</p>
-      <p>Cost is the first genuinely <i>tradeable</i> factor here, so unlike the
-      physical terms it is compensatory with a floor — it discounts the score
-      without zeroing it. It is <b>off by default</b>: the landing map is a
-      statement about physical potential, and economics adds a layer of assumption
-      that should be switched on deliberately. Turning it on takes the
-      area-weighted score from 0.48 to 0.35.</p>
-      <p>Still not routed: distance is great-circle times a tortuosity factor.
-      Real routing needs a friction surface or a road graph.</p>
-
-      <h3>Fixed earlier in this preview</h3>
-      <p><b>Drainage is now real recharge, and the Damköhler coefficient was
-      wrong.</b> Transport limitation previously used a fixed runoff coefficient
-      on precipitation, giving a median η of 0.32 almost everywhere. It now uses
-      WaterGAP2-2e groundwater recharge — the water that actually percolates
-      below the root zone carrying bicarbonate, rather than overland flow, and
-      which includes simulated irrigation return flow. Separately, the default
-      D_w was 0.5 m/yr, <i>above</i> Maher &amp; Chamberlain's stated global
-      maximum of 0.3, with a sensitivity range almost entirely outside the
-      published one; it is now 0.03 with a 0.001–0.3 range. Because η = q/(q+D_w),
-      both errors suppressed η, and they partly cancelled. Median η is now 0.71
-      with real spread (0.21–0.88), and drainage limits 19.5% of cropland area
-      instead of nearly all of it — reactivity now limits 74.6%, which is the
-      physically expected answer for a weathering map.</p>
-      <p><b>Rice paddies are now mapped.</b> Soil pCO₂ is interpolated
-      continuously from a flooded fraction of cell-time, built from two
-      independent halves: GRPI Landsat inundation months, and SPAM irrigated-rice
-      sub-cell area. Multiplying them is deliberately conservative — it refuses to
-      treat a cell that is 5% paddy as fully flooded, which would inflate the very
-      paddy prediction this project needs to test.</p>
-      <p><b>The CO₂ gap narrowed without being tuned.</b> Verified deliveries
-      imply roughly 1.9 tCO₂/ha at 20 t/ha. This build's median moved from 0.32 to
-      0.83 as the physics improved and the artificial clip came off. The remaining
-      ~2.3× gap is reported, not fitted away: closing it honestly needs per-delivery particle-size
-      distributions we do not have.</p>
-
-      <h3>Known problems, stated plainly</h3>
-      <p><b>Surface area is now a control, not a hidden constant.</b> The grind
-      sliders move the reactivity term and the CO₂ figure directly, because rate
-      is linear in reactive surface area. Note what the panel reports: at the
-      reference 267 µm grind, matching a BET-scale area of 1–5 m²/g would demand a
-      roughness multiplier λ of roughly 39–196, which straddles the top of the
-      plausible 1–100 range. That is the dominant uncertainty in the product made
-      visible rather than buried.</p>
-      <p><b>The SOC screen turns out to be close to a non-constraint on
-      cropland.</b> Only 0.04% of cropland area is confidently excluded, and 96% of
-      the cells flagged worldwide sit north of 50°N — SOC above 5 wt% is a peatland
-      and boreal-forest phenomenon, not a farmland one. An earlier version also drew
-      a <i>marginal</i> class wherever the exceedance probability fell between 0.1
-      and 0.9. That covered 53% of cropland, which made it the visual centre of the
-      map while saying almost nothing a developer could act on, so it is now
-      reported here rather than drawn. The 53% is mostly a statement about how wide
-      SoilGrids' predictive intervals are: on a point estimate the same figure is
-      ~0.2%. Two caveats stand on the probability either way — the quantiles
-      describe a ~250 m <i>block average</i> rather than a sampled field, so they
-      understate how often an individual field crosses the threshold, and this is a
-      screening likelihood, not a calibrated eligibility probability.</p>
+      <p><b>The absolute CO₂ scale is uncertain to a factor of a few.</b>
+      Geometric and BET surface areas differ by 130–670× at ERW grain sizes; to
+      match a measured ${E.psd.betMeasured} m²/g BET, the reference grind implies
+      a surface-roughness multiplier λ of roughly
+      ${Math.round(E.psd.betMeasured / E.psd.refSsa)} (plausible range
+      ${E.psd.lambdaRange[0]}–${E.psd.lambdaRange[1]}). The model's median CO₂
+      also sits ~2.3× below what verified deliveries imply. The <i>ranking</i> is
+      the product; the tonnage is an illustration.</p>
+      <p><b>Gross, not net.</b> In-soil carbonate precipitation, riverine
+      re-release and strong-acid competition plausibly claim 20–80% of gross
+      removal, and the gap is spatially variable. Nothing here is validated
+      against net measured removal.</p>
+      <p><b>One input is a stand-in.</b> Soil moisture is root-zone storage in
+      millimetres rather than a saturation fraction; the porosity normalisation
+      is not yet applied.</p>
       <p><b>Cropland is herbaceous-only.</b> The mask reproduces Potapov et al.
-      (2022) to within 0.1% (1.215 vs 1.216 Gha), but that definition excludes
-      perennial woody crops, temporary meadows and long fallow — about 0.36 Gha
-      relative to FAOSTAT. Woody crops <i>are</i> protocol-eligible and are a live
-      deployment setting in Brazilian citrus, so addressable area is understated,
-      concentrated in the tropics.</p>
-
-      <h3>Not claimed</h3>
-      <p>Nothing here is "validated". The CO₂ layer is <b>gross alkalinity
-      generation potential</b>, not net removal; the gap (in-soil carbonate
-      precipitation, riverine re-release, strong-acid competition) is plausibly
-      20–80% and spatially variable. Specific surface area alone spans 130–670×
-      between geometric and BET values at ERW grain sizes — it sets the level of
-      that layer and cancels in any relative comparison, which is why the ranking
-      is the product and the tonnage is an illustration. This is not a
-      site-selection tool: zoom is capped on purpose.</p>
+      (2022) to 0.1%, but excludes perennial woody crops, temporary meadows and
+      long fallow (~0.36 Gha vs FAOSTAT). Woody crops are protocol-eligible and a
+      live deployment setting, so addressable area is understated, mostly in the
+      tropics.</p>
+      <p><b>Quarry inventories are uneven.</b> MRDS is reliable mainly for the
+      US and static since 2011; mining titles (Brazil) and crowd-sourced points
+      overstate producing quarries. Haul distance is great-circle × tortuosity,
+      not road-routed.</p>
+      <p><b>Screening probabilities are not calibrated.</b> SoilGrids quantiles
+      describe ~250 m block averages, not sampled fields, so field-scale
+      threshold exceedance is understated; the SOC screen is a screening
+      likelihood, not an eligibility probability.</p>
 
       <h3>Sources</h3>
       <table>
@@ -1120,20 +972,21 @@
         <tr><td>Cropland</td><td>${p.cropland}</td></tr>
         <tr><td>Drainage</td><td>${p.drainage || "—"}</td></tr>
         <tr><td>Rice paddy</td><td>${p.paddy || "—"}</td></tr>
+        <tr><td>Feedstock supply</td><td>${p.feedstock || "—"}</td></tr>
         <tr><td>Kinetics</td><td>Palandri &amp; Kharaka 2004, USGS OFR 2004-1068</td></tr>
         <tr><td>Carbonate system</td><td>Plummer &amp; Busenberg 1982, GCA 46, 1011</td></tr>
         <tr><td>Efficiency term</td><td>Bertagni &amp; Porporato 2022, STE 838, 156524</td></tr>
-        <tr><td>Transport limitation</td><td>Maher &amp; Chamberlain 2014, Science 343, 1502 —
-          D_w = ${E.provenance.dw ? E.provenance.dw.value : "?"} m/yr,
-          published range ${E.provenance.dw ? E.provenance.dw.range.join("\u2013") : "?"}</td></tr>
-        <tr><td>Particle size</td><td>Rosin\u2013Rammler over a ${E.psd.d50Range[0]}\u2013${E.psd.d50Range[1]} \u00b5m
-          d50 range; geometric area, not BET</td></tr>
+        <tr><td>Transport limitation</td><td>Maher &amp; Chamberlain 2014, Science 343, 1502</td></tr>
+        <tr><td>Kinetics test</td><td>Gudbrandsson et al. 2011, GCA 75</td></tr>
         <tr><td>Eligibility</td><td>Puro.earth ERW 2025 v1; Isometric EW-in-agriculture v1.2</td></tr>
         <tr><td>Coastlines</td><td>Natural Earth 110m (public domain)</td></tr>
+        <tr><td>Region names</td><td>Natural Earth 10m admin-1 (public domain)</td></tr>
       </table>
-      <p>Feedstock archetype <code>${E.feedstock.archetype}</code> at
-      ${E.feedstock.tco2PerT} tCO₂/t, anchored to verified deliveries rather than
-      a textbook basalt. Code MIT; each dataset keeps its own licence.</p>`;
+      <p>Code MIT; each dataset keeps its own licence. The full development
+      history — what changed between preview builds, the defects found on the
+      way, and why each call was made — is in the
+      <a class="ext" href="https://github.com/hausfath/erw-map/blob/main/CHANGELOG.md"
+      target="_blank" rel="noopener">changelog on GitHub</a>.</p>`;
   }
 
   /* ---------------- wiring ---------------- */
@@ -1159,11 +1012,29 @@
   function attachPanZoom() {
     const c = $("gl");
     let drag = null;
+    const setPinned = (p) => {
+      pinned = p;
+      const box = $("readout");
+      box.classList.toggle("pinned", p);
+      const hint = box.querySelector(".pin-hint");
+      if (hint) hint.textContent = p ? "Pinned — click or Esc to release" : "Click to pin";
+    };
     c.addEventListener("mousedown", (e) => {
       drag = { x: e.clientX, y: e.clientY, lon: view.lon, lat: view.lat };
       c.style.cursor = "grabbing";
     });
-    window.addEventListener("mouseup", () => { drag = null; c.style.cursor = "crosshair"; });
+    window.addEventListener("mouseup", (e) => {
+      // A press that barely moved is a click: toggle the readout pin so the
+      // numbers can be read, compared, or screenshotted without chasing them.
+      if (drag && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 5) {
+        if (pinned) { setPinned(false); onMove(e); }
+        else if (!$("readout").classList.contains("hidden")) setPinned(true);
+      }
+      drag = null; c.style.cursor = "crosshair";
+    });
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && pinned) { setPinned(false); $("readout").classList.add("hidden"); }
+    });
     window.addEventListener("mousemove", (e) => {
       if (!drag) { return; }
       // Mouse deltas are CSS pixels, so the scale must be too. Using the
@@ -1175,7 +1046,9 @@
       draw();
     });
     c.addEventListener("mousemove", onMove);
-    c.addEventListener("mouseleave", () => $("readout").classList.add("hidden"));
+    c.addEventListener("mouseleave", () => {
+      if (!pinned) $("readout").classList.add("hidden");
+    });
     c.addEventListener("wheel", (e) => {
       e.preventDefault();
       view.zoom = clamp(1, view.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15), 40);
@@ -1202,16 +1075,13 @@
     if (nq) window.QUARRIES.points.forEach((p) => {
       bySrc[p[2]] = (bySrc[p[2]] || 0) + 1;
     });
+    const SRC_NAME = {MRDS: "US MRDS", ANM: "Brazil ANM", OSM: "OSM"};
     $("quarry-hint").innerHTML = nq
-      ? `${nq.toLocaleString()} mafic-hosted quarries: ` +
+      ? `${nq.toLocaleString()} mafic-hosted quarries (` +
         Object.entries(bySrc).map(([k, v]) =>
           `<span style="color:${{MRDS: "#e8734a", ANM: "#4ad2a8",
-            OSM: "#c9a227"}[k] || "#999"}">\u25cf</span> ${k} ` +
-          `${v.toLocaleString()}`).join(", ") +
-        `. MRDS is the US national register, ANM the Brazilian mining-title ` +
-        `register, OSM crowd-sourced. A title is not a producing quarry, so all ` +
-        `three overstate active supply \u2014 less than the outcrop bound they ` +
-        `replace, but in the same direction.`
+            OSM: "#c9a227"}[k] || "#999"}">\u25cf</span> ${SRC_NAME[k] || k} ` +
+          `${v.toLocaleString()}`).join(", ") + `).`
       : "No quarry inventory built. Run scripts/fetch_quarries.py.";
     $("attrib").textContent =
       "SoilGrids · WorldClim · Potapov et al. cropland · Natural Earth";
@@ -1222,10 +1092,11 @@
     texRampFrac = makeRampTexture(E.rampFrac, gl.TEXTURE4);
     const [a, b, cTex] = await Promise.all([
       loadTexture("textures/tex1.png", 0), loadTexture("textures/tex2.png", 1),
-      loadTexture("textures/tex3.png", 2),
+      loadTexture("textures/tex3.png", 2), loadAdminIds(),
     ]);
     texA = a.tex; texB = b.tex; texC = cTex.tex;
     cpu = decodeToCPU(a.bmp, b.bmp, cTex.bmp);
+    $("loading").remove();
     buildSample();
 
     buildSliders();
@@ -1249,10 +1120,6 @@
     $("btn-psd-reset").onclick = () => {
       psd.d50 = E.psd.refD50; psd.width = E.psd.refWidth;
       $("ps-d50").value = psd.d50; $("ps-width").value = psd.width;
-      refresh();
-    };
-    $("btn-random").onclick = () => {
-      CRIT.forEach((c) => { termExp[c.key] = 0.3 + Math.random() * 0.7; });
       refresh();
     };
     $("open-method").onclick = () => $("method-modal").classList.remove("hidden");

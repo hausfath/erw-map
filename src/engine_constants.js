@@ -28,29 +28,6 @@ window.ERW = {
   ],
   "epsQuantize": 0.02,
   "aggP": 0.0,
-  "criteria": [
-    {
-      "key": "reactivity",
-      "tex": 1,
-      "ch": 0,
-      "label": "Weathering reactivity",
-      "hint": "Palandri-Kharaka Ca+Mg release rate, relative to pH 6.5 / 15 C"
-    },
-    {
-      "key": "eta_dic",
-      "tex": 1,
-      "ch": 1,
-      "label": "Alkalinity retained as DIC",
-      "hint": "Carbonate-equilibrium efficiency: what share of released alkalinity is actually held as dissolved inorganic carbon"
-    },
-    {
-      "key": "drainage",
-      "tex": 1,
-      "ch": 2,
-      "label": "Drainage / transport",
-      "hint": "q/(q+Dw); low where water residence limits export"
-    }
-  ],
   "ramp": [
     [
       0.0,

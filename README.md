@@ -10,6 +10,7 @@ protocols.
 ```bash
 ./scripts/fetch_v0.sh      # ~25 MB of inputs, server-side resampled
 python3 scripts/build_v0.py
+python3 scripts/build_admin_lookup.py   # optional: region names for the hover readout
 ./scripts/serve.sh         # http://localhost:8000/index.html
 ```
 
@@ -20,13 +21,18 @@ cells in a WebGL2 fragment shader with no fetch and no server:
   in tCO₂/ha/yr, so zero removal is zero suitability by construction.
 - **Limiting factor** — which of the three physical terms costs the most at each
   cell.
-- **Fraction weathered** — the share of applied rock predicted to weather in year
+- **Weathered in year 1** — the share of applied rock predicted to weather in year
   one, on its own colour ramp because it is a different kind of quantity: a
   physical prediction with an observable counterpart, and therefore the layer the
   field deliveries can actually check.
 
-Hovering any cell reports every input value, the composite score, the limiting
-factor, and which protocol screens it fails. The whole deployable site is 5 MB.
+Hovering any cell reports the suitability score, gross CO₂ removal, year-1
+weathering, limiting factor, soil pH, delivered cost when economics is on, and
+any protocol screen it fails; click to pin the readout. The whole deployable
+site is 5 MB.
+
+Development history — what changed between preview builds, the defects found on
+the way, and why each call was made — lives in [CHANGELOG.md](CHANGELOG.md).
 
 A like-for-like reproduction of Cascade's published formulation is retained in the
 pipeline and still backs the comparison numbers quoted below, but it is no longer a

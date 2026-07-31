@@ -21,7 +21,7 @@
       <div class="seg" id="mode-seg">
         <button class="seg-btn active" data-mode="score">Suitability</button>
         <button class="seg-btn" data-mode="limiting">Limiting factor</button>
-        <button class="seg-btn" data-mode="frac">Fraction weathered</button>
+        <button class="seg-btn" data-mode="frac">Weathered in year 1</button>
       </div>
       <p class="hint" id="mode-hint"></p>
     </section>
@@ -40,11 +40,7 @@
 
     <section class="group" id="psd-group">
       <h2>Feedstock grind <span class="tag" id="psd-tag"></span></h2>
-      <p class="hint">
-        A physical assumption about the rock, not a preference. Specific surface
-        area is the largest single uncertainty in any absolute CO&#8322; figure
-        here, so it is a control rather than a hidden constant.
-      </p>
+      <p class="hint">How finely the rock is ground. Finer rock weathers faster.</p>
       <div id="psd-sliders"></div>
       <p class="hint stability" id="psd-readout"></p>
       <button class="mini" id="btn-psd-reset" style="margin-top:10px">Reset grind</button>
@@ -52,13 +48,8 @@
 
     <section class="group" id="econ-group">
       <h2>Economics <span class="tag" id="econ-tag"></span></h2>
-      <p class="hint">
-        Off by default, so the landing map is a statement about <b>physical
-        potential</b>. Economics adds a layer of assumption on top — a gate cost, a
-        truck rate, a tortuosity factor, and a quarry inventory of uneven
-        completeness — so it is something to switch on deliberately and switch off
-        again.
-      </p>
+      <p class="hint">Discounts suitability by delivered rock cost
+        (quarry gate + trucking).</p>
       <div class="seg" id="econ-seg">
         <button class="seg-btn active" data-econ="0">Off</button>
         <button class="seg-btn" data-econ="1">Delivered cost</button>
@@ -68,32 +59,19 @@
     </section>
 
     <section class="group" id="weights-group">
-      <h2>Term sensitivity <span class="tag" id="weight-tag">Physics</span></h2>
-      <p class="hint">
-        These are <b>exponents on a physical product</b>, not importance weights.
-        At 1.00 the composite <i>is</i> gross CO&#8322; removal, so a location with
-        no removal scores zero. Lower a term to ask what the map looks like if you
-        distrust it — that is a what-if, not a preference.
-      </p>
-      <div id="sliders"></div>
-      <div class="btn-row">
-        <button class="mini" id="btn-reset">Reset to physics</button>
-        <button class="mini" id="btn-random">Randomise</button>
-      </div>
-      <p class="hint stability" id="stability"></p>
+      <details id="advanced">
+        <summary>Advanced <span class="tag" id="weight-tag">Physics</span></summary>
+        <div id="adv-psd-slider"></div>
+        <p class="hint" style="margin-top:14px">Lower a term&rsquo;s exponent to
+          see how much of the map depends on trusting it. At 1.00 the score is
+          the unmodified physical product.</p>
+        <div id="sliders"></div>
+        <div class="btn-row">
+          <button class="mini" id="btn-reset">Reset to physics</button>
+        </div>
+        <p class="hint stability" id="stability"></p>
+      </details>
     </section>
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
 
     <section class="group">
       <button class="link-btn" id="open-method">Methods, caveats &amp; sources &rsaquo;</button>
@@ -102,11 +80,17 @@
     <footer>
       <div class="stat"><span id="stat-main">—</span>
         <label id="stat-label">cropland in scope</label></div>
+      <p class="hint" style="margin-top:10px">
+        <a class="ext" href="https://github.com/hausfath/erw-map" target="_blank" rel="noopener">Code &amp; data on GitHub</a>
+        &middot;
+        <a class="ext" href="https://github.com/hausfath/erw-map/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+      </p>
     </footer>
   </aside>
 
   <main id="map-wrap">
     <canvas id="gl"></canvas>
+    <div id="loading">Loading map data&hellip;</div>
     <div id="readout" class="hidden"></div>
     <div id="zoomcap" class="hidden">Beyond supported resolution — see Methods</div>
     <div class="mapctl">
@@ -128,6 +112,7 @@
 <script src="engine_constants.js"></script>
 <script src="land.js"></script>
 <script src="quarries.js"></script>
+<script src="admin_names.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
