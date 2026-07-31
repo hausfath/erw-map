@@ -232,10 +232,21 @@ having misread the number, the response was to add a mechanism that made the out
 look better rather than to find out why it looked odd. The standing rule applies:
 when a number looks wrong, diagnose before changing the model.
 
+**The penalty applies to the haul increment only.** A site at the $25/t gate cost
+takes no penalty, because you must buy and crush rock wherever you are and that
+carries no spatial information. From there the multiplier declines as
+`1/(1 + (cost − gate)/S)` with S = $100/t, putting the half-penalty point at $125/t
+delivered. This replaced five hand-placed breakpoints that ramped hard enough for a
+cell at the cropland median of $61/t to lose 38%; it now loses 27%.
+
+S is an editorial choice, not a derived one, so the readout reports feedstock cost
+per tonne CO₂ alongside — $87/tCO₂ gross at the gate, $211 at the cropland median —
+letting the trade-off be judged in units that mean something.
+
 Cost is compensatory with a floor, not annihilating: expensive rock is bad, not
 impossible. It is **off by default** — the landing map is a statement about physical
-potential, and economics is a layer of assumption on top that should be switched on
-deliberately. Turning it on takes the area-weighted score from 0.49 to 0.30.
+potential, and economics is a layer of assumption that should be switched on
+deliberately. Turning it on takes the area-weighted score from 0.48 to 0.35.
 
 ### Monthly soil temperature and moisture
 

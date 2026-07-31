@@ -688,12 +688,44 @@ FEEDSTOCK_COST_SOURCE = ("USGS crushed-stone unit values for the gate cost; "
 # not assumed. An earlier value of 3.0 here was a guess.
 OUTCROP_TO_QUARRY_FACTOR = 2.0
 
-# Delivered-cost value function, absolute breakpoints in $/t. Unlike the physical
-# terms, cost IS a compensatory economic factor -- expensive rock is bad, not
-# impossible -- so it keeps a non-zero floor and does NOT annihilate the score.
-COST_VALUE_KNOTS = [(25.0, 1.0), (50.0, 0.7), (100.0, 0.35), (200.0, 0.1),
-                    (400.0, 0.05)]
+# Delivered-cost value function. Unlike the physical terms, cost IS a compensatory
+# economic factor -- expensive rock is bad, not impossible -- so it keeps a
+# non-zero floor and does NOT annihilate the score.
+#
+# Penalty applies to the HAUL INCREMENT ONLY, not to total delivered cost:
+#
+#     v_cost = 1 / (1 + (cost - gate) / S)
+#
+# so v = 1.0 exactly at the gate cost, where there is no transport to penalise,
+# and declines from there. The gate cost is unavoidable everywhere -- you have to
+# buy and crush the rock wherever you are -- so charging a site for it is charging
+# it for something it cannot avoid and that carries no spatial information.
+#
+# This replaces five hand-placed knots that were 1.0 at $25 but ramped hard: a
+# cell at the CROPLAND MEDIAN of $61/t lost 38%, which is a heavy penalty for a
+# workable delivered price. The new form is gentler in the working range (0.74 at
+# $61), monotone, smooth, and has ONE stated parameter instead of five.
+#
+# S is an editorial choice and there is no non-arbitrary value for it, so it is
+# named rather than buried: S = $100/t puts the half-penalty point at $125/t
+# delivered. Sensitivity, as v at $61 / $138 / $400 per tonne:
+#     S = $75  -> 0.68 / 0.40 / 0.17
+#     S = $100 -> 0.74 / 0.47 / 0.21     <- default
+#     S = $150 -> 0.81 / 0.57 / 0.29
+# The readout reports feedstock cost per tonne CO2 alongside, so a reader can
+# judge the trade-off in units that mean something rather than trusting S.
+HAUL_PENALTY_SCALE_USD_T = 100.0
 COST_FLOOR = 0.05
+
+
+def cost_value(cost_usd_t):
+    """v_cost from delivered $/t. Defined here so Python and the emitted JS
+    constants cannot disagree about the shape."""
+    import numpy as _np
+    x = _np.asarray(cost_usd_t, dtype=float)
+    v = 1.0 / (1.0 + _np.maximum(x - FEEDSTOCK_GATE_COST_USD_T, 0.0)
+               / HAUL_PENALTY_SCALE_USD_T)
+    return _np.clip(v, COST_FLOOR, 1.0)
 
 # Cost is the FIRST genuinely tradeable factor in this model, so unlike the
 # physical terms it is a real preference rather than a what-if. It enters as an

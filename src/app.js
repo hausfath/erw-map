@@ -489,17 +489,15 @@
   }
 
   /* Invert the cost value function to report $/t, so the readout shows the
-     quantity people actually reason about rather than a unitless multiplier. */
+     quantity people reason about rather than a unitless multiplier.
+
+     v = 1 / (1 + (cost - gate)/S)  inverts in closed form to
+     cost = gate + S (1/v - 1), which is exact rather than the piecewise
+     back-interpolation the five-knot version needed. */
   function costUsdT(vCost) {
     if (!E.cost) return null;
-    const K = E.cost.knots;
-    for (let i = 0; i < K.length - 1; i++) {
-      const [x0, y0] = K[i], [x1, y1] = K[i + 1];
-      if (vCost <= y0 && vCost >= y1) {
-        return x0 + (x1 - x0) * (y0 - vCost) / (y0 - y1 || 1);
-      }
-    }
-    return vCost >= K[0][1] ? K[0][0] : K[K.length - 1][0];
+    const v = clamp(E.cost.floor, vCost, 1);
+    return E.cost.gateUsdT + E.cost.haulScaleUsdT * (1 / v - 1);
   }
 
   function buildSliders() {
@@ -678,6 +676,7 @@
       `<tr><td class="k">Dissolved this year</td><td class="v">${(g.frac * 100).toFixed(1)}%</td></tr>` +
       `<tr><td class="k"><b>Gross CO₂</b></td><td class="v"><b>${cdr < 0.01 ? cdr.toExponential(1) : cdr.toFixed(2)}</b></td></tr>` +
       `<tr><td class="k">Delivered feedstock</td><td class="v">$${(costUsdT(t.vCost) || 0).toFixed(0)}/t</td></tr>` +
+      `<tr><td class="k">&nbsp;&nbsp;per tCO₂ gross</td><td class="v">$${((costUsdT(t.vCost) || 0) / E.cost.tco2PerT).toFixed(0)}</td></tr>` +
       `<tr><td class="k">Suitability, physics</td><td class="v">${(scorePhys * 100).toFixed(0)}</td></tr>` +
       `<tr><td class="k"><b>Suitability, with cost</b></td><td class="v"><b>${(score * 100).toFixed(0)}</b></td></tr>` +
       `<tr><td class="k">Limiting term</td><td class="v">${CRIT[lo].label}</td></tr>` +
@@ -958,13 +957,25 @@
       the number, the response was to add a mechanism that made the output look
       better rather than to find out why it looked odd. When a number looks wrong,
       diagnose before changing the model.</p></div>
+      <p><b>The penalty applies to the haul increment only.</b> A site sitting at
+      the $25/t gate cost takes no penalty at all, because you have to buy and
+      crush rock wherever you are — charging a site for that is charging it for
+      something unavoidable that carries no spatial information. From there the
+      multiplier declines as <code>1/(1 + (cost − gate)/S)</code> with S = $100/t,
+      so the half-penalty point is $125/t delivered.</p>
+      <p>That replaced five hand-placed breakpoints which, while also 1.0 at $25,
+      ramped hard enough that a cell at the <i>cropland median</i> of $61/t lost
+      38%. It now loses 27%. One stated parameter instead of five, and S is an
+      editorial choice rather than a derived one — which is why the readout also
+      reports feedstock cost per tonne of CO₂, so the trade-off can be judged in
+      units that mean something. At the gate that is $87/tCO₂ gross; at the
+      cropland median, $211.</p>
       <p>Cost is the first genuinely <i>tradeable</i> factor here, so unlike the
       physical terms it is compensatory with a floor — it discounts the score
-      without zeroing it, because expensive rock is bad rather than impossible.
-      It is <b>off by default</b>: the landing map is a statement about physical
-      potential, and economics adds a layer of assumption on top that should be
-      switched on deliberately. Turning it on discounts the area-weighted score
-      from 0.49 to 0.30.</p>
+      without zeroing it. It is <b>off by default</b>: the landing map is a
+      statement about physical potential, and economics adds a layer of assumption
+      that should be switched on deliberately. Turning it on takes the
+      area-weighted score from 0.48 to 0.35.</p>
       <p>Still not routed: distance is great-circle times a tortuosity factor.
       Real routing needs a friction surface or a road graph.</p>
 

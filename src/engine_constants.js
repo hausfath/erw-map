@@ -556,28 +556,8 @@ window.ERW = {
   "cost": {
     "floor": 0.05,
     "expDefault": 0.0,
-    "knots": [
-      [
-        25.0,
-        1.0
-      ],
-      [
-        50.0,
-        0.7
-      ],
-      [
-        100.0,
-        0.35
-      ],
-      [
-        200.0,
-        0.1
-      ],
-      [
-        400.0,
-        0.05
-      ]
-    ],
+    "haulScaleUsdT": 100.0,
+    "tco2PerT": 0.289,
     "gateUsdT": 25.0,
     "truckUsdTKm": 0.12,
     "expOn": 1.0,

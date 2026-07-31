@@ -324,9 +324,10 @@ def main() -> int:
                       resampling=Resampling.nearest), nan=0.0)
         mafic_frac = np.nan_to_num(
             onto_grid(INTERIM / "mafic_frac.tif", transform, w, h, crs), nan=0.0)
-        v_cost = piecewise(cost_usd_t, C.COST_VALUE_KNOTS)
-        v_cost = np.clip(np.nan_to_num(v_cost, nan=C.COST_FLOOR),
-                         C.COST_FLOOR, 1.0)
+        # Penalty on the haul increment only: 1.0 at the gate cost, where there
+        # is no transport to charge for.
+        v_cost = np.clip(np.nan_to_num(C.cost_value(cost_usd_t),
+                                       nan=C.COST_FLOOR), C.COST_FLOOR, 1.0)
         feed_source = "GLiM mafic outcrop + MRDS mafic-hosted quarries, truck/rail"
     else:
         cost_usd_t = np.full_like(ph, np.nan)
@@ -641,7 +642,8 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
                             "lo": -2.0, "hi": 2.0},
         "phEncoding": {"lo": 3.0, "hi": 10.0},
         "cost": {"floor": C.COST_FLOOR, "expDefault": C.COST_EXPONENT_DEFAULT,
-                 "knots": C.COST_VALUE_KNOTS,
+                 "haulScaleUsdT": C.HAUL_PENALTY_SCALE_USD_T,
+                 "tco2PerT": round(C.DELIVERED_BASALT_TCO2_PER_T, 3),
                  "gateUsdT": C.FEEDSTOCK_GATE_COST_USD_T,
                  "truckUsdTKm": C.TRUCK_COST_USD_T_KM,
                  "expOn": C.COST_EXPONENT_ON,
