@@ -526,15 +526,18 @@
   function buildPsdSliders() {
     const P = E.psd, host = $("psd-sliders");
     const rows = [
-      {k: "d80", label: "d80, particle size", unit: " \u00b5m",
+      {k: "d80", label: "d80 \u2014 80% of mass is finer", unit: " \u00b5m",
        min: P.d80Range[0], max: P.d80Range[1], step: 1,
        why: `Verified 2026 deliveries span ${P.deliveryRangeUm[0]}\u2013${P.deliveryRangeUm[1]} \u00b5m. ` +
             `Reference ${P.refD80} \u00b5m is the Corn Belt trial.`},
       {k: "width", label: "Distribution width", unit: "",
        min: P.widthRange[0], max: P.widthRange[1], step: 0.05,
-       why: "Rosin\u2013Rammler n. Low is a broad grind with more fines. " +
+       why: "Rosin\u2013Rammler n: low is a broad grind with more fines. " +
+            "This is the DOMINANT unknown here \u2014 across this range it moves " +
+            "surface area 7.7\u00d7 at fixed d80. " +
             (P.refWidthAssumed
-              ? "The reference value is ASSUMED \u2014 the trial reports d80 but not the full distribution."
+              ? "The default is ASSUMED, and narrow for a commercial crush, so it " +
+                "probably understates reactive surface."
               : "")},
     ];
     host.innerHTML = "";
@@ -563,13 +566,20 @@
     // Show the implied roughness multiplier that a BET-scale area would demand.
     // If a fit ever needs lambda far outside 1-100 the model is being asked
     // something unphysical -- that is a falsification bound, not a knob.
+    // lambda is now reported against a MEASURED BET, not an assumed 1-5 m2/g
+    // range. The old readout implied lambda 39-197 at the reference grind, which
+    // straddled the falsification ceiling and made our own default look
+    // unphysical -- an artefact of the unsourced anchor, not of the model.
+    const lamNeeded = P.betMeasured / ssa;
+    const inBounds = lamNeeded >= P.lambdaRange[0] && lamNeeded <= P.lambdaRange[1];
     $("psd-readout").innerHTML =
       `geometric SSA ${ssa.toFixed(4)} m\u00b2/g &nbsp;\u00b7&nbsp; ` +
       `${rel >= 1 ? rel.toFixed(2) + "\u00d7 faster" : (1 / rel).toFixed(2) + "\u00d7 slower"} ` +
       `than reference<br>` +
-      `<span style="opacity:.75">BET-scale area (1\u20135 m\u00b2/g) would imply ` +
-      `\u03bb \u2248 ${Math.round(1 / ssa)}\u2013${Math.round(5 / ssa)}; ` +
-      `plausible range is ${P.lambdaRange[0]}\u2013${P.lambdaRange[1]}</span>`;
+      `<span style="opacity:.75">to match the measured ${P.betMeasured} m\u00b2/g BET of a ` +
+      `real crushed basalt, roughness \u03bb \u2248 <b>${lamNeeded.toFixed(0)}</b> ` +
+      `(bound ${P.lambdaRange[0]}\u2013${P.lambdaRange[1]}${inBounds ? "" : ", OUT OF BOUNDS"}). ` +
+      `Their fines were sieved out, so a real crush at this d80 would need less.</span>`;
     const atRef = Math.abs(psd.d80 - P.refD80) < 0.5
                   && Math.abs(psd.width - P.refWidth) < 0.01;
     $("psd-tag").textContent = atRef ? "Reference" : "Custom";

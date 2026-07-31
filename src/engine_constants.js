@@ -133,7 +133,11 @@ window.ERW = {
       2.5
     ],
     "refSsa": 0.02536,
-    "lambdaDefault": 13.0,
+    "lambdaDefault": 27.5,
+    "lambdaMeasured": 27.5,
+    "lambdaBasis": "Gudbrandsson et al. 2011: 45-125 um sieve fraction with fines removed, 0.703 m2/g krypton BET, implied d80 109 um",
+    "betMeasured": 0.703,
+    "refWidthNarrowForCrush": true,
     "lambdaRange": [
       1.0,
       100.0

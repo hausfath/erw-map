@@ -465,14 +465,28 @@ FEEDSTOCK_DENSITY_KG_M3 = 3000.0     # basalt
 PSD_D_MIN_UM = 1.0                   # finest particle; truncates the RR tail
 PSD_D_MAX_UM = 5000.0
 PSD_REF_D80_UM = 267.0               # Beerling et al. 2024 Corn Belt trial
-PSD_REF_WIDTH = 1.5                  # Rosin-Rammler n; unmeasured, see below
+PSD_REF_WIDTH = 1.5                  # Rosin-Rammler n; UNMEASURED, see below
 PSD_D80_SLIDER_RANGE = (40.0, 600.0)   # brackets the delivery range 67-500 um
 PSD_WIDTH_SLIDER_RANGE = (0.7, 2.5)   # broad .. narrow grind
 
 # The reference WIDTH is an assumption, not a measurement: the Corn Belt trial
 # reports p80 but, as far as we have found, not the full distribution. Every
 # absolute number scales with this choice, which is precisely why it is a slider.
+#
+# It is also the DOMINANT remaining unknown in this part of the model. At the
+# reference d80 of 267 um, moving n across the slider range moves geometric SSA by
+# 7.7x, and moves the lambda implied by the measured BET anchor from 6.8 (n=0.7)
+# to 52 (n=2.5) -- i.e. the width choice alone spans most of the plausible
+# roughness range.
+#
+# n = 1.5 is on the NARROW side for a crushed product. Narrow values describe
+# classified or sieved material, of which Gudbrandsson's fines-removed fraction is
+# an example; a commercial crush retains its fine tail and is broader. We have not
+# changed the default, because doing so without a measured distribution would just
+# swap one assumption for another -- but the direction of the likely error is
+# known, and it means the current default probably UNDERSTATES reactive surface.
 PSD_REF_WIDTH_IS_ASSUMED = True
+PSD_WIDTH_IS_DOMINANT_UNKNOWN = True
 
 # Roughness multiplier on geometric SSA, to be FITTED per deployment once
 # per-deployment particle-size distributions are available. Values outside this
@@ -480,7 +494,27 @@ PSD_REF_WIDTH_IS_ASSUMED = True
 # lambda < 1 is below geometric and unphysical; lambda > 100 implies BET-scale
 # reactivity for coarse grains, i.e. the kinetics are wrong, not the area.
 LAMBDA_ROUGHNESS_RANGE = (1.0, 100.0)
-LAMBDA_DEFAULT = 13.0    # mid-range placeholder; NOT fitted. See docs/VALIDATION.md
+
+# MEASURED anchor, replacing an unsourced one. The UI previously reported the
+# lambda implied by a BET of "1-5 m2/g", which was secondhand and too high --
+# it made the reference grind look like it needed lambda 39-197, straddling the
+# falsification ceiling and implying our own default was unphysical.
+#
+# We already hold a real measurement. Gudbrandsson et al. 2011 crushed Stapafell
+# basalt to a 45-125 um sieve fraction, gravitationally settled the fines OUT, and
+# measured 7030 cm2/g = 0.703 m2/g by 11-point krypton BET. That fraction implies
+# d80 ~= 109 um and a geometric SSA of 0.0255 m2/g for mass uniform across it, so
+#
+#     lambda = 0.703 / 0.0255 = 27.5
+#
+# Comfortably inside 1-100. And the caveat cuts the helpful way: because their
+# fines were removed, a real ERW feedstock at the same d80 carries more fine
+# surface and would need a LOWER lambda still. 27 is an upper bound for
+# classified material, not a central estimate for a crushed product.
+LAMBDA_MEASURED = 27.5
+LAMBDA_MEASURED_BASIS = ("Gudbrandsson et al. 2011: 45-125 um sieve fraction with "
+                         "fines removed, 0.703 m2/g krypton BET, implied d80 109 um")
+LAMBDA_DEFAULT = LAMBDA_MEASURED
 
 # ---------------------------------------------------------------------------
 # L2 composite: value functions, floors, aggregation.
