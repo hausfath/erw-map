@@ -199,7 +199,12 @@
 
     // Gross CDR, then suitability as a value function OF THAT. Zero CDR gives
     // zero suitability by construction rather than by tuning a floor.
-    float X = exp(lr + ld + lt);
+    // eta_DIC stays OUT of the dissolution exponential: carbonate speciation
+    // does not slow the rock dissolving, it discounts the carbon carried per
+    // unit dissolved. Inside the exponential it also suppressed the predicted
+    // fraction weathered by up to ~2x in acid soils -- the one layer field
+    // trials can measure.
+    float X = exp(lr + lt);
     float frac = 1.0 - exp(-uKdiss * X);       // saturates at 1, no flat top
 
     // Fraction weathered on its OWN ramp. No economics multiplier and no
@@ -212,7 +217,10 @@
       return;
     }
 
-    float cdr = frac * uCdrPerFrac * pow(10.0, uSsaShift);
+    // NO grind factor here: uSsaShift is already inside l1, so it is already in
+    // frac via X. Multiplying again applied the grind twice -- at d50 = 40 um
+    // that inflated CO2 by 3.45x and broke the stoichiometric ceiling.
+    float cdr = frac * exp(ld) * uCdrPerFrac;
 
     if (cdr < uNegligible) { fragColor = NEGLIGIBLE; return; }
 
@@ -500,10 +508,12 @@
     const lr = termExp.reactivity * Math.log(Math.max(rel, 1e-12));
     const ld = termExp.eta_dic * Math.log(Math.max(eDic, 1e-12));
     const lt = termExp.drainage * Math.log(Math.max(eTr, 1e-12));
-    const X = Math.exp(lr + ld + lt);
+    // Dissolution drivers only in X; eta_DIC discounts the carbon afterwards
+    // (it does not slow the rock). rel already carries the grind shift, so cdr
+    // must not multiply by it again -- see the matching shader comments.
+    const X = Math.exp(lr + lt);
     const frac = 1 - Math.exp(-K_DISS * X);
-    return {cdr: frac * E.cdrPerFrac * Math.pow(10, ssaShift()),
-            frac, contrib: [lr, ld, lt]};
+    return {cdr: frac * Math.exp(ld) * E.cdrPerFrac, frac, contrib: [lr, ld, lt]};
   }
 
   function suitabilityOf(cdr) {
@@ -776,10 +786,9 @@
     const rel = Math.pow(10, E.l1Enc.lo + raw(row[0]) * (E.l1Enc.hi - E.l1Enc.lo)
                              + ssaShift());
     const X = Math.exp(exps[0] * Math.log(Math.max(rel, 1e-12))
-                     + exps[1] * Math.log(Math.max(raw(row[1]), 1e-12))
                      + exps[2] * Math.log(Math.max(raw(row[2]), 1e-12)));
-    const cdr = (1 - Math.exp(-K_DISS * X)) * E.cdrPerFrac
-                * Math.pow(10, ssaShift());
+    const eDic = Math.pow(Math.max(raw(row[1]), 1e-12), exps[1]);
+    const cdr = (1 - Math.exp(-K_DISS * X)) * eDic * E.cdrPerFrac;
     const fl = E.cost ? E.cost.floor : 1;
     const vc = fl + raw(row[4] === undefined ? 255 : row[4]) * (1 - fl);
     return suitabilityOf(cdr) * Math.pow(vc, econ.costExp);
@@ -796,17 +805,34 @@
     return { rows, edges };
   }
 
-  let baseDec = null;
+  // The neutral baseline's decile edges depend on the grind and the cost
+  // exponent but NOT on the term exponents, so they are cached and invalidated
+  // on exactly those two. The old code cached them and never invalidated, which
+  // is why moving the grind slider produced spurious instability.
+  let baseDec = null, baseKey = null;
+  function neutralEdges() {
+    const key = ssaShift().toFixed(6) + "|" + econ.costExp;
+    if (baseKey !== key) { baseDec = deciles(CRIT.map(() => 1)); baseKey = key; }
+    return baseDec.edges;
+  }
+
   function updateStability() {
     if (!sample) return;
     const neutral = CRIT.map(() => 1);
-    if (!baseDec) baseDec = deciles(neutral);
     const nw = CRIT.map((c) => termExp[c.key]);
+    // Each setting is digitised against ITS OWN area-weighted decile edges, so
+    // this is a rank statistic: a monotone change (level shift, common exponent)
+    // moves nothing, and only genuine re-ranking counts. An earlier version
+    // compared both settings against the baseline's edges, which reported pure
+    // level changes as instability -- a x2 level shift read as "85% moved".
+    const eN = neutralEdges();
+    const atDefault = CRIT.every((c) => Math.abs(termExp[c.key] - 1) < 1e-9);
+    const eW = atDefault ? eN : deciles(nw).edges;
     const dec = (v, edges) => { let d = 0; while (d < edges.length && v >= edges[d]) d++; return d; };
     let moved = 0, tot = 0;
     for (const r of sample) {
-      const a = dec(scoreOf(r, neutral), baseDec.edges);
-      const b = dec(scoreOf(r, nw), baseDec.edges);
+      const a = dec(scoreOf(r, neutral), eN);
+      const b = dec(scoreOf(r, nw), eW);
       tot += r[3];
       if (a !== b) moved += r[3];
     }
@@ -814,8 +840,8 @@
     $("stability").textContent =
       pct < 0.001
         ? "At the physical defaults."
-        : `${(pct * 100).toFixed(1)}% of cropland area changes decile vs the `
-          + `unweighted physical product.`;
+        : `${(pct * 100).toFixed(0)}% of cropland area ranks in a different `
+          + `decile than under the physical defaults.`;
     $("weight-tag").textContent = pct < 0.001 ? "Physics" : "Down-weighted";
   }
 
@@ -847,6 +873,13 @@
       <b>Limiting factor</b>, the term that costs each cell the most; and
       <b>Weathered in year&nbsp;1</b>, the fraction of applied rock predicted to
       dissolve — the quantity field trials can measure.</p>
+      <p>Read the limiting-factor layer with one caveat: the two efficiency terms
+      have a natural zero (efficiency&nbsp;=&nbsp;1) but the dissolution term is
+      measured against a reference condition (pH&nbsp;6.5, 15&nbsp;°C), and the
+      answer moves with that choice. On the reference used here drainage limits
+      the largest share of cropland; a reference 0.5&nbsp;pH units lower and
+      5&nbsp;°C warmer would make dissolution the largest. It shows which term is
+      furthest from its best case, not an absolute ranking of mechanisms.</p>
       <p>It is a screening map, not a site-selection tool: zoom is capped on
       purpose, and every CO₂ figure is gross removal, before in-soil carbonate
       precipitation, riverine re-release and strong-acid competition.</p>
@@ -923,25 +956,46 @@
       </table>
 
       <h3>Known limitations</h3>
+      <div class="flagbox"><p><b>The absolute CO₂ figures are not reconcilable
+      with the model's own water flux, and this is unresolved.</b> Carrying the
+      CO₂ this map reports would require a bicarbonate concentration in drainage
+      water far above what soil solution at each cell's own pH and pCO₂ can hold
+      — a median of about 28 mmol/L against roughly 0.4 mmol/L available, and
+      natural river water runs 0.5–4. The transport term is a Damköhler
+      <i>ratio</i> with no concentration ceiling, so nothing in the chain enforces
+      that bound. Reconciling it is the largest open problem in the model and
+      needs the field-trial literature alongside it, so it is stated here rather
+      than patched. Read the CO₂ layer as a relative ranking; treat the tonnage
+      as an illustration that is probably too high.</p></div>
       <p><b>The kinetics over-predict an independent laboratory test.</b> Against
       Gudbrandsson et al. (2011) crystalline-basalt dissolution (pH 2–11,
-      5–75 °C), the rate mixture over-predicts Ca release by about +0.5 log units
-      and Mg by +0.8 to +1.6, and the bias grows with temperature: the apparent
-      activation energy here (46–63 kJ/mol) is roughly 2× the measured
-      ~${E.kinetics.measuredEaKJ} kJ/mol (${E.kinetics.measuredEaRange[0]}–${E.kinetics.measuredEaRange[1]}
-      across pH); Cascade's ${E.kinetics.cascadeEaKJ} has the same problem.
-      Temperature sensitivity drives the tropical tilt of the map, so the
-      tropics-versus-temperate contrast shown is likely ~2.5× too strong. This is
-      recorded rather than silently retuned, because the fix is a modelling
-      decision that needs its own review.</p>
-      <p><b>The absolute CO₂ scale is uncertain to a factor of a few.</b>
-      Geometric and BET surface areas differ by 130–670× at ERW grain sizes; to
-      match a measured ${E.psd.betMeasured} m²/g BET, the reference grind implies
-      a surface-roughness multiplier λ of roughly
-      ${Math.round(E.psd.betMeasured / E.psd.refSsa)} (plausible range
-      ${E.psd.lambdaRange[0]}–${E.psd.lambdaRange[1]}). The model's median CO₂
-      also sits ~2.3× below what verified deliveries imply. The <i>ranking</i> is
-      the product; the tonnage is an illustration.</p>
+      5–75 °C), the Ca+Mg charge sum the map actually uses over-predicts by
+      about <b>+1.2 log units</b> on the shipped mineral weighting — worse than
+      the per-element figures (Ca +0.5, Mg +1.6) suggest. The bias grows with
+      temperature: the apparent activation energy here (62–69 kJ/mol) is roughly
+      2× the measured ~${E.kinetics.measuredEaKJ} kJ/mol
+      (${E.kinetics.measuredEaRange[0]}–${E.kinetics.measuredEaRange[1]} across
+      pH), and Schaef &amp; McGrail (2009) measure 30 kJ/mol on Columbia River
+      basalt from an independent laboratory; Cascade's ${E.kinetics.cascadeEaKJ}
+      has the same problem, so it is wrong for a reason we share. Temperature
+      sensitivity drives the tropical tilt, so the tropics-versus-temperate
+      contrast shown is likely ~2× too strong.</p>
+      <p><b>The mineral mix is olivine-dominated.</b> Forsterite is 12% of the
+      modelled rock by volume but supplies 80% of its base-cation release, so the
+      map's pH and temperature response is closer to olivine's than to basalt's.
+      Independently, the archetypes' mineral modes imply up to 2× their stated
+      MgO, which is a second line of evidence for the same problem. Both are
+      recorded rather than retuned, because the fix is a modelling decision that
+      needs its own review.</p>
+      <p><b>Surface area sets the absolute scale and is uncertain by orders of
+      magnitude.</b> Geometric and BET areas differ by 130–670× at ERW grain
+      sizes. The roughness multiplier λ (about
+      ${Math.round(E.psd.betMeasured / E.psd.refSsa)} to match a measured
+      ${E.psd.betMeasured} m²/g BET) is reported as a plausibility
+      <i>diagnostic</i> only — it does not enter the calculation, because the map
+      works in rate <i>ratios</i> and a constant multiplier cancels. What does set
+      the level is the dissolved-fraction anchor, calibrated to field-reported
+      year-one weathering.</p>
       <p><b>Gross, not net.</b> In-soil carbonate precipitation, riverine
       re-release and strong-acid competition plausibly claim 20–80% of gross
       removal, and the gap is spatially variable. Nothing here is validated
@@ -977,7 +1031,8 @@
         <tr><td>Efficiency term</td><td>Bertagni &amp; Porporato 2022, STE 838, 156524</td></tr>
         <tr><td>Transport limitation</td><td>Maher &amp; Chamberlain 2014, Science 343, 1502</td></tr>
         <tr><td>Kinetics test</td><td>Gudbrandsson et al. 2011, GCA 75</td></tr>
-        <tr><td>Eligibility</td><td>Puro.earth ERW 2025 v1; Isometric EW-in-agriculture v1.2</td></tr>
+        <tr><td>Eligibility</td><td>Puro.earth ERW Edition 2025 v2 (approved
+          Mar 2026); Isometric EW-in-agriculture v1.2</td></tr>
         <tr><td>Coastlines</td><td>Natural Earth 110m (public domain)</td></tr>
         <tr><td>Region names</td><td>Natural Earth 10m admin-1 (public domain)</td></tr>
       </table>
