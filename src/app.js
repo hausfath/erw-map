@@ -417,7 +417,6 @@
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
     drawLand(box);
-    $("zoomcap").classList.toggle("hidden", box.degPerPx > G.dlon * 0.9);
   }
 
   /* Coastlines on a 2-D overlay canvas above the GL canvas. */
@@ -1049,15 +1048,25 @@
     c.addEventListener("mouseleave", () => {
       if (!pinned) $("readout").classList.add("hidden");
     });
+    // The zoom-cap notice only appears when a zoom-in is actually refused at
+    // the ceiling — the moment it answers a real question. Shown persistently
+    // (as it once was) it covered ~90% of the usable zoom range.
+    const ZOOM_MAX = 40;
+    let capTimer = null;
+    const zoomBy = (f) => {
+      const z = clamp(1, view.zoom * f, ZOOM_MAX);
+      if (f > 1 && z === view.zoom && z >= ZOOM_MAX) {
+        const el = $("zoomcap");
+        el.classList.remove("hidden");
+        clearTimeout(capTimer);
+        capTimer = setTimeout(() => el.classList.add("hidden"), 2200);
+      }
+      view.zoom = z; clampView(); draw();
+    };
     c.addEventListener("wheel", (e) => {
       e.preventDefault();
-      view.zoom = clamp(1, view.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15), 40);
-      clampView();
-      draw();
+      zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15);
     }, { passive: false });
-    const zoomBy = (f) => {
-      view.zoom = clamp(1, view.zoom * f, 40); clampView(); draw();
-    };
     $("zin").onclick = () => zoomBy(1.4);
     $("zout").onclick = () => zoomBy(1 / 1.4);
     $("zreset").onclick = () => {
@@ -1085,6 +1094,7 @@
       : "No quarry inventory built. Run scripts/fetch_quarries.py.";
     $("attrib").textContent =
       "SoilGrids · WorldClim · Potapov et al. cropland · Natural Earth";
+    $("zoomcap").textContent = `Zoom capped — the data is a ${E.labels.grid}`;
     $("method-body").innerHTML = methodsHTML();
 
     initGL();

@@ -265,6 +265,12 @@ narrative. One naming fix: "Fraction weathered", "Dissolved this year" and
 "% weathered in year 1" were three names for the same quantity; it is
 "Weathered in year 1" everywhere now.
 
+The "Beyond supported resolution" banner no longer sits on screen across
+~90% of the zoom range (it appeared as soon as a data cell spanned one
+screen pixel, ~4× zoom, while the cap is 40×). It now flashes for ~2 s only
+when a zoom-in is refused at the cap — the moment the message answers a real
+question — and states the grid spacing.
+
 The readout header now names the region under the cursor ("Iowa, United
 States") instead of bare coordinates: Natural Earth 10m admin-1 rasterised
 onto the analysis grid at build time (`scripts/build_admin_lookup.py`,
