@@ -471,7 +471,8 @@ def main() -> int:
                    cascade=cascade, ph=ph, L1=L1, eta=eta, eta_tr=eta_tr,
                    v_cost=v_cost, cost_conf=cost_conf)
     emit_js(transform, w, h, gha, p50,
-            cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t)
+            cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
+            clim_source=clim_source, monthly=monthly)
     print()
     print("done. Open src/index.html over HTTP:")
     print("  python3 -m http.server 8000 --directory src")
@@ -569,7 +570,8 @@ RAMP = [  # viridis-like, colour-blind safe, legible in light and dark
 ]
 
 
-def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0) -> None:
+def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
+            clim_source="unknown", monthly=False) -> None:
     km = abs(transform.a) * 2.0 * np.pi * C.EARTH_RADIUS_M / 1000.0 / 360.0
     """One generator for BOTH the legend stops and the shader ramp, so they
     cannot drift. This is the failure mode that broke the sibling BiCRS Atlas."""
@@ -625,6 +627,11 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0) -> None:
                 for n in np.linspace(*C.PSD_WIDTH_SLIDER_RANGE, 13)
             ],
         },
+        "kinetics": {"overpredicts": C.KINETICS_OVERPREDICTS,
+                     "measuredEaKJ": C.BASALT_APPARENT_EA_MEASURED_KJ,
+                     "measuredEaRange": list(C.BASALT_APPARENT_EA_MEASURED_RANGE),
+                     "cascadeEaKJ": 68.8,
+                     "source": C.BASALT_APPARENT_EA_SOURCE},
         "cascadeEncoding": {"kind": "log10_ratio_to_median",
                             "lo": -2.0, "hi": 2.0},
         "phEncoding": {"lo": 3.0, "hi": 10.0},
@@ -653,16 +660,23 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0) -> None:
         "stats": {"croplandGha": round(gha, 3), "cdrMedian": round(cdr_p50, 2)},
         "provenance": {
             "soil": "SoilGrids v2.0 via ISRIC WCS (pH 0-15 cm, SOC 0-5 cm + quantiles)",
-            "climate": "WorldClim 2.1 BIO1 / BIO12, 10 arc-min",
+            "climate": clim_source,
             "cropland": "Potapov et al. 2022 percent-cropland, 3 km",
             "drainage": "WaterGAP2-2e groundwater recharge via ISIMIP3a, 0.5 deg",
             "paddy": "GRPI Landsat inundation months x SPAM2010 irrigated rice",
             "feedstock": ("GLiM full-resolution basic igneous outcrop + USGS MRDS "
                           "mafic-hosted stone producers; truck/rail haul, not routed"),
-            "substitutions": [
+            # Generated from the actual build state, never hardcoded: an earlier
+            # version listed stand-ins that had already been replaced, and the
+            # deployed page said so for one commit.
+            "substitutions": ([] if monthly else [
                 "AIR temperature stands in for monthly SOIL temperature",
                 "PRECIPITATION stands in for a soil-moisture climatology",
-    
+            ]) + [
+                "soil moisture is root-zone storage in mm, not a saturation "
+                "fraction: porosity normalisation not yet applied",
+                "kinetics over-predict measured basalt release; activation energy "
+                "is ~2x too high (see the kinetics test)",
             ],
             "dw": {"value": C.DAMKOHLER_DW_M_YR,
                    "range": list(C.DAMKOHLER_DW_RANGE),

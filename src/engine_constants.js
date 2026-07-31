@@ -525,6 +525,16 @@ window.ERW = {
       ]
     ]
   },
+  "kinetics": {
+    "overpredicts": true,
+    "measuredEaKJ": 36.0,
+    "measuredEaRange": [
+      24.2,
+      54.1
+    ],
+    "cascadeEaKJ": 68.8,
+    "source": "Gudbrandsson et al. 2011 GCA 75, Table 5 (Si, 5-75 C)"
+  },
   "cascadeEncoding": {
     "kind": "log10_ratio_to_median",
     "lo": -2.0,
@@ -589,14 +599,14 @@ window.ERW = {
   },
   "provenance": {
     "soil": "SoilGrids v2.0 via ISRIC WCS (pH 0-15 cm, SOC 0-5 cm + quantiles)",
-    "climate": "WorldClim 2.1 BIO1 / BIO12, 10 arc-min",
+    "climate": "Lembrechts monthly soil T (5-15 cm) + TerraClimate moisture",
     "cropland": "Potapov et al. 2022 percent-cropland, 3 km",
     "drainage": "WaterGAP2-2e groundwater recharge via ISIMIP3a, 0.5 deg",
     "paddy": "GRPI Landsat inundation months x SPAM2010 irrigated rice",
     "feedstock": "GLiM full-resolution basic igneous outcrop + USGS MRDS mafic-hosted stone producers; truck/rail haul, not routed",
     "substitutions": [
-      "AIR temperature stands in for monthly SOIL temperature",
-      "PRECIPITATION stands in for a soil-moisture climatology"
+      "soil moisture is root-zone storage in mm, not a saturation fraction: porosity normalisation not yet applied",
+      "kinetics over-predict measured basalt release; activation energy is ~2x too high (see the kinetics test)"
     ],
     "dw": {
       "value": 0.03,
