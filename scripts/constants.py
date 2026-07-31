@@ -543,6 +543,64 @@ DW_ERW_ENHANCED_RATIONALE = (
 )
 
 # ---------------------------------------------------------------------------
+# Feedstock delivered cost.
+#
+# Deliberately simple, and every number stated rather than buried. This is a
+# screening cost surface, NOT a routed haul model: distance is great-circle times
+# a tortuosity factor. Real routing needs a friction surface or a road graph.
+#
+# Gate cost is crushed aggregate at the quarry. USGS reports US crushed stone
+# averaging roughly $14-20/t f.o.b. in recent years; ERW-grade material is ground
+# finer than road aggregate, so the gate cost here is above that range.
+# ---------------------------------------------------------------------------
+FEEDSTOCK_GATE_COST_USD_T = 25.0     # crushed, at the quarry gate
+ROAD_TORTUOSITY = 1.35               # great-circle -> road distance
+
+# TWO HAUL MODES, and this matters more than it looks. A truck-only model put the
+# median delivered cost at $252/t and the 90th percentile at $1,240/t, which would
+# make ERW uneconomic almost everywhere -- an artefact, not a finding. Bulk
+# minerals move long distances by rail, not truck. Taking the cheaper of the two
+# modes brings the median to a plausible figure.
+#
+#   cost_haul = min( truck_rate * d ,  rail_rate * d + transload )
+#
+# The crossover is transload / (truck_rate - rail_rate) ~ 133 km, which is the
+# right order for bulk aggregate. Still not network routing: there may be no rail
+# where this assumes it, which is why the confidence layer exists.
+TRUCK_COST_USD_T_KM = 0.12
+RAIL_COST_USD_T_KM = 0.03
+RAIL_TRANSLOAD_USD_T = 12.0          # two handlings, quarry and railhead
+FEEDSTOCK_COST_SOURCE = ("USGS crushed-stone unit values for the gate cost; "
+                         "haul rates and the rail crossover are assumptions")
+
+# Outcrop distance -> quarry distance where no usable inventory exists.
+# MEASURED at 2.0 inside the trusted MRDS area (prep_feedstock.py reports it),
+# not assumed. An earlier value of 3.0 here was a guess.
+OUTCROP_TO_QUARRY_FACTOR = 2.0
+
+# Delivered-cost value function, absolute breakpoints in $/t. Unlike the physical
+# terms, cost IS a compensatory economic factor -- expensive rock is bad, not
+# impossible -- so it keeps a non-zero floor and does NOT annihilate the score.
+COST_VALUE_KNOTS = [(25.0, 1.0), (50.0, 0.7), (100.0, 0.35), (200.0, 0.1),
+                    (400.0, 0.05)]
+COST_FLOOR = 0.05
+
+# Cost is the FIRST genuinely tradeable factor in this model, so unlike the
+# physical terms its slider is a real preference rather than a what-if. It enters
+# as an exponent on a compensatory multiplier:
+#
+#     suitability = f(gross CDR) * v_cost ^ w_cost
+#
+# The physical half still annihilates -- zero removal is zero suitability at any
+# cost -- while expensive rock reduces the score without zeroing it, because
+# expensive is bad, not impossible.
+#
+# Default 1.0 rather than some middle value: 1.0 is the straightforward reading
+# of "delivered cost matters", and inventing a 0.5 to soften it would be an
+# unlabelled editorial thumb on the scale. Users who disagree can move it.
+COST_EXPONENT_DEFAULT = 1.0
+
+# ---------------------------------------------------------------------------
 # Grid. Analysis is done on an EQUAL-AREA grid, not EPSG:4326, so that "1 km"
 # means 1 km everywhere and haul distances are valid. 4326 is used only as the
 # ingest CRS and 3857 only for display tiles.

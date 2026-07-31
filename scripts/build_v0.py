@@ -44,7 +44,7 @@ def master_grid() -> tuple[rasterio.Affine, int, int, rasterio.crs.CRS]:
 
 
 def onto_grid(path: Path, transform, w, h, crs, *, resampling=Resampling.average,
-              band: int = 1) -> np.ndarray:
+              band: int = 1) -> np.ndarray:  # noqa: D401
     """Reproject any source onto the master grid as float32 with NaN nodata."""
     dst = np.full((h, w), np.nan, dtype="float32")
     with rasterio.open(path) as s:
@@ -131,11 +131,21 @@ def main() -> int:
     ph[(ph < 2.5) | (ph > 11.0)] = np.nan
 
     soc = onto_grid(RAW / "soc_0_5.tif", transform, w, h, crs) / 10.0   # dg/kg -> g/kg
-    soc_q05 = onto_grid(RAW / "soc_q05.tif", transform, w, h, crs) / 10.0
-    soc_q95 = onto_grid(RAW / "soc_q95.tif", transform, w, h, crs) / 10.0
 
     tair = onto_grid(RAW / "wc/wc2.1_10m_bio_1.tif", transform, w, h, crs)     # deg C
     precip = onto_grid(RAW / "wc/wc2.1_10m_bio_12.tif", transform, w, h, crs)  # mm/yr
+
+    # Monthly soil temperature and soil moisture, if prepared. These replace the
+    # two documented stand-ins AND enable monthly integration, which is the point
+    # -- see integrate_monthly() below.
+    mT = INTERIM / "soilT_5_15cm_monthly.tif"
+    mS = INTERIM / "soilmoist_monthly.tif"
+    monthly = mT.exists() and mS.exists()
+    if monthly:
+        soilT_m = np.stack([onto_grid(mT, transform, w, h, crs, band=b)
+                            for b in range(1, 13)])
+        moist_m = np.stack([onto_grid(mS, transform, w, h, crs, band=b)
+                            for b in range(1, 13)])
 
     # Potapov et al. 2022 percent-cropland, 0-100 per 0.025 deg cell.
     #
@@ -186,7 +196,7 @@ def main() -> int:
     print()
     print("computing layers")
     T_K = tair + 273.15
-    # Wetness proxy: still a v0 substitute for a soil-moisture climatology.
+    # Fallback wetness proxy, used only if the monthly stack is absent.
     wet = np.clip(precip / 1200.0, 0.0, 1.0)
 
     # ---- Drainage: real groundwater recharge, replacing the 0.35 x precip
@@ -226,9 +236,49 @@ def main() -> int:
     pco2 = (C.PCO2_UNSATURATED_UATM
             + f_flood * (C.PCO2_SATURATED_UATM - C.PCO2_UNSATURATED_UATM))
 
-    reactivity = K.rate_ca_mg_release(C.FEEDSTOCK_DEFAULT, ph, T_K) * wet
-    eta = K.eta_dic(ph, pco2, T_K)
     eta_tr = K.eta_transport(q)
+
+    if monthly:
+        # MONTHLY INTEGRATION. Compute the rate each month and average the RATE,
+        # never the drivers. Two distinct reasons, and the second matters more:
+        #
+        #  1. Jensen's inequality. The rate is convex in temperature, so the mean
+        #     of the rate exceeds the rate at the mean temperature. The bias is
+        #     latitude-dependent, so it does not cancel -- it tilts an
+        #     annual-mean map toward the tropics.
+        #  2. The temperature x moisture covariance. Weathering needs warm AND
+        #     wet simultaneously. Annual means destroy that, biasing HIGH in
+        #     Mediterranean climates, where the means look ideal but the two
+        #     never coincide, and LOW in monsoon climates.
+        soilT_K = soilT_m + 273.15
+        # Relative saturation from root-zone storage, normalised by its own
+        # local maximum across the year. Crude, and flagged: TerraClimate reports
+        # storage in mm, not a saturation fraction, and porosity is not applied.
+        smax = np.nanmax(moist_m, axis=0)
+        sat_m = np.clip(moist_m / np.maximum(smax, 1e-6), 0.0, 1.0)
+
+        rate_m = np.stack([
+            K.rate_ca_mg_release(C.FEEDSTOCK_DEFAULT, ph, soilT_K[i]) * sat_m[i]
+            for i in range(12)])
+        eta_m = np.stack([K.eta_dic(ph, pco2, soilT_K[i]) for i in range(12)])
+
+        with np.errstate(invalid="ignore"):
+            reactivity = np.nanmean(rate_m, axis=0)
+            eta = np.nansum(rate_m * eta_m, axis=0) / np.maximum(
+                np.nansum(rate_m, axis=0), 1e-30)
+        # eta is RATE-WEIGHTED, not a plain mean: the efficiency that matters is
+        # the one operating when dissolution is actually happening.
+
+        # Quantify the bias we just removed, rather than asserting it.
+        annual_rate = K.rate_ca_mg_release(
+            C.FEEDSTOCK_DEFAULT, ph, np.nanmean(soilT_K, axis=0)
+        ) * np.nanmean(sat_m, axis=0)
+        clim_source = "Lembrechts monthly soil T (5-15 cm) + TerraClimate moisture"
+    else:
+        reactivity = K.rate_ca_mg_release(C.FEEDSTOCK_DEFAULT, ph, T_K) * wet
+        eta = K.eta_dic(ph, pco2, T_K)
+        annual_rate = None
+        clim_source = "FALLBACK: annual AIR temperature + precipitation proxy"
 
     ref = K.rate_ca_mg_release(
         C.FEEDSTOCK_DEFAULT, C.L1_REF["pH"], C.L1_REF["T_soil_C"] + 273.15
@@ -238,9 +288,48 @@ def main() -> int:
 
     cascade = K.cascade_baseline_index(ph, T_K, wet)
 
-    # ---- Eligibility, three-state from exceedance probability
-    p_soc = exceedance_lognormal(soc_q05, soc, soc_q95, C.SOC_EXCLUSION_WT_PCT * 10.0)
+    # ---- Eligibility, three-state from exceedance probability.
+    # Computed at ~2.8 km by prep_layers.py and then AVERAGED, because averaging
+    # the quantiles first and computing the probability from those is not valid
+    # uncertainty propagation -- it widened the apparent spread and inflated the
+    # "marginal" class. Averaging the probability gives the expected area
+    # fraction of the cell that exceeds, which is the screening quantity wanted.
+    p_src = INTERIM / "soc_p_exceed.tif"
+    if p_src.exists():
+        p_soc = np.nan_to_num(
+            onto_grid(p_src, transform, w, h, crs), nan=0.0).astype("float32")
+        p_soc_method = "computed at ~2.8 km, probability averaged"
+    else:
+        p_soc = exceedance_lognormal(
+            onto_grid(RAW / "soc_q05.tif", transform, w, h, crs) / 10.0, soc,
+            onto_grid(RAW / "soc_q95.tif", transform, w, h, crs) / 10.0,
+            C.SOC_EXCLUSION_WT_PCT * 10.0)
+        p_soc_method = "FALLBACK: quantiles averaged first, not valid propagation"
     ph_warn = (ph < C.PH_WARNING_THRESHOLD)      # annotation only, zero score effect
+
+    # ---- Feedstock: delivered cost, the first genuinely ECONOMIC factor.
+    # Unlike the three physical terms it is compensatory -- expensive rock is bad,
+    # not impossible -- so it multiplies the CDR-derived score with a floor
+    # rather than annihilating it.
+    fc = INTERIM / "feedstock_cost.tif"
+    if fc.exists():
+        cost_usd_t = onto_grid(fc, transform, w, h, crs,
+                               resampling=Resampling.average)
+        cost_conf = np.nan_to_num(
+            onto_grid(INTERIM / "feedstock_conf.tif", transform, w, h, crs,
+                      resampling=Resampling.nearest), nan=0.0)
+        mafic_frac = np.nan_to_num(
+            onto_grid(INTERIM / "mafic_frac.tif", transform, w, h, crs), nan=0.0)
+        v_cost = piecewise(cost_usd_t, C.COST_VALUE_KNOTS)
+        v_cost = np.clip(np.nan_to_num(v_cost, nan=C.COST_FLOOR),
+                         C.COST_FLOOR, 1.0)
+        feed_source = "GLiM mafic outcrop + MRDS mafic-hosted quarries, truck/rail"
+    else:
+        cost_usd_t = np.full_like(ph, np.nan)
+        cost_conf = np.zeros_like(ph)
+        mafic_frac = np.zeros_like(ph)
+        v_cost = np.ones_like(ph)
+        feed_source = "NONE -- run prep_feedstock.py"
 
     # ---- Suitability is now a value function of GROSS CDR, not a weighted mean
     # of transformed proxies. One set of breakpoints, on a quantity with units,
@@ -268,9 +357,11 @@ def main() -> int:
     frac = 1.0 - np.exp(-k_diss * np.clip(X, 0.0, None))
     cdr = frac * C.APPLICATION_RATE_T_HA_YR * ceil_t
 
-    suit = piecewise(np.log10(np.maximum(cdr, 1e-9)),
-                     [(np.log10(x), y) for x, y in C.CDR_SUITABILITY_KNOTS])
-    suit = np.where(cdr < C.CDR_NEGLIGIBLE_T_HA_YR, 0.0, suit)
+    suit_phys = piecewise(np.log10(np.maximum(cdr, 1e-9)),
+                          [(np.log10(x), y) for x, y in C.CDR_SUITABILITY_KNOTS])
+    suit_phys = np.where(cdr < C.CDR_NEGLIGIBLE_T_HA_YR, 0.0, suit_phys)
+    # Physical half annihilates; economic half only discounts.
+    suit = suit_phys * np.power(v_cost, C.COST_EXPONENT_DEFAULT)
 
     # ---- Report
     m = (crop >= C.CROPLAND_MIN_FRACTION) & np.isfinite(ph)
@@ -284,7 +375,9 @@ def main() -> int:
         return [float(v[g][o][np.searchsorted(cw, t)]) for t in qs]
 
     print(f"  cropland cells (>={C.CROPLAND_MIN_FRACTION:.0%}): {int(m.sum()):,}")
+    print(f"  climate:         {clim_source}")
     print(f"  drainage source: {q_source}")
+    print(f"  feedstock:       {feed_source}")
     print(f"  paddy source:    {paddy_source}   D_w = {C.DAMKOHLER_DW_M_YR} m/yr "
           f"(published range {C.DAMKOHLER_DW_RANGE[0]}-{C.DAMKOHLER_DW_RANGE[1]})")
     for name, arr, fmt in (("soil pH (0-15 cm)", ph, "{:.2f}"),
@@ -296,7 +389,9 @@ def main() -> int:
                            ("flooded fraction of cell-time", f_flood, "{:.3f}"),
                            ("soil pCO2, uatm", pco2, "{:.0f}"),
                            ("indicative tCO2 gross/ha/yr", cdr, "{:.2f}"),
-                           ("suitability 0-1", suit, "{:.2f}")):
+                           ("delivered cost $/t", cost_usd_t, "{:.0f}"),
+                           ("suitability, physics only", suit_phys, "{:.2f}"),
+                           ("suitability with cost", suit, "{:.2f}")):
         p10, p50, p90 = wq(arr, (0.10, 0.50, 0.90))
         print(f"    {name:28s} area-weighted p10/p50/p90  "
               + " / ".join(fmt.format(v) for v in (p10, p50, p90)))
@@ -305,11 +400,23 @@ def main() -> int:
     marg = float((aw * ((p_soc[m] > C.P_EXCEED_PASSES)
                         & (p_soc[m] <= C.P_EXCEED_EXCLUDED))).sum() / aw.sum())
     print(f"    SOC>5wt% screen: {excl:.1%} of cropland area excluded, "
-          f"{marg:.1%} marginal")
+          f"{marg:.1%} marginal  [{p_soc_method}]")
     paddy_share = float((aw * (f_flood[m] > 0.05)).sum() / aw.sum())
     print(f"    cells >5% flooded cell-time: {paddy_share:.1%} of cropland area")
     print(f"    pH<5.2 annotation flag: "
           f"{float((aw * ph_warn[m]).sum() / aw.sum()):.1%} of cropland area")
+
+    if annual_rate is not None:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = reactivity / np.maximum(annual_rate, 1e-30)
+        rr = ratio[m & np.isfinite(ratio) & (annual_rate > 0)]
+        if rr.size:
+            print(f"    monthly-integrated rate / rate-at-annual-mean: "
+                  f"p10 {np.percentile(rr, 10):.2f}  p50 {np.percentile(rr, 50):.2f}  "
+                  f"p90 {np.percentile(rr, 90):.2f}")
+            print("      >1 is the Jensen effect (convex rate); <1 is the "
+                  "temperature-moisture covariance penalty where warm and wet "
+                  "do not coincide")
 
     # ---- GATE 4: zero CDR must give zero suitability. This is the defect that
     # prompted the redesign: a cell with no carbon removal scored 27.
@@ -357,7 +464,8 @@ def main() -> int:
 
     # ---- Encode textures
     write_textures(crop, p_soc, ph_warn, cdr, m,
-                   cascade=cascade, ph=ph, L1=L1, eta=eta, eta_tr=eta_tr)
+                   cascade=cascade, ph=ph, L1=L1, eta=eta, eta_tr=eta_tr,
+                   v_cost=v_cost, cost_conf=cost_conf)
     emit_js(transform, w, h, gha, p50,
             cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t)
     print()
@@ -379,7 +487,7 @@ def quantize(v, floor: float) -> np.ndarray:
 
 
 def write_textures(crop, p_soc, ph_warn, cdr, valid,
-                   *, cascade, ph, L1, eta, eta_tr) -> None:
+                   *, cascade, ph, L1, eta, eta_tr, v_cost, cost_conf) -> None:
     from PIL import Image
     out = SRC / "textures"
     out.mkdir(parents=True, exist_ok=True)
@@ -434,7 +542,11 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
     # Soil pH over 3.0-10.0 for the hover readout.
     g3 = np.where(np.isfinite(ph),
                   np.rint(np.clip((ph - 3.0) / 7.0, 0, 1) * 255), 0).astype("uint8")
-    b3 = np.zeros_like(g3)
+    # tex3.b = the cost value function, so the shader can apply the economic
+    # multiplier live. Encoded over [COST_FLOOR, 1] since that is its full range.
+    b3 = np.where(valid, np.rint(5 + np.clip(
+        (v_cost - C.COST_FLOOR) / (1.0 - C.COST_FLOOR), 0, 1) * 250.0),
+        0).astype("uint8")
 
     for name, img in (("tex1", rgba(r1, g1, b1)), ("tex2", rgba(r2, flags, b2)),
                       ("tex3", rgba(r3, g3, b3))):
@@ -512,6 +624,14 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0) -> None:
         "cascadeEncoding": {"kind": "log10_ratio_to_median",
                             "lo": -2.0, "hi": 2.0},
         "phEncoding": {"lo": 3.0, "hi": 10.0},
+        "cost": {"floor": C.COST_FLOOR, "expDefault": C.COST_EXPONENT_DEFAULT,
+                 "knots": C.COST_VALUE_KNOTS,
+                 "gateUsdT": C.FEEDSTOCK_GATE_COST_USD_T,
+                 "truckUsdTKm": C.TRUCK_COST_USD_T_KM,
+                 "railUsdTKm": C.RAIL_COST_USD_T_KM,
+                 "railTransloadUsdT": C.RAIL_TRANSLOAD_USD_T,
+                 "outcropToQuarry": C.OUTCROP_TO_QUARRY_FACTOR,
+                 "source": C.FEEDSTOCK_COST_SOURCE},
         "eligibility": {"version": C.ELIGIBILITY_VERSION,
                         "socThreshold": C.SOC_EXCLUSION_WT_PCT,
                         "pExcluded": C.P_EXCEED_EXCLUDED,
@@ -533,10 +653,12 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0) -> None:
             "cropland": "Potapov et al. 2022 percent-cropland, 3 km",
             "drainage": "WaterGAP2-2e groundwater recharge via ISIMIP3a, 0.5 deg",
             "paddy": "GRPI Landsat inundation months x SPAM2010 irrigated rice",
+            "feedstock": ("GLiM full-resolution basic igneous outcrop + USGS MRDS "
+                          "mafic-hosted stone producers; truck/rail haul, not routed"),
             "substitutions": [
                 "AIR temperature stands in for monthly SOIL temperature",
                 "PRECIPITATION stands in for a soil-moisture climatology",
-                "no feedstock or haul-cost layer yet",
+    
             ],
             "dw": {"value": C.DAMKOHLER_DW_M_YR,
                    "range": list(C.DAMKOHLER_DW_RANGE),

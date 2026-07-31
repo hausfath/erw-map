@@ -534,6 +534,38 @@ window.ERW = {
     "lo": 3.0,
     "hi": 10.0
   },
+  "cost": {
+    "floor": 0.05,
+    "expDefault": 1.0,
+    "knots": [
+      [
+        25.0,
+        1.0
+      ],
+      [
+        50.0,
+        0.7
+      ],
+      [
+        100.0,
+        0.35
+      ],
+      [
+        200.0,
+        0.1
+      ],
+      [
+        400.0,
+        0.05
+      ]
+    ],
+    "gateUsdT": 25.0,
+    "truckUsdTKm": 0.12,
+    "railUsdTKm": 0.03,
+    "railTransloadUsdT": 12.0,
+    "outcropToQuarry": 2.0,
+    "source": "USGS crushed-stone unit values for the gate cost; haul rates and the rail crossover are assumptions"
+  },
   "eligibility": {
     "version": "puro_v2025_isometric_v1.2",
     "socThreshold": 5.0,
@@ -561,10 +593,10 @@ window.ERW = {
     "cropland": "Potapov et al. 2022 percent-cropland, 3 km",
     "drainage": "WaterGAP2-2e groundwater recharge via ISIMIP3a, 0.5 deg",
     "paddy": "GRPI Landsat inundation months x SPAM2010 irrigated rice",
+    "feedstock": "GLiM full-resolution basic igneous outcrop + USGS MRDS mafic-hosted stone producers; truck/rail haul, not routed",
     "substitutions": [
       "AIR temperature stands in for monthly SOIL temperature",
-      "PRECIPITATION stands in for a soil-moisture climatology",
-      "no feedstock or haul-cost layer yet"
+      "PRECIPITATION stands in for a soil-moisture climatology"
     ],
     "dw": {
       "value": 0.03,

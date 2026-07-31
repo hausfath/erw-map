@@ -47,6 +47,10 @@
   // zero wherever any required term is zero.
   const termExp = {reactivity: 1, eta_dic: 1, drainage: 1};
   const K_DISS = -Math.log(1 - E.dissolvedFracAtRef);
+  // Economic weight. A real preference, not a what-if: cost genuinely trades off
+  // against physical potential in a way the physical terms do not trade off
+  // against each other.
+  const econ = {costExp: E.cost ? E.cost.expDefault : 0};
   const CRIT = E.terms;
 
   // Data extent, from the generated grid constants.
@@ -134,6 +138,8 @@
   uniform float uCdrPerFrac;      // tCO2/ha/yr per unit dissolved fraction
   uniform float uNegligible;      // CDR below this is "no meaningful potential"
   uniform float uCx[6], uCy[6];   // suitability knots, x in log10(tCO2/ha/yr)
+  uniform float uCostExp;         // exponent on the compensatory cost multiplier
+  uniform float uCostFloor;
 
   const vec4 OUT_OF_DOMAIN = vec4(0.0, 0.0, 0.0, 0.0);
   const vec4 NEGLIGIBLE    = vec4(0.16, 0.17, 0.19, 1.0);
@@ -215,6 +221,12 @@
       }
     }
     if (lc > uCx[5]) sc = uCy[5];
+
+    // Economic discount. Compensatory, with a floor, so it never zeroes a cell
+    // that has real physical potential -- only the physics annihilates.
+    float vCost = uCostFloor
+                + clamp((cc.b * 255.0 - 5.0) / 250.0, 0.0, 1.0) * (1.0 - uCostFloor);
+    sc *= pow(vCost, uCostExp);
 
     vec3 col = texture(uRamp, vec2(clamp(sc, 0.0, 1.0), 0.5)).rgb;
 
@@ -368,6 +380,8 @@
     gl.uniform1f(u("uNegligible"), E.cdrNegligible);
     gl.uniform1fv(u("uCx"), new Float32Array(E.cdrKnots.map(k => Math.log10(k[0]))));
     gl.uniform1fv(u("uCy"), new Float32Array(E.cdrKnots.map(k => k[1])));
+    gl.uniform1f(u("uCostExp"), econ.costExp);
+    gl.uniform1f(u("uCostFloor"), E.cost ? E.cost.floor : 1.0);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texA);
     gl.uniform1i(u("uA"), 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texB);
@@ -466,10 +480,26 @@
 
   /* Decode the raw physical terms at a cell index. */
   function termsAt(i) {
-    const A = cpu.A;
+    const A = cpu.A, C3 = cpu.C;
     const raw = (b) => clamp(0, (b - 5) / 250, 1);
     const l1 = E.l1Enc.lo + raw(A[i]) * (E.l1Enc.hi - E.l1Enc.lo) + ssaShift();
-    return {rel: Math.pow(10, l1), l1, eDic: raw(A[i + 1]), eTr: raw(A[i + 2])};
+    const fl = E.cost ? E.cost.floor : 1;
+    return {rel: Math.pow(10, l1), l1, eDic: raw(A[i + 1]), eTr: raw(A[i + 2]),
+            vCost: fl + raw(C3[i + 2]) * (1 - fl)};
+  }
+
+  /* Invert the cost value function to report $/t, so the readout shows the
+     quantity people actually reason about rather than a unitless multiplier. */
+  function costUsdT(vCost) {
+    if (!E.cost) return null;
+    const K = E.cost.knots;
+    for (let i = 0; i < K.length - 1; i++) {
+      const [x0, y0] = K[i], [x1, y1] = K[i + 1];
+      if (vCost <= y0 && vCost >= y1) {
+        return x0 + (x1 - x0) * (y0 - vCost) / (y0 - y1 || 1);
+      }
+    }
+    return vCost >= K[0][1] ? K[0][0] : K[K.length - 1][0];
   }
 
   function buildSliders() {
@@ -545,6 +575,39 @@
     $("psd-tag").textContent = atRef ? "Reference" : "Custom";
   }
 
+  function buildEconSliders() {
+    if (!E.cost) { $("econ-group").classList.add("hidden"); return; }
+    const host = $("econ-sliders");
+    host.innerHTML =
+      `<div class="slider"><div class="row">` +
+      `<span class="name">Weight on delivered cost</span>` +
+      `<span class="val" id="v-costexp"></span></div>` +
+      `<input type="range" id="s-costexp" min="0" max="150" step="5">` +
+      `<div class="why">0 ignores cost entirely; 1.00 applies it in full. ` +
+      `Gate $${E.cost.gateUsdT}/t, truck $${E.cost.truckUsdTKm}/t-km, ` +
+      `rail $${E.cost.railUsdTKm}/t-km plus $${E.cost.railTransloadUsdT}/t ` +
+      `transload. Great-circle distance, not routed.</div></div>`;
+    const inp = $("s-costexp");
+    inp.value = Math.round(econ.costExp * 100);
+    inp.addEventListener("input", () => {
+      econ.costExp = +inp.value / 100; refresh();
+    });
+  }
+
+  function syncEcon() {
+    if (!E.cost) return;
+    const inp = $("s-costexp");
+    if (inp) inp.value = Math.round(econ.costExp * 100);
+    const lab = $("v-costexp");
+    if (lab) lab.textContent = econ.costExp.toFixed(2);
+    $("econ-tag").textContent = econ.costExp === 0 ? "Ignored"
+      : (Math.abs(econ.costExp - E.cost.expDefault) < 0.005 ? "Full" : "Custom");
+    $("econ-readout").innerHTML =
+      `Where the quarry inventory is unusable, outcrop distance is scaled by ` +
+      `${E.cost.outcropToQuarry}\u00d7 to approximate quarry distance \u2014 a ratio ` +
+      `<i>measured</i> inside the trusted inventory area, not assumed.`;
+  }
+
   function syncSliders() {
     CRIT.forEach((c) => {
       const inp = $("s-" + c.key);
@@ -579,7 +642,8 @@
 
     const t = termsAt(i);
     const g = grossCdr(t.rel, t.eDic, t.eTr);
-    const score = suitabilityOf(g.cdr);
+    const scorePhys = suitabilityOf(g.cdr);
+    const score = scorePhys * Math.pow(t.vCost, econ.costExp);
     // Limiting term = the largest negative contribution to log X.
     let lo = 0;
     for (let k = 1; k < 3; k++) if (g.contrib[k] < g.contrib[lo]) lo = k;
@@ -602,7 +666,9 @@
       `<tr><td class="k">Drainage / transport</td><td class="v">${t.eTr.toFixed(3)}</td></tr>` +
       `<tr><td class="k">Dissolved this year</td><td class="v">${(g.frac * 100).toFixed(1)}%</td></tr>` +
       `<tr><td class="k"><b>Gross CO₂</b></td><td class="v"><b>${cdr < 0.01 ? cdr.toExponential(1) : cdr.toFixed(2)}</b></td></tr>` +
-      `<tr><td class="k"><b>Suitability</b></td><td class="v"><b>${(score * 100).toFixed(0)}</b></td></tr>` +
+      `<tr><td class="k">Delivered feedstock</td><td class="v">$${(costUsdT(t.vCost) || 0).toFixed(0)}/t</td></tr>` +
+      `<tr><td class="k">Suitability, physics</td><td class="v">${(scorePhys * 100).toFixed(0)}</td></tr>` +
+      `<tr><td class="k"><b>Suitability, with cost</b></td><td class="v"><b>${(score * 100).toFixed(0)}</b></td></tr>` +
       `<tr><td class="k">Limiting term</td><td class="v">${CRIT[lo].label}</td></tr>` +
       `<tr><td class="k">Soil pH (0–15 cm)</td><td class="v">${soilPh.toFixed(2)}</td></tr>` +
       `<tr><td class="k">Cropland</td><td class="v">${cropPct.toFixed(0)}%</td></tr>` +
@@ -674,7 +740,7 @@
         if (!(B[i + 1] & 1)) continue;
         const crop = B[i] / 255;
         if (crop < 0.01) continue;
-        out.push([A[i], A[i + 1], A[i + 2], crop * wLat]);
+        out.push([A[i], A[i + 1], A[i + 2], crop * wLat, cpu.C[i + 2]]);
       }
     }
     sample = out;
@@ -689,7 +755,9 @@
                      + exps[2] * Math.log(Math.max(raw(row[2]), 1e-12)));
     const cdr = (1 - Math.exp(-K_DISS * X)) * E.cdrPerFrac
                 * Math.pow(10, ssaShift());
-    return suitabilityOf(cdr);
+    const fl = E.cost ? E.cost.floor : 1;
+    const vc = fl + raw(row[4] === undefined ? 255 : row[4]) * (1 - fl);
+    return suitabilityOf(cdr) * Math.pow(vc, econ.costExp);
   }
 
   function deciles(nw) {
@@ -882,7 +950,7 @@
 
   /* ---------------- wiring ---------------- */
   function refresh() {
-    syncSliders(); syncPsd(); renderLegend(); updateStability(); draw();
+    syncSliders(); syncPsd(); syncEcon(); renderLegend(); updateStability(); draw();
   }
 
   function setMode(m) {
@@ -894,6 +962,7 @@
     // Grind does not apply to Cascade's index: their formulation has no surface
     // area term at all, which is part of the point of showing it.
     $("psd-group").classList.toggle("hidden", m === "cascade");
+    $("econ-group").classList.toggle("hidden", m !== "score" || !E.cost);
     refresh();
   }
 
@@ -960,6 +1029,7 @@
 
     buildSliders();
     buildPsdSliders();
+    buildEconSliders();
     attachPanZoom();
     document.querySelectorAll("#mode-seg .seg-btn").forEach((btn) =>
       btn.addEventListener("click", () => setMode(btn.dataset.mode)));

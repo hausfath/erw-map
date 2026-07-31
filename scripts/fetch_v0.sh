@@ -37,7 +37,7 @@ sg() {   # sg <coverage-map> <coverage-id> <out>
 &SCALESIZE=long(${W}),lat(${H})"
 }
 
-echo "1/6 SoilGrids (pH, SOC, and the quantiles the eligibility work needs)"
+echo "1/7 SoilGrids (pH, SOC, and the quantiles the eligibility work needs)"
 sg phh2o phh2o_0-5cm_mean   ph_0_5.tif
 sg phh2o phh2o_5-15cm_mean  ph_5_15.tif
 sg soc   soc_0-5cm_mean     soc_0_5.tif
@@ -45,7 +45,7 @@ sg soc   soc_0-5cm_Q0.05    soc_q05.tif
 sg soc   soc_0-5cm_Q0.95    soc_q95.tif
 sg bdod  bdod_0-5cm_mean    bdod_0_5.tif
 
-echo "2/6 WorldClim 2.1 bioclim at 10 arc-min (BIO1 air temp, BIO12 precip)"
+echo "2/7 WorldClim 2.1 bioclim at 10 arc-min (BIO1 air temp, BIO12 precip)"
 if [ ! -s data/raw/wc_bio.zip ]; then
   curl -sSfL --max-time 900 -o data/raw/wc_bio.zip \
     "https://geodata.ucdavis.edu/climate/worldclim/2_1/base/wc2.1_10m_bio.zip"
@@ -53,7 +53,7 @@ fi
 unzip -o -q data/raw/wc_bio.zip -d data/raw/wc \
   'wc2.1_10m_bio_1.tif' 'wc2.1_10m_bio_12.tif'
 
-echo "3/6 Potapov et al. 2022 percent-cropland, 3 km (7.4 MB)"
+echo "3/7 Potapov et al. 2022 percent-cropland, 3 km (7.4 MB)"
 # 0-100 percent cropland per 0.025 deg cell, EPSG:4326.
 #
 # NOT glad.umd.edu/croplands/tiledata/global_crop_probability.tif.gz, which an
@@ -69,7 +69,7 @@ fi
 
 # Discard the superseded probability layer if a previous run left it behind.
 rm -f data/raw/glad_crop_prob.tif data/raw/glad_crop_prob.tif.gz
-echo "4/6 WaterGAP2-2e groundwater recharge via ISIMIP3a (263 MB)"
+echo "4/7 WaterGAP2-2e groundwater recharge via ISIMIP3a (263 MB)"
 # Recharge, not total runoff: we want water percolating below the root zone
 # carrying dissolved bicarbonate, not overland flow. The histsoc scenario
 # simulates irrigation return flow, which matters on irrigated cropland.
@@ -79,7 +79,7 @@ if [ ! -s data/raw/watergap_qr.nc ] && [ ! -s data/interim/drainage_recharge_mmy
     "https://files.isimip.org/ISIMIP3a/OutputData/water_global/WaterGAP2-2e/gswp3-w5e5/historical/watergap2-2e_gswp3-w5e5_obsclim_histsoc_default_qr_global_monthly_1901_2019.nc"
 fi
 
-echo "5/6 GRPI rice-paddy inundation, 0.1 deg monthly (4 MB)"
+echo "5/7 GRPI rice-paddy inundation, 0.1 deg monthly (4 MB)"
 # Note: this record publishes only the CH4 emission field, not the paddy area
 # map from the paper. We use its monthly PRESENCE pattern for months-flooded and
 # take sub-cell area fraction from SPAM below.
@@ -88,13 +88,31 @@ if [ ! -s data/raw/grpi_paddy.nc ] && [ ! -s data/interim/paddy_months_flooded.t
     "https://zenodo.org/records/15210212/files/grpi_hemco.nc?download=1"
 fi
 
-echo "6/6 SPAM2010 irrigated-rice physical area (143 MB, keep one 37 MB layer)"
+echo "6/7 SPAM2010 irrigated-rice physical area (143 MB, keep one 37 MB layer)"
 if [ ! -s data/raw/spam2010V2r0_global_A_RICE_I.tif ] && [ ! -s data/interim/paddy_area_frac.tif ]; then
   curl -sSfL --max-time 2400 -o data/raw/spam2010.zip \
     "https://dataverse.harvard.edu/api/access/datafile/3985010"
   unzip -o -q -j data/raw/spam2010.zip "*RICE_I.tif" -d data/raw/
   rm -f data/raw/spam2010.zip
 fi
+
+echo "7/7 SoilGrids SOC quantiles at 0.025 deg, for a VALID exceedance probability"
+# Computed at ~2.8 km then averaged, because averaging quantiles first (as an
+# earlier version did) is not valid uncertainty propagation and inflated the
+# "marginal" eligibility class.
+for Q in Q0.05 Q0.5 Q0.95; do
+  K=$(echo "$Q" | tr -d '.' | sed 's/Q0/q/' | sed 's/q05$/q05/;s/q5$/q50/;s/q95$/q95/')
+  [ -s "data/raw/soc_fine_${K}.tif" ] && continue
+  [ -s data/interim/soc_p_exceed.tif ] && continue
+  echo "  soc_0-5cm_${Q}"
+  curl -sSf --max-time 900 -o "data/raw/soc_fine_${K}.tif" \
+    "${WCS}?map=/map/soc.map&SERVICE=WCS&VERSION=2.0.1&REQUEST=GetCoverage\
+&COVERAGEID=soc_0-5cm_${Q}&FORMAT=GEOTIFF_INT16\
+&SUBSET=long(-180,180)&SUBSET=lat(${LAT0},${LAT1})\
+&SUBSETTINGCRS=http://www.opengis.net/def/crs/EPSG/0/4326\
+&OUTPUTCRS=http://www.opengis.net/def/crs/EPSG/0/4326\
+&SCALESIZE=long(14400),lat(5600)"
+done
 
 echo
 echo "Raw inputs:"

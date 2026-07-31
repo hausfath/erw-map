@@ -10,6 +10,7 @@ Outputs land in data/interim/ and are a few hundred kB each.
   drainage_recharge_mmyr.tif   WaterGAP2-2e groundwater recharge, 30-yr mean
   paddy_months_flooded.tif     GRPI months per year with rice-paddy inundation
   paddy_area_frac.tif          SPAM2010 irrigated-rice area fraction of cell
+  soc_p_exceed.tif             P(SOC > 5 wt%), computed fine then averaged
 
 Run with --delete-raw once the outputs look right.
 """
@@ -21,7 +22,9 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
+from rasterio.enums import Resampling
 from rasterio.transform import from_origin
+from rasterio.warp import reproject
 
 sys.path.insert(0, str(Path(__file__).parent))
 import constants as C  # noqa: E402
@@ -192,11 +195,90 @@ def prep_paddy_area() -> bool:
     return True
 
 
+def prep_soc_exceedance() -> bool:
+    """P(SOC > 5 wt%) computed at ~2.8 km, then AVERAGED to the analysis grid.
+
+    This corrects a real methodological error. The build previously resampled the
+    q05/q50/q95 quantiles to 0.1 deg and computed the probability from the
+    averaged quantiles. Averaging quantiles is not averaging distributions, so
+    that was not valid uncertainty propagation -- and it inflated the "marginal"
+    class, because averaging widened the apparent spread.
+
+    Averaging the PROBABILITY is valid: the mean of an indicator's expectation
+    over sub-cells is the expected AREA FRACTION of the coarse cell that exceeds
+    the threshold, which is exactly the quantity a screening map wants.
+
+    Two caveats that going finer reduces but does not remove:
+      - Change of support. SoilGrids quantiles describe a ~250 m block average,
+        while the protocol threshold applies to a sampled field. Block averaging
+        reduces variance, so this still understates how often an individual field
+        crosses. It is a screening likelihood, not a calibrated eligibility
+        probability. 2.8 km is closer to field scale than 11 km, not equal to it.
+      - Reconstructing a distribution from three quantiles needs an assumption;
+        lognormal, matched in log space, because SOC is positive and right-skewed.
+    """
+    need = {k: RAW / f"soc_fine_{k}.tif" for k in ("q05", "q50", "q95")}
+    missing = [k for k, v in need.items() if not v.exists()]
+    if missing:
+        print(f"  SKIP SOC exceedance: missing {missing} (see fetch_v0.sh stage 7)")
+        return False
+    print("SOC exceedance probability at ~2.8 km, then averaged")
+
+    from scipy.special import erf
+    with rasterio.open(need["q50"]) as s:
+        t, w, h = s.transform, s.width, s.height
+        q50 = s.read(1).astype("float64") / 10.0        # dg/kg -> g/kg
+    with rasterio.open(need["q05"]) as s:
+        q05 = s.read(1).astype("float64") / 10.0
+    with rasterio.open(need["q95"]) as s:
+        q95 = s.read(1).astype("float64") / 10.0
+
+    thr = C.SOC_EXCLUSION_WT_PCT * 10.0                 # 5 wt% = 50 g/kg
+    valid = (q50 > 0) & (q95 > 0) & (q05 > 0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        mu = np.log(np.maximum(q50, 1e-6))
+        sigma = np.maximum(
+            (np.log(np.maximum(q95, 1e-6)) - np.log(np.maximum(q05, 1e-6)))
+            / C.Z_90_TWO_SIDED, 1e-3)
+        z = (np.log(thr) - mu) / sigma
+        p = 0.5 * (1.0 - erf(z / np.sqrt(2.0)))
+    p = np.where(valid, p, np.nan).astype("float32")
+
+    fin = p[np.isfinite(p)]
+    print(f"  at 2.8 km over land: mean P {fin.mean():.3f}; "
+          f"P>0.9 {float((fin > 0.9).mean()):.2%}, "
+          f"0.1<P<=0.9 {float(((fin > 0.1) & (fin <= 0.9)).mean()):.2%}")
+
+    # Average the PROBABILITY onto the analysis grid here, so the committed
+    # artefact is small and so the valid-propagation step is done once, in one
+    # place, rather than implicitly by whatever resampling the build happens to
+    # use. Resampling.average on a probability field is the right operation: the
+    # result is the expected area fraction of the coarse cell that exceeds.
+    from rasterio.transform import from_origin as _fo
+    with rasterio.open(RAW / "ph_0_5.tif") as g:
+        gt, gw, gh, gcrs = g.transform, g.width, g.height, g.crs
+    dst = np.full((gh, gw), np.nan, dtype="float32")
+    reproject(source=p, destination=dst,
+              src_transform=_fo(t.c, t.f, abs(t.a), abs(t.e)),
+              src_crs="EPSG:4326",
+              dst_transform=gt, dst_crs=gcrs,
+              src_nodata=np.nan, dst_nodata=np.nan,
+              resampling=Resampling.average)
+    d = dst[np.isfinite(dst)]
+    print(f"  averaged to the analysis grid: mean P {d.mean():.3f}; "
+          f"P>0.9 {float((d > 0.9).mean()):.2%}, "
+          f"0.1<P<=0.9 {float(((d > 0.1) & (d <= 0.9)).mean()):.2%}")
+    write_tif(INTERIM / "soc_p_exceed.tif", dst, gt.c, gt.f, abs(gt.a), abs(gt.e))
+    return True
+
+
 def main() -> int:
-    made = [prep_drainage(), prep_paddy_months(), prep_paddy_area()]
+    made = [prep_drainage(), prep_paddy_months(), prep_paddy_area(),
+            prep_soc_exceedance()]
     if "--delete-raw" in sys.argv and all(made):
         for f in ("watergap_qr.nc", "grpi_paddy.nc",
-                  "spam2010V2r0_global_A_RICE_I.tif"):
+                  "spam2010V2r0_global_A_RICE_I.tif",
+                  "soc_fine_q05.tif", "soc_fine_q50.tif", "soc_fine_q95.tif"):
             p = RAW / f
             if p.exists():
                 mb = p.stat().st_size / 1e6
