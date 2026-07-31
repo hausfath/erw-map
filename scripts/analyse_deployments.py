@@ -50,6 +50,7 @@ def load() -> list[dict] | None:
     for r in rows:
         for k in ("rate_t_ha", "fw_p50", "fw_p16", "cdr_tco2_ha", "period_months"):
             r[k] = float(r[k])
+        r["p50_um"] = float(r["p50_um"]) if r.get("p50_um") else None
     return rows
 
 
@@ -179,7 +180,7 @@ def regime_comparison(rows: list[dict]) -> None:
 def feedstock_co2_potential(rows: list[dict]) -> None:
     """Rows with independently measured CDR let us back out the feedstock's real
     CO2 potential, so their departure from the nominal 0.33 tCO2/t is a finding."""
-    rule("4. What the measured rows say about actual feedstock CO2 potential")
+    rule("8. What the measured rows say about actual feedstock CO2 potential")
     print("  For rows where CDR was independently measured, implied CO2 potential")
     print("  = cdr / (rate x fw):")
     print()
@@ -205,7 +206,7 @@ def feedstock_co2_potential(rows: list[dict]) -> None:
 def why_year_one_fw_is_the_wrong_observable(rows: list[dict]) -> None:
     """The most important caveat, and it cuts against reading too much into
     section 3 either way."""
-    rule("5. Why year-one fraction weathered is a weak test of a rate law")
+    rule("9. Why year-one fraction weathered is a weak test of a rate law")
 
     x = np.log(np.array([r["rate_t_ha"] for r in rows]))
     y = np.log(np.array([r["fw_p50"] for r in rows]))
@@ -249,8 +250,79 @@ def why_year_one_fw_is_the_wrong_observable(rows: list[dict]) -> None:
     print("      single cleanest experiment for the paddy claim")
 
 
+def grain_size_controlled(rows: list[dict]) -> None:
+    """Redo the regime comparison now that p50 is measured per operator.
+
+    The headline result is that the comparison is UNIDENTIFIABLE, and that
+    conclusion is stronger than the one this script previously reported.
+    """
+    import sys as _sys
+    from pathlib import Path as _P
+    _sys.path.insert(0, str(_P(__file__).parent))
+    import constants as _C
+    import kinetics as _K
+
+    rule("7. Regime comparison with grain size controlled")
+    have = [r for r in rows if r["p50_um"]]
+    if not have:
+        print("  no p50 values in the fixture; nothing to control for")
+        return
+
+    by_regime = {}
+    for r in have:
+        by_regime.setdefault(r["regime"], set()).add(r["p50_um"])
+    print("  p50 values present in each regime:")
+    for reg, ps in sorted(by_regime.items()):
+        print(f"    {reg:16s} {sorted(ps)}")
+    collinear = all(len(v) == 1 for v in by_regime.values())
+    print()
+    if collinear:
+        print("  GRAIN SIZE IS PERFECTLY COLLINEAR WITH REGIME. Each regime has")
+        print("  exactly one grind. Regime and grain size are the same variable, so")
+        print("  no amount of statistics can separate them. This is stronger than")
+        print("  'low power': the comparison is UNIDENTIFIABLE.")
+        print()
+
+    # Normalise to a common grind and rate. Fraction weathered SATURATES, so
+    # invert to the rate-like exposure first -- rescaling Fw linearly gave a
+    # physically impossible 106% when first tried.
+    ref = _K.ssa_geometric(_C.PSD_REF_D50_UM, _C.PSD_REF_WIDTH)
+    base_rate = 44.7
+    print(f"  Normalised to p50 {_C.PSD_REF_D50_UM:.0f} um and {base_rate:.1f} t/ha,")
+    print("  inverting through Fw = 1 - exp(-kX) rather than scaling Fw directly:")
+    print(f"    {'deployment':14s} {'p50':>5s} {'fw':>7s} {'fw_norm':>8s}")
+    norm = {}
+    for r in have:
+        X = -math.log(1.0 - r["fw_p50"])
+        sr = _K.ssa_geometric(r["p50_um"], _C.PSD_REF_WIDTH) / ref
+        Xn = X / sr * (r["rate_t_ha"] / base_rate) ** 0.58
+        fwn = 1.0 - math.exp(-Xn)
+        norm.setdefault(r["regime"], []).append(fwn)
+        print(f"    {r['deployment']:14s} {r['p50_um']:5.0f} {r['fw_p50']:7.1%} {fwn:8.1%}")
+    print()
+    print("  Regime means at a common grind and rate:")
+    for reg, v in sorted(norm.items(), key=lambda kv: -np.mean(kv[1])):
+        print(f"    {reg:16s} {np.mean(v):7.1%}  (n={len(v)})")
+    print()
+    print("  This REVERSES the ordering this script reported before p50 was known,")
+    print("  putting acidic paddy first rather than last. Do NOT read that as")
+    print("  support for the model: because grain size and regime are the same")
+    print("  variable here, 'normalising for grain size' and 'removing the regime")
+    print("  effect' are the same operation. The reversal only shows which variable")
+    print("  the variance was attributed to.")
+    print()
+    print("  What it DOES establish: the earlier claim that these deliveries mildly")
+    print("  CONTRADICT the paddy prediction was unsupported. The data is")
+    print("  uninformative about regime, not contrary to it. That was an over-read")
+    print("  and is retracted.")
+    print()
+    print("  To make it identifiable you need two grinds within one regime, or one")
+    print("  grind across two regimes. A single site running coarse and fine lots")
+    print("  side by side would do it.")
+
+
 def what_would_make_this_a_real_test(rows: list[dict]) -> None:
-    rule("6. What is needed to turn this into a real test")
+    rule("10. What is needed to turn this into a real test")
     print("  In priority order, by how much each would raise the test's power:")
     print()
     print("  1. PER-DEPLOYMENT PARTICLE-SIZE DISTRIBUTION, not just d80.")
@@ -299,6 +371,7 @@ def main() -> int:
     check_cdr_is_circular(rows)
     rate_vs_fw(rows)
     regime_comparison(rows)
+    grain_size_controlled(rows)
     feedstock_co2_potential(rows)
     why_year_one_fw_is_the_wrong_observable(rows)
     what_would_make_this_a_real_test(rows)

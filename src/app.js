@@ -61,20 +61,20 @@
   };
   // Particle size. Held separately from the weights because it is a physical
   // assumption about the feedstock, not a preference about what matters.
-  const psd = { d80: E.psd.refD80, width: E.psd.refWidth };
+  const psd = { d50: E.psd.refD50, width: E.psd.refWidth };
 
   /* Bilinear lookup into the precomputed log10(SSA/SSA_ref) table. Precomputed
      in Python so the browser needs no gamma function and cannot disagree with
      the pipeline about the integral. */
   function ssaShift() {
-    const P = E.psd, gx = P.d80Grid, gy = P.widthGrid, T = P.shiftTable;
+    const P = E.psd, gx = P.d50Grid, gy = P.widthGrid, T = P.shiftTable;
     const f = (arr, v) => {
       if (v <= arr[0]) return [0, 0];
       if (v >= arr[arr.length - 1]) return [arr.length - 2, 1];
       let i = 0; while (i < arr.length - 2 && v > arr[i + 1]) i++;
       return [i, (v - arr[i]) / (arr[i + 1] - arr[i])];
     };
-    const [i, fi] = f(gx, psd.d80), [j, fj] = f(gy, psd.width);
+    const [i, fi] = f(gx, psd.d50), [j, fj] = f(gy, psd.width);
     const a = T[j][i] + (T[j][i + 1] - T[j][i]) * fi;
     const b = T[j + 1][i] + (T[j + 1][i + 1] - T[j + 1][i]) * fi;
     return a + (b - a) * fj;
@@ -133,7 +133,7 @@
   uniform int  uMode;             // 0 suitability, 1 limiting, 2 cascade
   uniform bool uElig;
   uniform vec2 uL1Enc;            // lo, hi of the stored L1 range
-  uniform float uSsaShift;        // log10(SSA(d80,width) / SSA(ref))
+  uniform float uSsaShift;        // log10(SSA(d50,width) / SSA(ref))
   uniform float uKdiss;           // -ln(1 - dissolved fraction at reference)
   uniform float uCdrPerFrac;      // tCO2/ha/yr per unit dissolved fraction
   uniform float uNegligible;      // CDR below this is "no meaningful potential"
@@ -526,15 +526,17 @@
   function buildPsdSliders() {
     const P = E.psd, host = $("psd-sliders");
     const rows = [
-      {k: "d80", label: "d80 \u2014 80% of mass is finer", unit: " \u00b5m",
-       min: P.d80Range[0], max: P.d80Range[1], step: 1,
-       why: `Verified 2026 deliveries span ${P.deliveryRangeUm[0]}\u2013${P.deliveryRangeUm[1]} \u00b5m. ` +
-            `Reference ${P.refD80} \u00b5m is the Corn Belt trial.`},
+      {k: "d50", label: "d50 \u2014 half the mass is finer", unit: " \u00b5m",
+       min: P.d50Range[0], max: P.d50Range[1], step: 5,
+       why: `p50, because that is what the field reports. Measured 2026 ` +
+            `deliveries span ${P.deliveryRangeUm[0]}\u2013${P.deliveryRangeUm[1]} \u00b5m ` +
+            `(finest ${P.deliveryP50.lithos}, coarsest ${P.deliveryP50.mati}). ` +
+            `Default ${P.refD50} \u00b5m sits mid-range.`},
       {k: "width", label: "Distribution width", unit: "",
        min: P.widthRange[0], max: P.widthRange[1], step: 0.05,
        why: "Rosin\u2013Rammler n: low is a broad grind with more fines. " +
             "This is the DOMINANT unknown here \u2014 across this range it moves " +
-            "surface area 7.7\u00d7 at fixed d80. " +
+            "surface area several-fold at fixed d50. " +
             (P.refWidthAssumed
               ? "The default is ASSUMED, and narrow for a commercial crush, so it " +
                 "probably understates reactive surface."
@@ -558,8 +560,8 @@
 
   function syncPsd() {
     const P = E.psd;
-    const d = $("pv-d80"), w = $("pv-width");
-    if (d) d.textContent = psd.d80.toFixed(0) + " \u00b5m";
+    const d = $("pv-d50"), w = $("pv-width");
+    if (d) d.textContent = psd.d50.toFixed(0) + " \u00b5m";
     if (w) w.textContent = psd.width.toFixed(2);
     const ssa = ssaNow();
     const rel = Math.pow(10, ssaShift());
@@ -579,8 +581,8 @@
       `<span style="opacity:.75">to match the measured ${P.betMeasured} m\u00b2/g BET of a ` +
       `real crushed basalt, roughness \u03bb \u2248 <b>${lamNeeded.toFixed(0)}</b> ` +
       `(bound ${P.lambdaRange[0]}\u2013${P.lambdaRange[1]}${inBounds ? "" : ", OUT OF BOUNDS"}). ` +
-      `Their fines were sieved out, so a real crush at this d80 would need less.</span>`;
-    const atRef = Math.abs(psd.d80 - P.refD80) < 0.5
+      `Their fines were sieved out, so a real crush at this d50 would need less.</span>`;
+    const atRef = Math.abs(psd.d50 - P.refD50) < 2.5
                   && Math.abs(psd.width - P.refWidth) < 0.01;
     $("psd-tag").textContent = atRef ? "Reference" : "Custom";
   }
@@ -1043,8 +1045,8 @@
         <tr><td>Transport limitation</td><td>Maher &amp; Chamberlain 2014, Science 343, 1502 —
           D_w = ${E.provenance.dw ? E.provenance.dw.value : "?"} m/yr,
           published range ${E.provenance.dw ? E.provenance.dw.range.join("\u2013") : "?"}</td></tr>
-        <tr><td>Particle size</td><td>Rosin\u2013Rammler over a ${E.psd.d80Range[0]}\u2013${E.psd.d80Range[1]} \u00b5m
-          d80 range; geometric area, not BET</td></tr>
+        <tr><td>Particle size</td><td>Rosin\u2013Rammler over a ${E.psd.d50Range[0]}\u2013${E.psd.d50Range[1]} \u00b5m
+          d50 range; geometric area, not BET</td></tr>
         <tr><td>Eligibility</td><td>Puro.earth ERW 2025 v1; Isometric EW-in-agriculture v1.2</td></tr>
         <tr><td>Coastlines</td><td>Natural Earth 110m (public domain)</td></tr>
       </table>
@@ -1145,8 +1147,8 @@
       CRIT.forEach((c) => { termExp[c.key] = 1; }); refresh();
     };
     $("btn-psd-reset").onclick = () => {
-      psd.d80 = E.psd.refD80; psd.width = E.psd.refWidth;
-      $("ps-d80").value = psd.d80; $("ps-width").value = psd.width;
+      psd.d50 = E.psd.refD50; psd.width = E.psd.refWidth;
+      $("ps-d50").value = psd.d50; $("ps-width").value = psd.width;
       refresh();
     };
     $("btn-random").onclick = () => {

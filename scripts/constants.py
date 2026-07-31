@@ -464,20 +464,39 @@ TERM_EXPONENT_RANGE = (0.0, 1.0)
 FEEDSTOCK_DENSITY_KG_M3 = 3000.0     # basalt
 PSD_D_MIN_UM = 1.0                   # finest particle; truncates the RR tail
 PSD_D_MAX_UM = 5000.0
-PSD_REF_D80_UM = 267.0               # Beerling et al. 2024 Corn Belt trial
+# d50, not d80: the ERW field reports p50, so the slider should speak the same
+# language as the deliveries. Default 150 um sits in the middle of the observed
+# spread and is consistent with the Beerling trial: their reported p80 of 267 um
+# converts to a p50 of 152 um at our reference width.
+PSD_REF_D50_UM = 150.0
 PSD_REF_WIDTH = 1.5                  # Rosin-Rammler n; UNMEASURED, see below
-PSD_D80_SLIDER_RANGE = (40.0, 600.0)   # brackets the delivery range 67-500 um
+PSD_D50_SLIDER_RANGE = (40.0, 700.0)   # brackets the observed p50 span 67-600 um
+
+# MEASURED p50 for the 2026 verified deliveries. This is the data that was
+# blocking the constancy test, and it is a 9x span in diameter -- far larger than
+# the 3.35x rate-adjusted spread between climate regimes, which is why grain size
+# had to be controlled before any regime comparison meant anything.
+DELIVERY_P50_UM = {
+    "mati": 600.0,          # all three Mati sites, coarsest in the set
+    "terradot": 120.0,      # reported as 90-150; midpoint used
+    "lithos": 67.0,         # finest in the set
+    "alt_carbon": None,     # unknown; excluded from grain-normalised comparison
+}
+DELIVERY_P50_SPAN_UM = (67.0, 600.0)
+# Beerling et al. 2024 report p80, not p50. Converting needs a width, and the
+# conversion is width-dependent (1.76x at n=1.5, 3.35x at n=0.7), so the
+# assumption travels with the number.
+BEERLING_P80_UM = 267.0
 PSD_WIDTH_SLIDER_RANGE = (0.7, 2.5)   # broad .. narrow grind
 
 # The reference WIDTH is an assumption, not a measurement: the Corn Belt trial
 # reports p80 but, as far as we have found, not the full distribution. Every
 # absolute number scales with this choice, which is precisely why it is a slider.
 #
-# It is also the DOMINANT remaining unknown in this part of the model. At the
-# reference d80 of 267 um, moving n across the slider range moves geometric SSA by
-# 7.7x, and moves the lambda implied by the measured BET anchor from 6.8 (n=0.7)
-# to 52 (n=2.5) -- i.e. the width choice alone spans most of the plausible
-# roughness range.
+# It is also the DOMINANT remaining unknown in this part of the model, now that
+# p50 is measured. Moving n across the slider range at fixed d50 moves geometric
+# SSA by several-fold and moves the lambda implied by the measured BET anchor
+# across most of the plausible roughness range.
 #
 # n = 1.5 is on the NARROW side for a crushed product. Narrow values describe
 # classified or sieved material, of which Gudbrandsson's fines-removed fraction is

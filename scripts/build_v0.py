@@ -609,25 +609,26 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
         "cdrPerFrac": round(cdr_per_frac, 6),
         "l1Enc": {"lo": L1_ENC[0], "hi": L1_ENC[1]},
         "psd": {
-            "refD80": C.PSD_REF_D80_UM, "refWidth": C.PSD_REF_WIDTH,
-            "d80Range": list(C.PSD_D80_SLIDER_RANGE),
+            "refD50": C.PSD_REF_D50_UM, "refWidth": C.PSD_REF_WIDTH,
+            "d50Range": list(C.PSD_D50_SLIDER_RANGE),
             "widthRange": list(C.PSD_WIDTH_SLIDER_RANGE),
-            "refSsa": round(K.ssa_geometric(C.PSD_REF_D80_UM, C.PSD_REF_WIDTH), 5),
+            "refSsa": round(K.ssa_geometric(C.PSD_REF_D50_UM, C.PSD_REF_WIDTH), 5),
             "lambdaDefault": C.LAMBDA_DEFAULT,
             "lambdaMeasured": C.LAMBDA_MEASURED,
             "lambdaBasis": C.LAMBDA_MEASURED_BASIS,
             "betMeasured": round(C.STAPAFELL_BET_CM2_PER_G / 1e4, 4),
             "refWidthNarrowForCrush": True,
             "lambdaRange": list(C.LAMBDA_ROUGHNESS_RANGE),
-            "deliveryRangeUm": [67, 500],
+            "deliveryRangeUm": list(C.DELIVERY_P50_SPAN_UM),
+            "deliveryP50": {k: v for k, v in C.DELIVERY_P50_UM.items() if v},
             "refWidthAssumed": C.PSD_REF_WIDTH_IS_ASSUMED,
             # Precomputed shift table so the browser needs no gamma function:
-            # log10(SSA(d80, n) / SSA(ref)) on a grid the UI interpolates.
-            "d80Grid": [round(x, 1) for x in np.linspace(*C.PSD_D80_SLIDER_RANGE, 24).tolist()],
+            # log10(SSA(d50, n) / SSA(ref)) on a grid the UI interpolates.
+            "d50Grid": [round(x, 1) for x in np.linspace(*C.PSD_D50_SLIDER_RANGE, 24).tolist()],
             "widthGrid": [round(x, 3) for x in np.linspace(*C.PSD_WIDTH_SLIDER_RANGE, 13).tolist()],
             "shiftTable": [
                 [round(float(K.ssa_log_shift(d, n)), 4)
-                 for d in np.linspace(*C.PSD_D80_SLIDER_RANGE, 24)]
+                 for d in np.linspace(*C.PSD_D50_SLIDER_RANGE, 24)]
                 for n in np.linspace(*C.PSD_WIDTH_SLIDER_RANGE, 13)
             ],
         },

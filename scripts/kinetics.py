@@ -32,6 +32,7 @@ __all__ = [
     "arrhenius_factor",
     "ssa_geometric",
     "ssa_log_shift",
+    "d80_to_d50",
     "mineral_rate",
     "rate_ca_mg_release",
     "carbonate_constants",
@@ -292,12 +293,17 @@ def ph_half(pco2_uatm, T_K):
 # ---------------------------------------------------------------------------
 # Reactive surface area from a particle-size distribution
 # ---------------------------------------------------------------------------
-def ssa_geometric(d80_um, rr_width, *, rho=None, d_min_um=None, d_max_um=None):
+def ssa_geometric(d50_um, rr_width, *, rho=None, d_min_um=None, d_max_um=None):
     """Mass-weighted geometric specific surface area, m2/g, for a Rosin-Rammler
-    particle-size distribution characterised by d80 and width.
+    particle-size distribution characterised by d50 and width.
+
+    d50, NOT d80. The ERW field reports p50, so the model should speak the same
+    language as the data: measured p50 for real deliveries runs 67 um (finest) to
+    600 um (coarsest). An earlier version keyed on d80 because the one trial we had
+    reported p80, which made every comparison to a real delivery need a conversion.
 
     Rosin-Rammler cumulative mass finer than d:  F(d) = 1 - exp(-(d/d_c)^n)
-    so d80 fixes the scale:                      d_c = d80 / (ln 5)^(1/n)
+    so d50 fixes the scale:                      d_c = d50 / (ln 2)^(1/n)
 
     For spheres, surface area per unit mass goes as 6/(rho*d), so
         SSA = (6/rho) * integral (1/d) dF(d)
@@ -321,9 +327,9 @@ def ssa_geometric(d80_um, rr_width, *, rho=None, d_min_um=None, d_max_um=None):
     d_min_um = C.PSD_D_MIN_UM if d_min_um is None else d_min_um
     d_max_um = C.PSD_D_MAX_UM if d_max_um is None else d_max_um
 
-    d80 = np.asarray(d80_um, dtype=float)
+    d50 = np.asarray(d50_um, dtype=float)
     n = np.asarray(rr_width, dtype=float)
-    d_c = d80 / np.power(np.log(5.0), 1.0 / n)
+    d_c = d50 / np.power(np.log(2.0), 1.0 / n)
 
     # Log-spaced size bins; mass in each bin from the RR cumulative.
     edges = np.logspace(np.log10(d_min_um), np.log10(d_max_um), 400)
@@ -346,15 +352,27 @@ def ssa_geometric(d80_um, rr_width, *, rho=None, d_min_um=None, d_max_um=None):
                      for a, b in np.broadcast(d_c, n)]).reshape(np.shape(d_c))
 
 
-def ssa_log_shift(d80_um, rr_width):
-    """log10(SSA(d80, width) / SSA(reference)).
+def d80_to_d50(d80_um, rr_width):
+    """Convert a reported d80 to d50 for a given Rosin-Rammler width.
+
+    d80/d50 = (ln5/ln2)^(1/n), so the conversion is WIDTH-DEPENDENT: 1.76x at
+    n=1.5 but 3.35x at n=0.7. Any p80 taken from the literature therefore carries
+    the width assumption with it, which is a reason to prefer sources that report
+    p50 directly.
+    """
+    return np.asarray(d80_um, dtype=float) / np.power(
+        np.log(5.0) / np.log(2.0), 1.0 / np.asarray(rr_width, dtype=float))
+
+
+def ssa_log_shift(d50_um, rr_width):
+    """log10(SSA(d50, width) / SSA(reference)).
 
     The rate is linear in reactive surface area, and L1 is a log10 ratio, so a
     change of grind is a UNIFORM ADDITIVE SHIFT on L1. That is what makes a
     particle-size slider cheap: one uniform in the shader rather than a rebuild.
     """
-    ref = ssa_geometric(C.PSD_REF_D80_UM, C.PSD_REF_WIDTH)
-    return float(np.log10(ssa_geometric(d80_um, rr_width) / ref))
+    ref = ssa_geometric(C.PSD_REF_D50_UM, C.PSD_REF_WIDTH)
+    return float(np.log10(ssa_geometric(d50_um, rr_width) / ref))
 
 
 # ---------------------------------------------------------------------------

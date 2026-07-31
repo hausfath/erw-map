@@ -126,27 +126,32 @@ potential is **0.289 tCO₂ per tonne of rock**. A `delivered_basalt` archetype
 anchored to that is now the default; a textbook fresh basalt would have been 14%
 optimistic, and the nominal 0.33 tCO₂/t commonly applied overstates by 20–25%.
 
-**3. The regime ordering does not yet support the paddy prediction.** After
-adjusting for application rate, the tropical-Oxisol regime comes out marginally
-ahead of the temperate one, which comes out ahead of the acidic-paddy regime — the
-opposite of what the model predicts. But the whole rate-adjusted spread across all
-eight deliveries is only 3.35×, and the test has very little power:
+**3. The regime comparison is unidentifiable, and an earlier claim here is
+retracted.** This README previously said the deliveries "mildly challenge" the
+paddy prediction, because after adjusting for application rate the tropical-Oxisol
+regime came out ahead of the acidic-paddy one. Measured p50 values are now in hand,
+and that claim was an over-read.
 
-- Particle size spans 67–500 µm and is not resolved per delivery. That alone can
-  span 7.5× in geometric surface area, and up to 33× once distribution width is
-  allowed for — larger than every regime difference in the data.
-- One regime is represented by a single delivery, and one programme contributes
-  three bins that may be particle-size bins within a single site rather than
-  independent samples.
-- P16 spreads are enormous — one row is 23.9% at P50 but 0.9% at P16.
-- Measurement methods differ across operators and are known to disagree by ~2×.
+Grain size is **perfectly collinear with regime**: every Corn Belt row is 67 µm,
+every paddy row is 600 µm, the single Brazil row is 120 µm. Regime and grain size
+are the *same variable* in this dataset, so no analysis can separate them. That is
+stronger than low power — the comparison is unidentifiable. And the confound is
+large: 9× in diameter, roughly 8× in surface area, against a rate-adjusted regime
+spread of only 3.35×.
 
-There is also a structural reason first-year data cannot settle this: over a
-~12-month period, fraction weathered is dominated by dissolution of the fine tail
-of the particle-size distribution, which is fast and roughly site-independent,
-whereas the rate law being tested describes the long-run steady rate. And all
-eight sites are humid and acidic-to-near-neutral — none is arid, alkaline or cold,
-which is exactly where this model departs most from Cascade's.
+Normalising to a common grind (inverting through `Fw = 1 − exp(−kX)`, since scaling
+fraction weathered directly produced a physically impossible 106%) *reverses* the
+ordering, putting acidic paddy first at 64% against the Corn Belt's 18%. That is
+**not** support for the model either: because the two variables are identical here,
+"normalising for grain size" and "removing the regime effect" are the same
+operation, and the reversal only reveals which variable the variance was attributed
+to.
+
+What it establishes is narrower and more useful: **these deliveries are
+uninformative about regime, not contrary to it.**
+
+Making it identifiable needs two grinds within one regime, or one grind across two
+regimes — a single site running coarse and fine lots side by side would do it.
 
 The cleanest experiment that *would* test the mechanism is a flooded-versus-drained
 pair at one site with the same feedstock and application rate.

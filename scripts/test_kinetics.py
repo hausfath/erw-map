@@ -345,9 +345,9 @@ def gate8_browser_constants_match_python() -> None:
     # Bilinear-interpolate the emitted table the way app.js does, and compare
     # against the exact integral at points deliberately BETWEEN grid nodes.
     P = payload["psd"]
-    gx, gy, T = P["d80Grid"], P["widthGrid"], P["shiftTable"]
+    gx, gy, T = P["d50Grid"], P["widthGrid"], P["shiftTable"]
 
-    def lookup(d80, width):
+    def lookup(d50, width):
         def frac(arr, v):
             if v <= arr[0]:
                 return 0, 0.0
@@ -357,18 +357,20 @@ def gate8_browser_constants_match_python() -> None:
             while i < len(arr) - 2 and v > arr[i + 1]:
                 i += 1
             return i, (v - arr[i]) / (arr[i + 1] - arr[i])
-        i, fi = frac(gx, d80)
+        i, fi = frac(gx, d50)
         j, fj = frac(gy, width)
         a = T[j][i] + (T[j][i + 1] - T[j][i]) * fi
         b = T[j + 1][i] + (T[j + 1][i + 1] - T[j + 1][i]) * fi
         return a + (b - a) * fj
 
     worst, at = 0.0, ""
-    for d80 in (67.0, 100.0, 187.0, 267.0, 333.0, 500.0):
+    # Probe deliberately BETWEEN grid nodes, and at the measured delivery p50
+    # values, since those are the points the map will actually be asked about.
+    for d50 in (67.0, 100.0, 120.0, 150.0, 333.0, 600.0):
         for wid in (0.7, 1.1, 1.5, 2.0, 2.5):
-            e = abs(lookup(d80, wid) - K.ssa_log_shift(d80, wid))
+            e = abs(lookup(d50, wid) - K.ssa_log_shift(d50, wid))
             if e > worst:
-                worst, at = e, f"d80={d80:.0f} n={wid}"
+                worst, at = e, f"d50={d50:.0f} n={wid}"
     if worst > 0.01:                    # 0.01 log10 = 2.3% in rate
         problems.append(f"shift table off by {worst:.4f} log units at {at}")
 
@@ -389,20 +391,22 @@ def gate9_ssa_scaling() -> None:
     the width effect over the slider range is closer to 8x. Both the number and
     the reason are recorded so the smaller, correct figure is the one quoted.
     """
-    ref = K.ssa_geometric(C.PSD_REF_D80_UM, C.PSD_REF_WIDTH)
-    fine = K.ssa_geometric(67.0, C.PSD_REF_WIDTH)
-    coarse = K.ssa_geometric(500.0, C.PSD_REF_WIDTH)
-    broad = K.ssa_geometric(C.PSD_REF_D80_UM, C.PSD_WIDTH_SLIDER_RANGE[0])
-    narrow = K.ssa_geometric(C.PSD_REF_D80_UM, C.PSD_WIDTH_SLIDER_RANGE[1])
+    ref = K.ssa_geometric(C.PSD_REF_D50_UM, C.PSD_REF_WIDTH)
+    fine = K.ssa_geometric(C.DELIVERY_P50_SPAN_UM[0], C.PSD_REF_WIDTH)
+    coarse = K.ssa_geometric(C.DELIVERY_P50_SPAN_UM[1], C.PSD_REF_WIDTH)
+    broad = K.ssa_geometric(C.PSD_REF_D50_UM, C.PSD_WIDTH_SLIDER_RANGE[0])
+    narrow = K.ssa_geometric(C.PSD_REF_D50_UM, C.PSD_WIDTH_SLIDER_RANGE[1])
 
     d_effect = fine / coarse
     w_effect = broad / narrow
     monotone = fine > ref > coarse and broad > narrow
     # 6/(rho*d) puts geometric SSA for a few-hundred-micron grind at ~0.01-0.1
     plausible = 0.001 < ref < 1.0
-    ok = monotone and plausible and 3.0 < d_effect < 15.0 and 3.0 < w_effect < 15.0
+    ok = monotone and plausible and 3.0 < d_effect < 20.0 and 3.0 < w_effect < 15.0
     record("9. SSA scales with grind", ok,
-           f"ref {ref:.4f} m2/g; d80 67 vs 500 um -> {d_effect:.1f}x; "
+           f"ref {ref:.4f} m2/g at d50 {C.PSD_REF_D50_UM:.0f} um; "
+           f"observed p50 span {C.DELIVERY_P50_SPAN_UM[0]:.0f} vs "
+           f"{C.DELIVERY_P50_SPAN_UM[1]:.0f} um -> {d_effect:.1f}x; "
            f"width {C.PSD_WIDTH_SLIDER_RANGE[0]} vs "
            f"{C.PSD_WIDTH_SLIDER_RANGE[1]} -> {w_effect:.1f}x "
            f"(NOT the 33x an untruncated tail gives)")
