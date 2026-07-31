@@ -240,6 +240,15 @@ def main() -> int:
     pco2 = (C.PCO2_UNSATURATED_UATM
             + f_flood * (C.PCO2_SATURATED_UATM - C.PCO2_UNSATURATED_UATM))
 
+    # Flooded pCO2 must not be paired with drained pH. SoilGrids pH is an
+    # air-dried, drained measurement, but submergence converges soil pH toward
+    # neutral (van Breemen 1987; measured +1.0-1.5 units in Schulz et al. 2024)
+    # -- and the inconsistency flatters paddies, whose pCO2 advantage exists
+    # only in acid soil. The CHEMISTRY uses the flooding-adjusted pH; the
+    # readout and the protocol pH annotation keep the drained value, which is
+    # what a validator would measure on a sampled (drained) core.
+    ph_chem = ph + f_flood * (C.PH_FLOODED_CONVERGENCE - ph)
+
     eta_tr = K.eta_transport(q)
 
     if monthly:
@@ -262,9 +271,9 @@ def main() -> int:
         sat_m = np.clip(moist_m / np.maximum(smax, 1e-6), 0.0, 1.0)
 
         rate_m = np.stack([
-            K.rate_ca_mg_release(C.FEEDSTOCK_DEFAULT, ph, soilT_K[i]) * sat_m[i]
+            K.rate_ca_mg_release(C.FEEDSTOCK_DEFAULT, ph_chem, soilT_K[i]) * sat_m[i]
             for i in range(12)])
-        eta_m = np.stack([K.eta_dic(ph, pco2, soilT_K[i]) for i in range(12)])
+        eta_m = np.stack([K.eta_dic(ph_chem, pco2, soilT_K[i]) for i in range(12)])
 
         with np.errstate(invalid="ignore"):
             reactivity = np.nanmean(rate_m, axis=0)
@@ -275,12 +284,12 @@ def main() -> int:
 
         # Quantify the bias we just removed, rather than asserting it.
         annual_rate = K.rate_ca_mg_release(
-            C.FEEDSTOCK_DEFAULT, ph, np.nanmean(soilT_K, axis=0)
+            C.FEEDSTOCK_DEFAULT, ph_chem, np.nanmean(soilT_K, axis=0)
         ) * np.nanmean(sat_m, axis=0)
         clim_source = "Lembrechts monthly soil T (5-15 cm) + TerraClimate moisture"
     else:
-        reactivity = K.rate_ca_mg_release(C.FEEDSTOCK_DEFAULT, ph, T_K) * wet
-        eta = K.eta_dic(ph, pco2, T_K)
+        reactivity = K.rate_ca_mg_release(C.FEEDSTOCK_DEFAULT, ph_chem, T_K) * wet
+        eta = K.eta_dic(ph_chem, pco2, T_K)
         annual_rate = None
         clim_source = "FALLBACK: annual AIR temperature + precipitation proxy"
 
@@ -355,13 +364,19 @@ def main() -> int:
     ceil_t = ((C.FEEDSTOCK_ARCHETYPES[C.FEEDSTOCK_DEFAULT]["CaO_wt"] / C.M_CAO
                + C.FEEDSTOCK_ARCHETYPES[C.FEEDSTOCK_DEFAULT]["MgO_wt"] / C.M_MGO)
               * 1000.0 * 2.0 * C.MOL_CO2_PER_KMOL_CHARGE_T)
-    X = (reactivity / float(ref)) * eta * eta_tr
+    # X carries the DISSOLUTION drivers only: rate and drainage. eta_DIC is a
+    # carbon-accounting efficiency, not a rate -- carbonate speciation does not
+    # slow the rock dissolving -- so it multiplies the carbon AFTER the
+    # dissolved fraction. Inside the exponential it suppressed the predicted
+    # fraction weathered by up to ~2x in acid soils, contaminating the one
+    # layer field trials can measure.
+    X = (reactivity / float(ref)) * eta_tr
 
     # First-order decay of remaining mass. Replaces a hard clip at 0.6 that
     # pinned 18.9% of cropland area at one value, giving the layer a flat top.
     k_diss = -np.log(1.0 - C.DISSOLVED_FRAC_AT_REF)
     frac = 1.0 - np.exp(-k_diss * np.clip(X, 0.0, None))
-    cdr = frac * C.APPLICATION_RATE_T_HA_YR * ceil_t
+    cdr = frac * eta * C.APPLICATION_RATE_T_HA_YR * ceil_t
 
     suit_phys = piecewise(np.log10(np.maximum(cdr, 1e-9)),
                           [(np.log10(x), y) for x, y in C.CDR_SUITABILITY_KNOTS])

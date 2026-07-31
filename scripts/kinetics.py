@@ -125,7 +125,7 @@ DIVALENT_PER_FORMULA = {
     "diopside": 2.0,       # CaMgSi2O6
     "augite": 1.6,         # (Ca,Mg,Fe)2Si2O6, Fe-bearing
     "enstatite": 1.0,      # MgSiO3
-    "bronzite": 1.0,       # ~(Mg,Fe)SiO3
+    "bronzite": 0.8,       # ~Mg0.8Fe0.2SiO3; Fe carries no durable alkalinity
     "wollastonite": 1.0,   # CaSiO3
 }
 
@@ -143,11 +143,30 @@ ELEMENT_PER_FORMULA = {
     "forsterite":   {"Ca": 0.0, "Mg": 2.0},   # Mg2SiO4
     "fayalite":     {"Ca": 0.0, "Mg": 0.0},
     "diopside":     {"Ca": 1.0, "Mg": 1.0},   # CaMgSi2O6
-    "augite":       {"Ca": 0.7, "Mg": 0.6},   # (Ca,Mg,Fe)2Si2O6, Fe-bearing
+    "augite":       {"Ca": 0.7, "Mg": 0.9},   # Ca0.7Mg0.9Fe0.4Si2O6
     "enstatite":    {"Ca": 0.0, "Mg": 1.0},   # MgSiO3
-    "bronzite":     {"Ca": 0.0, "Mg": 0.8},
+    "bronzite":     {"Ca": 0.0, "Mg": 0.8},   # ~Mg0.8Fe0.2SiO3
     "wollastonite": {"Ca": 1.0, "Mg": 0.0},   # CaSiO3
 }
+
+
+# The two tables above must agree: DIVALENT_PER_FORMULA is the CDR-relevant
+# charge sum and ELEMENT_PER_FORMULA is the per-element stoichiometry the
+# Gudbrandsson validation uses, so a divergence means the validated function is
+# not the shipped one. Two disagreed until this was asserted: augite
+# (1.60 vs 1.30, so the map credited 23% more divalent charge than the
+# validation tested) and bronzite (1.00 vs 0.80). Both are now reconciled to
+# their stated formulae. Note the direction of the augite fix -- it RAISES
+# modelled Mg release, so it makes gate 11's Mg over-prediction slightly worse
+# rather than better.
+_mismatch = {m: (d, sum(ELEMENT_PER_FORMULA[m].values()))
+             for m, d in DIVALENT_PER_FORMULA.items()
+             if abs(d - sum(ELEMENT_PER_FORMULA[m].values())) > 1e-9}
+if _mismatch:
+    raise AssertionError(
+        "DIVALENT_PER_FORMULA and ELEMENT_PER_FORMULA disagree on "
+        f"{_mismatch} -- the validated function would not be the shipped one")
+del _mismatch
 
 
 def element_release(fractions: dict, element: str, pH, T_K):
@@ -262,11 +281,30 @@ def eta_dic(pH, pco2_uatm, T_K):
     that asymptote without it being built in -- 0.600 at pK2, 0.503 at pH 12 --
     because it falls out of the K2 term. Tested in test_kinetics.py gate 2b.
 
-    Worth flagging: Cascade cites this paper as the source of a "normalized
-    weathering flux potential framework" while implementing only kinetics. The
-    paper's actual title is "The Carbon-Capture Efficiency of Natural Water
-    Alkalinization", and it contains no kinetic index -- it is precisely the
-    efficiency term their formulation omits.
+    RETRACTION. An earlier version of this docstring said the paper "contains no
+    kinetic index" and that Cascade's citation of it for a "normalized weathering
+    flux potential framework" was therefore unjustified. That was WRONG, and it
+    was written when the paper was paywalled and had not been read (recorded in
+    PLAN.md at the time). The PDF is now in the repo root. Appendix C, Eq. C.1:
+
+        r ~ s [H+]^theta exp(-E/RT)
+
+    "where s is the time-averaged relative soil moisture. Temperature affects the
+    dissolution rate through an Arrhenius equation, where A = 60 kJ/mol is the
+    mean activation energy ... The activity of the hydrogen ion is approximated
+    with its concentration (theta = 1). The results for Fig. 3b are then
+    normalized by introducing the proportionality constant r0 so that
+    min(r/r0) = 1."
+
+    That is a normalised weathering-flux index: first order in H+, moisture
+    scaled, Arrhenius, normalised, mapped globally as their Fig. 3b. Cascade's
+    citation is essentially correct.
+
+    What survives, and it is enough on its own: Cascade implements the kinetic
+    index from Appendix C while omitting the efficiency term the paper's main
+    text derives, which is the term implemented here. Note also that B&P's own
+    Eq. C.1 uses theta = 1, the same first-order form we criticise, and that
+    their Section 5.1 already reports the rate-versus-efficiency trade-off.
     """
     K1, K2, KH, Kw = carbonate_constants(T_K)
     h = np.power(10.0, -np.asarray(pH, dtype=float))
@@ -386,9 +424,31 @@ def eta_transport(q_m_yr, D_w=None):
     and the penalty is severe; in the humid tropics eta -> 1 and Cascade's
     far-from-equilibrium assumption is recovered.
 
-    The functional form is well grounded. D_w is NOT constrained by the
-    literature -- treat it as a sensitivity parameter over
-    constants.DAMKOHLER_DW_RANGE and do not present a single value as known.
+    The functional form is well grounded. D_w IS constrained by the literature,
+    just not for basalt: Maher & Chamberlain fit 0.001-0.3 m/yr from rivers
+    "mostly draining granitic lithologies", with 0.3 stated as the global
+    maximum and 0.03 as the collisional/craton divide. We default to 0.03 and
+    carry the published range in constants.DAMKOHLER_DW_RANGE. An earlier
+    version of this docstring said D_w was unconstrained, which was stale.
+
+    TWO OPEN PROBLEMS, both deliberately not acted on here, both recorded in
+    REVIEW_2026-07.md as the tabled "flux reconciliation" cluster:
+
+      1. WHICH LIMB. Their Eq. 1 makes D_w proportional to reactive surface area
+         and inversely proportional to soil age, so freshly crushed feedstock in
+         a tilled topsoil arguably belongs at the 0.3 end (fresh minerals, short
+         path) rather than the 0.03 end (100,000-year regolith). If so, our
+         "correction" from 0.5 to 0.03 moved the wrong way. Unresolved.
+      2. NO CEILING. Recasting their Eq. 3 as a multiplier on a kinetic rate,
+         with the kinetic limit at q -> infinity, keeps the shape of the curve
+         and DROPS the finite concentration limit C_eq. Consequence, measured:
+         the CDR this model reports would require 28.5 mmol/L bicarbonate in
+         drainage water at the median cropland cell, against ~0.4 mmol/L at
+         that cell's own pH and pCO2. This is almost certainly why the layer
+         first needed a hard clip and now needs a saturating exponential.
+
+    Do not treat this term as settled. It sets the map's absolute level and, via
+    the moisture normalisation, most of its wet-dry contrast.
 
     q must include irrigation return flow on irrigated cells, not just
     precipitation surplus, or the Indo-Gangetic Plain is wrongly penalised.
@@ -415,12 +475,21 @@ def cascade_baseline_index(pH, T_K, moisture, ea_kj: float = 68.8):
       2. It omits eta_dic, so it rewards strongly acidic soils that both the
          Isometric and Puro.earth protocols penalise.
 
-    In fairness: the effective Ea of a basalt mixture for Ca+Mg release works
-    out to 65.6-67.9 kJ/mol, so 68.8 is a reasonable number for whole-basalt
-    CDR. Its stated provenance (White & Blum 1995, "representative of basaltic
-    glass") is unclear -- that paper reports 59.4 and 62.5 kJ/mol for granitoid
-    catchments -- and the primary laboratory value for basaltic glass is
-    25.5 kJ/mol.
+    ON THE 68.8 kJ/mol, TWICE RETRACTED. An earlier version of this docstring
+    said 68.8 was "a reasonable number for whole-basalt CDR" because our own
+    mixture came out at 65.6-67.9. That defence is withdrawn: it only showed the
+    two formulations agree with EACH OTHER, and Gudbrandsson et al. (2011)
+    measure ~36 kJ/mol for whole-rock crystalline basalt (24-54 across pH),
+    while Schaef & McGrail (2009) measure 30.3 +/- 2.4 on Columbia River basalt
+    from an independent laboratory. Our shipped mixture is 61.9-69.3 over
+    5-25 C, so BOTH formulations over-weight temperature by roughly 2x, and
+    Cascade's 68.8 is wrong for a reason we share rather than for one that
+    distinguishes us.
+
+    Its stated provenance (White & Blum 1995, "representative of basaltic
+    glass") remains unclear -- that paper reports 59.4 and 62.5 kJ/mol for
+    granitoid catchments -- and the primary laboratory value for basaltic glass
+    is 25.5 kJ/mol, i.e. lower still.
     """
     a_h = np.power(10.0, -np.asarray(pH, dtype=float))
     return np.asarray(moisture, dtype=float) * a_h * arrhenius_factor(ea_kj, T_K)

@@ -265,11 +265,74 @@ def gate6b_archetype_ceilings() -> None:
            + f"; absolute bound {C.GATES['max_tco2_per_t_any_feedstock']}")
 
 
+def gate6c_mineralogy_mass_balance() -> None:
+    """Each archetype's MINERAL LIST must mass-balance its stated OXIDES.
+
+    Nothing checked this before, and it is the one internal consistency test
+    that can catch a mis-specified archetype with no external data at all. The
+    two halves of a spec are used by different parts of the model -- the mineral
+    list drives rate_ca_mg_release (hence the whole map's pH and temperature
+    response) while the oxides set the stoichiometric CO2 ceiling -- so if they
+    disagree the model is describing two different rocks.
+
+    EXPECTED TO FAIL as of this commit, and the failure is informative: it is an
+    independent line of evidence that olivine is over-weighted in the mineral
+    lists, agreeing in direction with gate 11's Mg over-prediction by a
+    completely different route. Recorded rather than papered over; fixing it
+    means re-deriving the mineral modes (e.g. from a CIPW norm on the measured
+    oxides), which is a modelling decision needing its own review.
+
+    Mineral formula masses and densities are local to this gate because they are
+    only needed here; volume fractions are converted to mass fractions before
+    the oxides are summed.
+    """
+    # (formula mass g/mol, density g/cm3, CaO per formula, MgO per formula)
+    MIN = {
+        "labradorite":  (270.8, 2.70, 0.6, 0.0),   # ~An60
+        "albite":       (262.2, 2.62, 0.0, 0.0),
+        "anorthite":    (278.2, 2.73, 1.0, 0.0),
+        "augite":       (231.6, 3.35, 0.7, 0.9),   # Ca0.7Mg0.9Fe0.4Si2O6
+        "diopside":     (216.6, 3.28, 1.0, 1.0),
+        "forsterite":   (140.7, 3.27, 0.0, 2.0),
+        "enstatite":    (100.4, 3.20, 0.0, 1.0),
+    }
+    lines, worst = [], 0.0
+    for name, spec in C.FEEDSTOCK_ARCHETYPES.items():
+        fr = spec["minerals"]
+        if any(m not in MIN for m in fr):
+            continue
+        # volume -> mass, renormalised over the named phases exactly as
+        # rate_ca_mg_release renormalises them.
+        mass = {m: v * MIN[m][1] for m, v in fr.items()}
+        tot = sum(mass.values())
+        cao = sum((mass[m] / tot) * MIN[m][2] * C.M_CAO / MIN[m][0] for m in fr)
+        mgo = sum((mass[m] / tot) * MIN[m][3] * C.M_MGO / MIN[m][0] for m in fr)
+        rc = cao / spec["CaO_wt"] if spec["CaO_wt"] else float("inf")
+        rm = mgo / spec["MgO_wt"] if spec["MgO_wt"] else float("inf")
+        worst = max(worst, abs(math.log(max(rc, 1e-9))), abs(math.log(max(rm, 1e-9))))
+        lines.append(f"{name}: CaO {cao:.3f} vs {spec['CaO_wt']:.3f} "
+                     f"({rc:.2f}x), MgO {mgo:.3f} vs {spec['MgO_wt']:.3f} "
+                     f"({rm:.2f}x)")
+    tol = 0.15                       # 15% either way
+    ok = worst <= math.log(1.0 + tol)
+    record("6c. Archetype mineralogy mass-balances its stated oxides", ok,
+           f"implied from mineral modes vs stated, tolerance +/-{tol:.0%}: "
+           + "; ".join(lines))
+
+
 def gate7_delivered_basalt_matches_measurement() -> None:
-    """The delivered_basalt archetype must reproduce the CO2 potential implied by
-    independently verified deliveries. This is the one archetype anchored to
-    measurement rather than to a textbook composition, so it is the one that
-    should be used for anything user-facing."""
+    """ARITHMETIC SELF-CHECK, not a validation. Relabelled deliberately.
+
+    This asserts that delivered_basalt's CaO/MgO reproduce
+    DELIVERED_BASALT_TCO2_PER_T -- but those oxide values were chosen to hit
+    that target, so the gate tests arithmetic rather than the archetype. It
+    used to appear in the README's gate table as evidence, which overstated
+    what it shows. Keep it (a broken constant would be caught) but do not count
+    it as an independent test. n = 3 deliveries, one operator, one feedstock
+    source -- state that wherever 0.289 appears.
+
+    Note also gate 6c: the same oxides do not mass-balance the mineral list.
+    """
     spec = C.FEEDSTOCK_ARCHETYPES["delivered_basalt"]
     kmol = (spec["CaO_wt"] / C.M_CAO + spec["MgO_wt"] / C.M_MGO) * 1000.0
     ours = kmol * 2.0 * C.MOL_CO2_PER_KMOL_CHARGE_T
@@ -480,6 +543,26 @@ def gate11_gudbrandsson_no_free_parameters() -> None:
     the reacting surface against a 44% volume share, so a volume-fraction model
     should under-predict Ca and over-predict Mg. If it does, the discrepancy is
     understood rather than mysterious.
+
+    TWO CORRECTIONS TO HOW THIS GATE USED TO BE SCORED. Both made it look better
+    than it was:
+
+      1. It passed/failed on the paper's own fitted SURFACE fractions, justified
+         as "their measurement of the rock, not part of our model". But the
+         fixture header records those numbers as what their mixing model NEEDED
+         to fit within 0.5 log units -- i.e. three parameters fitted to the same
+         25 experiments being predicted, which will have absorbed every other
+         error in their model. A gate titled "no free parameters" cannot be
+         scored on a borrowed in-sample fit. It now keys on VOLUME fractions,
+         which is what build_v0.py actually ships.
+      2. It reported Ca and Mg separately, but the map uses their CHARGE SUM
+         (rate_ca_mg_release), and the sum is worse than either element implies.
+         The charge-sum residual is now computed and reported, restricted to the
+         cropland domain the map occupies (5-25 C, pH 4-8.5), because the pooled
+         5-75 C figure is dominated by experiments at temperatures no cropland
+         reaches. The restricted figure is a DIAGNOSTIC, never the pass
+         criterion -- restricting a range post hoc to improve a statistic is
+         exactly the move that has to be declared.
     """
     import csv as _csv
 
@@ -522,21 +605,62 @@ def gate11_gudbrandsson_no_free_parameters() -> None:
                            float(np.max(np.abs(a))), len(a))
         out[label] = res
 
+    # ---- The CHARGE SUM, which is the quantity the map actually uses.
+    # Ca + Mg in charge equivalents, exactly as rate_ca_mg_release builds it, so
+    # a pass here would mean the shipped function reproduces the rock.
+    charge = {}
+    for label, fr in (("volume", C.STAPAFELL_VOLUME_FRACTIONS),
+                      ("their surface fit", C.STAPAFELL_SURFACE_FRACTIONS)):
+        for band, keep in (("all 5-75 C", lambda r: True),
+                           ("cropland 5-25 C, pH 4-8.5",
+                            lambda r: float(r["T_C"]) <= 25.0
+                            and 4.0 <= float(r["pH"]) <= 8.5)):
+            d = []
+            for r in obs:
+                if not keep(r):
+                    continue
+                vca, vmg = r.get("log_r_Ca"), r.get("log_r_Mg")
+                if not vca or not vmg:
+                    continue
+                pH, T_K = float(r["pH"]), float(r["T_C"]) + 273.15
+                # Measured charge: 2 equivalents per divalent cation.
+                meas = 2.0 * (10.0 ** float(vca) + 10.0 ** float(vmg))
+                pred = 0.0
+                for mineral, f in fr.items():
+                    nu = K.ELEMENT_PER_FORMULA[mineral]
+                    pred += ((f / sum(fr.values())) * 2.0
+                             * (nu.get("Ca", 0.0) + nu.get("Mg", 0.0))
+                             * float(K.mineral_rate(mineral, pH, T_K)))
+                if pred <= 0 or meas <= 0:
+                    continue
+                d.append(math.log10(pred / CM2_PER_M2) - math.log10(meas))
+            if d:
+                a = np.array(d)
+                charge[(label, band)] = (float(np.mean(a)),
+                                         float(np.mean(np.abs(a))), len(a))
+
     tol = C.GUDBRANDSSON_TOLERANCE_LOG
-    vol, fit = out["volume"], out["their surface fit"]
-    # The gate passes on the paper's own surface fractions -- that is the fair
-    # test of OUR rate law, since the surface-area split is their measurement of
-    # the rock, not part of our model.
-    worst_fit = max(v[1] for v in fit.values()) if fit else 9.9
-    ok = worst_fit <= tol
+    vol = out["volume"]
+    # PASS/FAIL ON THE SHIPPED BASIS: volume fractions, charge sum, full range.
+    # Not on the paper's fitted surface fractions -- those are three parameters
+    # fitted to this same dataset, so scoring on them borrows an in-sample fit.
+    key = ("volume", "all 5-75 C")
+    worst = charge[key][1] if key in charge else (
+        max(v[1] for v in vol.values()) if vol else 9.9)
+    ok = worst <= tol
 
     parts = []
     for label in ("volume", "their surface fit"):
         for el, (bias, mad, mx, n) in out[label].items():
             parts.append(f"{label[:3]}/{el} bias {bias:+.2f} MAD {mad:.2f} (n={n})")
-    record("11. Gudbrandsson no-free-parameter test", ok,
+    for (label, band), (bias, mad, n) in charge.items():
+        parts.append(f"{label[:3]}/CHARGE [{band}] bias {bias:+.2f} "
+                     f"MAD {mad:.2f} (n={n})")
+    record("11. Gudbrandsson independent test (scored on the SHIPPED basis: "
+           "volume fractions, Ca+Mg charge sum)", ok,
            f"log10 residuals vs measured, tolerance {tol}: " + "; ".join(parts))
-    gate11_gudbrandsson_no_free_parameters.detail = out
+    gate11_gudbrandsson_no_free_parameters.detail = {"per_element": out,
+                                                     "charge_sum": charge}
 
 
 def report_calibration_arithmetic() -> None:
@@ -569,7 +693,7 @@ def main() -> int:
                gate2b_ace_high_ph_asymptote, gate2c_charge_vs_bertagni_table1,
                gate3_ph_leverage, gate4_constants_match_source,
                gate5_monotonicity, gate6_cdrmax_vs_published,
-               gate6b_archetype_ceilings,
+               gate6b_archetype_ceilings, gate6c_mineralogy_mass_balance,
                gate7_delivered_basalt_matches_measurement,
                gate8_browser_constants_match_python, gate9_ssa_scaling,
                gate10_zero_cdr_zero_suitability,
@@ -588,9 +712,16 @@ def main() -> int:
         print()
         print("  Gudbrandsson residuals, log10(predicted / measured):")
         print(f"    {'weighting':20s} {'el':3s} {'bias':>7s} {'MAD':>6s} {'max':>6s} {'n':>4s}")
-        for label, res in g.items():
+        for label, res in g["per_element"].items():
             for el, (bias, mad, mx, n) in res.items():
                 print(f"    {label:20s} {el:3s} {bias:+7.2f} {mad:6.2f} {mx:6.2f} {n:4d}")
+        print()
+        print("  Ca+Mg CHARGE SUM -- the quantity the map uses. The shipped basis")
+        print("  is volume fractions; the surface-fit rows are the paper's own")
+        print("  in-sample fit and are a diagnostic upper bound, not our model.")
+        print(f"    {'weighting':20s} {'band':26s} {'bias':>7s} {'MAD':>6s} {'n':>4s}")
+        for (label, band), (bias, mad, n) in g["charge_sum"].items():
+            print(f"    {label:20s} {band:26s} {bias:+7.2f} {mad:6.2f} {n:4d}")
 
     rows = getattr(gate6_cdrmax_vs_published, "rows", None)
     if rows:
@@ -608,8 +739,21 @@ def main() -> int:
     print()
     print(f"  {len(results) - n_fail - n_skip} passed, {n_fail} failed, {n_skip} skipped")
     print()
-    print("  Still outstanding, and it gates phase 2: the Gudbrandsson et al. 2011")
-    print("  no-free-parameter test of Ca and Mg release vs pH at 5-25 C.")
+    # Be explicit about what this suite is and is not. "14 passed" reads as 14
+    # pieces of validation evidence, and it is not: exactly ONE gate compares
+    # the model against independent measurements it was not built from, and it
+    # fails. The rest are unit conversions, reproductions of published
+    # constants, monotonicity invariants, internal consistency checks and
+    # code-drift assertions -- all worth having, none of them validation.
+    print("  WHAT THIS SUITE IS: gate 11 is the only comparison against")
+    print("  independent data (Gudbrandsson et al. 2011 whole-rock basalt), and")
+    print("  it FAILS -- the Ca+Mg charge sum the map uses over-predicts by")
+    print("  ~1.2 log units on the shipped volume-fraction basis. Gate 6c, also")
+    print("  failing, is an internal check: the archetypes' mineral modes imply")
+    print("  up to 2x their stated MgO. Every other gate is an internal")
+    print("  consistency or literature-reproduction check, not validation.")
+    print("  Gate 7 is an arithmetic self-check and should not be counted.")
+    print("  No layer in this model is 'validated'. See docs/VALIDATION.md.")
     return 1 if n_fail else 0
 
 

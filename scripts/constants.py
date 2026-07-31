@@ -5,7 +5,8 @@ This module is the single source of truth. `emit_constants.py` writes the
 subset the browser needs into `src/engine_constants.js` and `src/colormap.js`,
 so a value can never be defined twice and drift.
 
-Provenance rules, following data/SCHEMA.md:
+Provenance rules (see docs/METHODOLOGY.md for the model chain and
+docs/VALIDATION.md for the gates):
   - Every kinetic constant carries its table and page in the primary source.
   - Values transcribed from a PDF are checked by `test_kinetics.py`, which
     re-extracts them from the source text. Never hand-edit without re-running it.
@@ -146,22 +147,63 @@ PCO2_ATMOSPHERIC_UATM = 400.0
 PCO2_SOURCE = "Isometric EW-in-agriculture protocol v1.2 s10.4.5.7"
 
 # ---------------------------------------------------------------------------
-# Soil pH convention.
+# Soil pH convention. RESOLVED for Isometric; no offset is applied.
 #
-# This is a first-order bookkeeping issue, not a footnote. SoilGrids reports
-# pH in H2O. Isometric specifies a soil-water slurry; Puro.earth's thresholds
-# derive from mixed conventions. pH(H2O) typically runs 0.5-0.6 units ABOVE
-# pH(CaCl2/KCl), which is comparable to the entire width of the eta_DIC
-# transition -- so getting this wrong shifts the whole map.
+# An earlier version carried PH_H2O_MINUS_CACL2 = 0.55 as a pending correction,
+# on the worry that the protocol thresholds might be stated on a CaCl2/KCl
+# basis reading ~0.55 units below SoilGrids' native pH(H2O). Applying that
+# offset would have moved 55% of cropland area by decile, so it mattered.
 #
-# We work in pH(H2O) (the SoilGrids native convention) and record the offset
-# so the protocol thresholds can be moved onto the same basis explicitly.
+# It does not apply. Isometric EW-in-agriculture v1.2 states in three separate
+# places -- the rule text, the parameter table and the measurement-requirements
+# table -- that its 5.2 threshold is "as measured in a soil-water slurry", i.e.
+# pH(H2O), the same basis SoilGrids reports. Applying an offset would therefore
+# have INTRODUCED an error of exactly the magnitude we were trying to avoid.
+# The constants are removed rather than left dead, so nobody re-applies them.
+#
+# Two related questions remain genuinely open, and neither is this one:
+#   1. Puro.earth specifies only ISO 10390:2021, which permits H2O, CaCl2 or
+#      KCl side by side, so its basis is unpinned at the protocol level. Both
+#      of its numeric thresholds trace to Dietzen & Rosing 2023, the same paper
+#      Isometric implements on a water basis -- suggestive, not proof.
+#   2. SLURRY vs SOIL SOLUTION is a different offset and still unhandled. The
+#      rate law and eta_dic both want H+ activity in the water actually
+#      contacting the grain; a dilute slurry reads above in-situ soil solution
+#      at field water content, plausibly by 0.2-0.5 units. Direction: we
+#      overstate eta_DIC and understate rate. Not corrected here because the
+#      magnitude is not established for cropland at field capacity.
 # ---------------------------------------------------------------------------
 PH_CONVENTION = "H2O"
-PH_H2O_MINUS_CACL2 = 0.55         # units; sensitivity range below
-PH_H2O_MINUS_CACL2_RANGE = (0.4, 0.7)
+PH_CONVENTION_RESOLVED = (
+    "Isometric v1.2 states the 5.2 screen is measured in a soil-water slurry, "
+    "i.e. pH(H2O) as SoilGrids reports it; no offset applies. Puro cites only "
+    "ISO 10390:2021 and remains unpinned."
+)
 SOILGRIDS_PH_SCALE = 10.0         # SoilGrids stores pH * 10
 SOILGRIDS_SOC_UNITS = "dg/kg"     # divide by 10 for g/kg
+
+# Flooding drives soil pH toward neutrality, so flooded pCO2 must not be paired
+# with a drained pH. SoilGrids is an air-dried, drained measurement; van Breemen
+# (1987, Neth. J. Agric. Sci. 35, 271, p.274) reports that on submergence "the
+# pH of acidic soils increases, and that the pH of alkaline soils decreases,
+# while the pH generally stabilizes at values between approximately 6 and 7
+# after several weeks or months of flooding". Measured instance: Schulz et al.
+# (2024, ES&T 58, 10601) saw pH at 15 cm rise from 4.5-5.2 to 6.0-6.2 over 16
+# weeks. 6.7 is the midpoint of van Breemen's stated 6-7 band.
+#
+# This matters for the paddy question specifically, and it cuts AGAINST the
+# paddy mechanism: the high-pCO2 advantage exists only below about pH 5.5, and
+# submergence removes exactly that acidity. So the retracted paddy prediction
+# has a mechanistic, self-cancelling explanation rather than only a population
+# one. Effect on this map is small (paddy-weighted median pH is already 6.4 and
+# mean flooded cell-time is 0.014), so this is a consistency fix, not a
+# re-ranking.
+PH_FLOODED_CONVERGENCE = 6.7
+PH_FLOODED_CONVERGENCE_RANGE = (6.0, 7.0)
+PH_FLOODED_SOURCE = (
+    "van Breemen 1987, Neth. J. Agric. Sci. 35, 271 (p.274); "
+    "Schulz et al. 2024, ES&T 58, 10601 (+1.0-1.5 units over 16 weeks)"
+)
 
 # ---------------------------------------------------------------------------
 # Protocol eligibility thresholds. VERSIONED -- these change, and the map must
@@ -312,7 +354,11 @@ GUDBRANDSSON_TOLERANCE_LOG = 0.5
 # Cascade's 68.8 was therefore "a good number reached by an unsupported route".
 # Measured whole-rock basalt is ~36. So Cascade's value is roughly 2x too high --
 # and so is our own Palandri-Kharaka mixture, whose effective Ea comes out at
-# 46-63 kJ/mol depending on pH. Both over-weight temperature.
+# 61.9-69.3 kJ/mol over 5-25 C depending on pH (66.0 at pH 6.5). Both
+# over-weight temperature. NOTE: this range was previously stated as 46-63,
+# which was wrong in the flattering direction -- only the metabasalt archetype
+# reaches the low end, and the shipped delivered_basalt does not. Recomputed
+# directly from rate_ca_mg_release over the cropland temperature band.
 #
 # The consequence is geographic and it is not small: at 36 kJ/mol a soil 20 C
 # warmer is 2.7x faster, at 68 it is 6.7x. The tropics-versus-temperate contrast
@@ -342,13 +388,34 @@ DELIVERED_BASALT_RANGE = (0.256, 0.334)
 DELIVERED_BASALT_SOURCE = ("2026 verified basalt deliveries, independently measured "
                            "subset; input data held locally, not redistributed")
 
-# Observed dependence of fraction weathered on application rate, from the same
-# table: fw ~ rate^-0.58 (R2 0.48, n=8), and perfectly monotonic within the
-# 4 India deployments. NOT used in the model -- recorded because it establishes
-# that FRACTION WEATHERED IS NOT A SITE PROPERTY. It depends on how much rock
-# was applied, so the map must never present it as a suitability metric and any
-# cross-site comparison has to hold application rate fixed.
+# Apparent dependence of fraction weathered on application rate: fw ~ rate^-0.58
+# (R2 0.48, n=8). NOT used in the model.
+#
+# DO NOT TREAT THIS AS A RATE EFFECT. It is confounded beyond repair in this
+# dataset, and the confounding was missed when the constant was added:
+#
+#   - corr(ln rate, ln p50) = +0.60. Operators who apply high rates also grind
+#     coarse (Mati: 44.7 t/ha at 600 um) and operators who apply low rates grind
+#     fine (Lithos/Terradot: ~20 t/ha at 67-120 um).
+#   - The WITHIN-operator slope -- same feedstock, same grind -- is
+#     -0.01 +/- 0.57, i.e. indistinguishable from zero.
+#   - Grind is perfectly nested in operator, so the independent cluster count is
+#     4, not 8, and one of those is a singleton.
+#
+# So -0.58 is the operator/grind contrast wearing a rate label. Using it to
+# "normalise to a common application rate", as analyse_deployments.py once did,
+# removes the grind contrast a SECOND time through a coefficient that IS the
+# grind contrast -- which is why that normalisation appeared to reverse the
+# regime ordering. That reversal is withdrawn.
+#
+# What the constant still legitimately establishes: FRACTION WEATHERED IS NOT A
+# SITE PROPERTY. It depends on how much rock was applied, so the map must never
+# present it as a suitability metric, and any cross-site comparison has to hold
+# both application rate AND grind fixed. Identifying a real rate exponent needs
+# two rates within one grind at the same site; see docs/VALIDATION.md.
 FW_RATE_EXPONENT_OBSERVED = -0.58
+FW_RATE_EXPONENT_IS_CONFOUNDED = True
+FW_RATE_EXPONENT_WITHIN_OPERATOR = (-0.013, 0.572)   # slope, standard error
 FW_RATE_EXPONENT_R2 = 0.48
 
 # ---------------------------------------------------------------------------
@@ -456,7 +523,7 @@ TERM_EXPONENT_RANGE = (0.0, 1.0)
 # largest uncertainty in any absolute CDR figure here, and burying it in a
 # hardcoded constant hid the dominant term from the reader.
 #
-# The verified 2026 deliveries span 67-500 um. On diameter alone that is 7.5x in
+# The verified 2026 deliveries span 67-600 um. On diameter alone that is ~9x in
 # geometric surface area; allowing distribution width to vary at fixed d80 adds
 # up to another order of magnitude. Both are therefore user-controllable, and
 # neither is presented as known.
