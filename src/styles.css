@@ -79,11 +79,6 @@ body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font); }
 #legend .amt { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--ink3); }
 #legend .ramp { height: 11px; border-radius: 2px; margin: 2px 0 5px; }
 #legend .ends { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--ink3); }
-.hatchsw {
-  background-image: repeating-linear-gradient(45deg, var(--warn) 0 2px, transparent 2px 4px);
-  background-color: var(--panel2);
-}
-
 .link-btn { background: none; border: 0; padding: 0; font: inherit; font-size: 12.5px; color: var(--accent); cursor: pointer; }
 .link-btn:hover { text-decoration: underline; }
 

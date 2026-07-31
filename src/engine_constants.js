@@ -579,7 +579,10 @@ window.ERW = {
     "version": "puro_v2025_isometric_v1.2",
     "socThreshold": 5.0,
     "pExcluded": 0.9,
-    "pPasses": 0.1
+    "pPasses": 0.1,
+    "marginalDrawn": false,
+    "excludedShareCropland": 0.00044,
+    "marginalShareCropland": 0.532
   },
   "labels": {
     "grid": "0.1\u00b0 grid (~11 km at the equator)",

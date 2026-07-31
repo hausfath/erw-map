@@ -41,7 +41,6 @@
 
   let gl, prog, quad, texA, texB, texC, texRamp, cpu = null;
   let mode = "score";
-  let showElig = true;
   let showQuarries = false;
   // Term exponents, NOT importance weights. Default 1 means the composite is
   // exactly the physical product, so gross CDR -- and hence suitability -- is
@@ -132,7 +131,6 @@
   uniform vec2 uGridSize;
   uniform vec3 uExp;              // term exponents; 1,1,1 == the physics
   uniform int  uMode;             // 0 suitability, 1 limiting, 2 cascade
-  uniform bool uElig;
   uniform vec2 uL1Enc;            // lo, hi of the stored L1 range
   uniform float uSsaShift;        // log10(SSA(d50,width) / SSA(ref))
   uniform float uKdiss;           // -ln(1 - dissolved fraction at reference)
@@ -173,7 +171,7 @@
     int flags = int(b.g * 255.0 + 0.5);
     if ((flags & 1) == 0) { fragColor = OUT_OF_DOMAIN; return; }
 
-    if (uElig && (flags & 2) != 0) {          // fails the SOC screen outright
+    if ((flags & 2) != 0) {                   // fails the SOC screen outright
       fragColor = vec4(0.30, 0.16, 0.16, 1.0);
       return;
     }
@@ -230,13 +228,9 @@
     sc *= pow(vCost, uCostExp);
 
     vec3 col = texture(uRamp, vec2(clamp(sc, 0.0, 1.0), 0.5)).rgb;
-
-    // Marginal eligibility: a hatch, never a colour blend. A blend would make a
-    // marginal cell read as a slightly-worse good cell.
-    if (uElig && (flags & 4) != 0) {
-      float d = mod(gl_FragCoord.x + gl_FragCoord.y, 14.0);
-      if (d < 2.0) col = mix(col, vec3(0.910, 0.702, 0.224), 0.45);
-    }
+    // No marginal-eligibility hatch. It covered 53% of cropland, which made it
+    // the dominant feature of the map while saying little, and it drowned out the
+    // failures it was meant to accompany. Only outright failures are drawn now.
     fragColor = vec4(col, 1.0);
   }`;
 
@@ -373,7 +367,6 @@
     gl.uniform2f(u("uGridSize"), G.width, G.height);
     gl.uniform3f(u("uExp"), termExp.reactivity, termExp.eta_dic, termExp.drainage);
     gl.uniform1i(u("uMode"), mode === "score" ? 0 : (mode === "limiting" ? 1 : 2));
-    gl.uniform1i(u("uElig"), showElig ? 1 : 0);
     gl.uniform2f(u("uL1Enc"), E.l1Enc.lo, E.l1Enc.hi);
     gl.uniform1f(u("uSsaShift"), ssaShift());
     gl.uniform1f(u("uKdiss"), K_DISS);
@@ -684,7 +677,6 @@
 
     let flagHtml = "";
     if (flags & 2) flagHtml += `<div class="flag bad">Fails the SOC &gt; ${E.eligibility.socThreshold} wt% screen (P &gt; ${E.eligibility.pExcluded})</div>`;
-    else if (flags & 4) flagHtml += `<div class="flag warn">Marginal on the SOC screen — cannot be cleared or excluded from these data</div>`;
     if (flags & 8) flagHtml += `<div class="flag warn">Soil pH &lt; 5.2: Isometric screens pH at validation (annotation only, no score effect)</div>`;
 
     box.innerHTML =
@@ -746,11 +738,8 @@
   }
 
   function eligRows() {
-    if (!showElig) return "";
     return `<div class="lrow" style="margin-top:9px"><span class="sw" style="background:#4d2929"></span>` +
-      `<span class="lbl">Excluded: SOC &gt; ${E.eligibility.socThreshold} wt%</span></div>` +
-      `<div class="lrow"><span class="sw hatchsw"></span>` +
-      `<span class="lbl">Marginal — cannot be cleared</span></div>`;
+      `<span class="lbl">Fails SOC &gt; ${E.eligibility.socThreshold} wt% screen</span></div>`;
   }
 
   /* Fraction of cropland area whose decile moves away from the neutral default.
@@ -853,8 +842,8 @@
       here with zero free parameters, it reproduces the protocols' own screening
       thresholds: half efficiency falls at pH 5.08 at Isometric's mandated
       4,000 µatm soil pCO₂, against their 5.20 screen.</p>
-      <p><b>Protocol eligibility as a mapped layer,</b> in three states rather
-      than two, from exceedance probabilities on SoilGrids quantiles.</p>
+      <p><b>Protocol eligibility as a mapped layer,</b> from exceedance
+      probabilities on SoilGrids quantiles rather than a point estimate.</p>
 
       <h3>The independent kinetics test, and what it found</h3>
       <div class="flagbox"><p><b>This test fails, and it is the most important open
@@ -1019,10 +1008,9 @@
       <p>Previously the q05/q50/q95 quantiles were resampled to the analysis grid
       and the probability computed from the <i>averaged quantiles</i>. Averaging
       quantiles is not averaging distributions, so that was not valid uncertainty
-      propagation, and it widened the apparent spread and inflated the marginal
-      class. The probability is now computed at ~2.8 km and the <b>probability</b>
-      is averaged, which is valid — the result is the expected area fraction of the
-      cell that exceeds. Marginal cropland drops from 73% to <b>53%</b>.</p>
+      propagation, and it widened the apparent spread. The probability is now
+      computed at ~2.8 km and the <b>probability</b> is averaged, which is valid —
+      the result is the expected area fraction of the cell that exceeds.</p>
       <p>Reduced but not removed: SoilGrids quantiles describe a ~250 m block
       average while the protocol threshold applies to a sampled field, so this
       remains a screening likelihood rather than a calibrated eligibility
@@ -1062,15 +1050,19 @@
       roughness multiplier λ of roughly 39–196, which straddles the top of the
       plausible 1–100 range. That is the dominant uncertainty in the product made
       visible rather than buried.</p>
-      <p><b>Most cropland is "marginal" on the SOC screen.</b> On a point
-      estimate only ~0.2% of cropland area would be excluded; carrying SoilGrids'
-      predictive spread honestly puts ~73% in the band where the threshold can be
-      neither cleared nor confirmed. That says more about how wide those
-      predictive intervals are than about the soils. Two further caveats: the
-      quantiles describe a ~250 m <i>block average</i>, not a sampled field, so
-      they understate how often an individual field crosses the threshold; and
-      averaging quantiles onto a coarser grid, as done here, is not a valid
-      uncertainty propagation.</p>
+      <p><b>The SOC screen turns out to be close to a non-constraint on
+      cropland.</b> Only 0.04% of cropland area is confidently excluded, and 96% of
+      the cells flagged worldwide sit north of 50°N — SOC above 5 wt% is a peatland
+      and boreal-forest phenomenon, not a farmland one. An earlier version also drew
+      a <i>marginal</i> class wherever the exceedance probability fell between 0.1
+      and 0.9. That covered 53% of cropland, which made it the visual centre of the
+      map while saying almost nothing a developer could act on, so it is now
+      reported here rather than drawn. The 53% is mostly a statement about how wide
+      SoilGrids' predictive intervals are: on a point estimate the same figure is
+      ~0.2%. Two caveats stand on the probability either way — the quantiles
+      describe a ~250 m <i>block average</i> rather than a sampled field, so they
+      understate how often an individual field crosses the threshold, and this is a
+      screening likelihood, not a calibrated eligibility probability.</p>
       <p><b>Cropland is herbaceous-only.</b> The mask reproduces Potapov et al.
       (2022) to within 0.1% (1.215 vs 1.216 Gha), but that definition excludes
       perennial woody crops, temporary meadows and long fallow — about 0.36 Gha
@@ -1171,11 +1163,12 @@
     $("res-label").textContent =
       `${E.labels.build} · ${E.labels.grid} · ${E.labels.effectiveRes}`;
     $("elig-version").textContent = E.eligibility.version;
-    $("elig-hint").textContent =
-      `Excluded above P=${E.eligibility.pExcluded} of crossing SOC ` +
-      `${E.eligibility.socThreshold} wt%; hatched between ` +
-      `${E.eligibility.pPasses} and ${E.eligibility.pExcluded}. A hatch, not a ` +
-      `blend — a marginal site should not read as a slightly worse good site.`;
+    $("elig-hint").innerHTML =
+      `Flags only outright failures: P &gt; ${E.eligibility.pExcluded} of crossing ` +
+      `SOC ${E.eligibility.socThreshold} wt%. That is ` +
+      `<b>${(E.eligibility.excludedShareCropland * 100).toFixed(2)}% of cropland` +
+      `</b> \u2014 the screen is close to a non-constraint on farmland, because ` +
+      `SOC above 5 wt% is a peatland and boreal-forest phenomenon.`;
     $("stat-main").textContent = E.stats.croplandGha.toFixed(2) + " Gha";
     const nq = (window.QUARRIES && window.QUARRIES.points.length) || 0;
     const bySrc = {};
@@ -1213,9 +1206,6 @@
     attachPanZoom();
     document.querySelectorAll("#mode-seg .seg-btn").forEach((btn) =>
       btn.addEventListener("click", () => setMode(btn.dataset.mode)));
-    $("chk-elig").addEventListener("change", (e) => {
-      showElig = e.target.checked; refresh();
-    });
     const cq = $("chk-quarries");
     if (window.QUARRIES && window.QUARRIES.points.length) {
       cq.addEventListener("change", (e) => {

@@ -97,7 +97,7 @@ term rather than being built in.
 **4. Protocol eligibility as a mapped layer.** Soil organic carbon above 5 wt%
 excludes a site from crediting (Puro.earth ERW 2025 rule 3.9.1c), and the
 gridded inputs have real uncertainty, so eligibility is rendered as three states
-— excluded, marginal, passes — from exceedance probabilities, rather than as a
+— from exceedance probabilities on SoilGrids quantiles, rather than as a
 binary mask on a point estimate.
 
 ## What the verified deliveries say
@@ -286,7 +286,7 @@ sit at ~1.
 |---|---|
 
 
-| **~53% of cropland is "marginal" on the SOC screen** | Down from 73% once the probability was computed at ~2.8 km and the *probability* averaged rather than the quantiles. The remainder is genuine: SoilGrids' predictive intervals are wide. Still a screening likelihood, not a calibrated eligibility probability, because the quantiles describe a block average and the threshold applies to a field |
+| **The SOC screen barely binds on cropland** | Only 0.04% of cropland area is confidently excluded (P > 0.9), and 96% of the cells flagged worldwide are north of 50°N: SOC above 5 wt% is a peatland and boreal-forest phenomenon. A *marginal* class (0.1 < P < 0.9) covering 53% of cropland was drawn in an earlier version and is now reported rather than mapped — it was the dominant visual feature of the map while saying little that was actionable, and it is largely a statement about the width of SoilGrids' predictive intervals (on a point estimate the same figure is ~0.2%). Still a screening likelihood, not a calibrated eligibility probability, because the quantiles describe a block average and the threshold applies to a field |
 | **Grid is 0.1° (~11 km), not 1 km** | The header says so. Effective resolution is coarser again |
 | **Gudbrandsson kinetics test now runs, and FAILS** | See below. The rate law over-predicts measured basalt Ca and Mg release, with structured residuals. This is the most important open problem in the model |
 

@@ -404,8 +404,12 @@ def main() -> int:
     excl = float((aw * (p_soc[m] > C.P_EXCEED_EXCLUDED)).sum() / aw.sum())
     marg = float((aw * ((p_soc[m] > C.P_EXCEED_PASSES)
                         & (p_soc[m] <= C.P_EXCEED_EXCLUDED))).sum() / aw.sum())
-    print(f"    SOC>5wt% screen: {excl:.1%} of cropland area excluded, "
-          f"{marg:.1%} marginal  [{p_soc_method}]")
+    # Reported, not drawn. The screen turns out to be a near-non-constraint on
+    # cropland: SOC above 5 wt% is a peatland and boreal-forest phenomenon, and
+    # 96% of the globally flagged cells sit north of 50N.
+    print(f"    SOC>5wt% screen: {excl:.3%} of cropland area excluded "
+          f"(P>{C.P_EXCEED_EXCLUDED}); {marg:.1%} would have been 'marginal', "
+          f"a class now REPORTED not drawn  [{p_soc_method}]")
     paddy_share = float((aw * (f_flood[m] > 0.05)).sum() / aw.sum())
     print(f"    cells >5% flooded cell-time: {paddy_share:.1%} of cropland area")
     print(f"    pH<5.2 annotation flag: "
@@ -487,7 +491,8 @@ def main() -> int:
                    v_cost=v_cost, cost_conf=cost_conf)
     emit_js(transform, w, h, gha, p50,
             cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
-            clim_source=clim_source, monthly=monthly, n_quarries=n_q)
+            clim_source=clim_source, monthly=monthly, n_quarries=n_q,
+            soc_excluded=excl, soc_marginal=marg)
     print()
     print("done. Open src/index.html over HTTP:")
     print("  python3 -m http.server 8000 --directory src")
@@ -537,8 +542,12 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
     flags = np.zeros((h, w), dtype="uint8")
     flags |= np.where(valid, 1, 0).astype("uint8")                       # bit0 in-domain
     flags |= np.where(p_soc > C.P_EXCEED_EXCLUDED, 2, 0).astype("uint8")  # bit1 excluded
-    flags |= np.where((p_soc > C.P_EXCEED_PASSES)
-                      & (p_soc <= C.P_EXCEED_EXCLUDED), 4, 0).astype("uint8")  # bit2 marginal
+    # bit2 was a MARGINAL state (0.1 < P <= 0.9), drawn as a hatch. Removed: it
+    # covered 53% of cropland, which made it the dominant visual feature of the
+    # map while conveying almost nothing actionable, and it swamped the failures
+    # it was meant to sit alongside. The underlying probability is still computed
+    # and still reported as a statistic -- see the note in the Methods panel --
+    # it is just no longer part of the visual encoding. Bit 2 is now unused.
     flags |= np.where(ph_warn, 8, 0).astype("uint8")                     # bit3 pH<5.2 note
 
     r2 = np.rint(np.clip(crop, 0, 1) * 255).astype("uint8")
@@ -586,7 +595,12 @@ RAMP = [  # viridis-like, colour-blind safe, legible in light and dark
 
 
 def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
-            clim_source="unknown", monthly=False, n_quarries=0) -> None:
+            clim_source="unknown", monthly=False, n_quarries=0,
+            soc_excluded=0.0, soc_marginal=0.0) -> None:
+    # PASS THESE IN, never reach for main()'s locals. Reading a caller local from
+    # here raises NameError at the very last step of the build, which leaves a
+    # STALE engine_constants.js behind while everything upstream looks fine. That
+    # has now happened twice (n_q, then these two), so the signature is the guard.
     km = abs(transform.a) * 2.0 * np.pi * C.EARTH_RADIUS_M / 1000.0 / 360.0
     """One generator for BOTH the legend stops and the shader ramp, so they
     cannot drift. This is the failure mode that broke the sibling BiCRS Atlas."""
@@ -670,7 +684,10 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
         "eligibility": {"version": C.ELIGIBILITY_VERSION,
                         "socThreshold": C.SOC_EXCLUSION_WT_PCT,
                         "pExcluded": C.P_EXCEED_EXCLUDED,
-                        "pPasses": C.P_EXCEED_PASSES},
+                        "pPasses": C.P_EXCEED_PASSES,
+                        "marginalDrawn": False,
+                        "excludedShareCropland": round(soc_excluded, 5),
+                        "marginalShareCropland": round(soc_marginal, 3)},
         # Label the grid from the ACTUAL spacing, never from a constant that
         # might describe a different build. v0 is 0.1 deg (~11 km), not the 1 km
         # the plan targets, and the header must say so.
