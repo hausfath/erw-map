@@ -148,17 +148,35 @@ the cropland mask and the area weighting. Global cropland reproduces Potapov et
 al. (2022) to within 0.1% (1.215 vs 1.216 Gha), which validates the area pipeline
 independently of any ERW science.
 
-What is not, in order of how much it matters:
+### Fixed in this pass
+
+| Was | Now |
+|---|---|
+| Drainage was a fixed 0.35 runoff coefficient on precipitation, giving η ≈ 0.32 almost everywhere | **WaterGAP2-2e groundwater recharge** — the water percolating below the root zone, with simulated irrigation return flow. Median η 0.71 with real spread 0.21–0.88 |
+| `D_w` defaulted to 0.5 m/yr with a 0.1–2.0 range | **0.03 m/yr, range 0.001–0.3.** The old default was *above* Maher & Chamberlain's stated global maximum, and the range sat almost entirely outside the published one. Both errors suppressed η and partly cancelled |
+| Drainage limited nearly all cropland | Drainage limits **19.5%**; reactivity limits **74.6%**, the physically expected answer for a weathering map |
+| No paddy mask, so the headline paddy prediction could not appear at all | **Soil pCO₂ interpolated continuously** from flooded fraction of cell-time: GRPI Landsat inundation months × SPAM irrigated-rice sub-cell area. 7.6% of cropland area has >5% flooded cell-time |
+| Surface area buried in a hardcoded `0.22` | **Two grind sliders** (d80, Rosin–Rammler width). Rate is linear in reactive area and L1 is a log ratio, so grind is a uniform shift — the value function moved into the shader to make it live |
+| CO₂ layer ~6× below verified deliveries | **~3× below**, and it moved without any tuning, purely from better physics |
+
+The λ readout is the useful diagnostic to watch: at the reference 267 µm grind,
+matching a BET-scale area of 1–5 m²/g would demand a roughness multiplier of
+roughly 39–196, straddling the top of the plausible 1–100 range. That is the
+dominant uncertainty made visible rather than buried.
+
+One number corrected downward in the process: distribution width moves surface
+area by about **8×** over the slider range, not the 33× quoted earlier. The larger
+figure assumes an untruncated fine tail; with a physical 1 µm floor it is smaller.
+
+### Still not fixed
 
 | Problem | Effect |
 |---|---|
-| **Drainage is a placeholder** — a fixed runoff coefficient on annual precipitation, not a runoff product | Median η ≈ 0.32 almost everywhere, so it is the limiting factor across most of the map and it drags the absolute level down. Treat the pattern as more meaningful than the level |
-| **Indicative CO₂ runs ~6× below the verified deliveries** | Normalised to a common rate, 2026 deliveries imply ~1.9 tCO₂/ha at 20 t/ha; this build's median is 0.32. Deliberately **not** tuned to close the gap, because that needs per-deployment particle-size distributions we don't have |
-| **~73% of cropland is "marginal" on the SOC screen** | A point estimate would exclude 0.2%; carrying SoilGrids' predictive spread honestly leaves most cropland unresolvable. That says more about the width of those intervals than about the soils. Also, averaging quantiles onto a coarser grid is not valid uncertainty propagation |
 | **Air temperature stands in for soil temperature; precipitation for soil moisture** | These are Cascade's own inputs, so the baseline comparison is like-for-like — but our claimed soil-temperature improvement is not yet realised |
-| **No paddy mask** | Every cell uses the unsaturated soil pCO₂, so the headline paddy prediction cannot currently appear on the map at all |
 | **No feedstock or haul-cost layer** | The single biggest gap versus a deployment-recommendation tool |
+| **~73% of cropland is "marginal" on the SOC screen** | A point estimate would exclude 0.2%; carrying SoilGrids' predictive spread honestly leaves most cropland unresolvable. Also, averaging quantiles onto a coarser grid is not valid uncertainty propagation |
 | **Grid is 0.1° (~11 km), not 1 km** | The header says so. Effective resolution is coarser again |
+| **Gudbrandsson kinetics test not run** | Still the only genuinely independent test of the rate law, and it gates the next phase |
 
 Weight sensitivity is not hidden: moving reactivity from equal weighting to 77%
 changes the decile of **63.7% of cropland area**. The sidebar reports that number

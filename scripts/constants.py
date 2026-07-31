@@ -338,6 +338,37 @@ CROPLAND_GAP_COMPONENTS_MHA = {
 APPLICATION_RATE_T_HA_YR = 20.0
 
 # ---------------------------------------------------------------------------
+# Particle size. Exposed in the UI because specific surface area is the single
+# largest uncertainty in any absolute CDR figure here, and burying it in a
+# hardcoded constant hid the dominant term from the reader.
+#
+# The verified 2026 deliveries span 67-500 um. On diameter alone that is 7.5x in
+# geometric surface area; allowing distribution width to vary at fixed d80 adds
+# up to another order of magnitude. Both are therefore user-controllable, and
+# neither is presented as known.
+# ---------------------------------------------------------------------------
+FEEDSTOCK_DENSITY_KG_M3 = 3000.0     # basalt
+PSD_D_MIN_UM = 1.0                   # finest particle; truncates the RR tail
+PSD_D_MAX_UM = 5000.0
+PSD_REF_D80_UM = 267.0               # Beerling et al. 2024 Corn Belt trial
+PSD_REF_WIDTH = 1.5                  # Rosin-Rammler n; unmeasured, see below
+PSD_D80_SLIDER_RANGE = (40.0, 600.0)   # brackets the delivery range 67-500 um
+PSD_WIDTH_SLIDER_RANGE = (0.7, 2.5)   # broad .. narrow grind
+
+# The reference WIDTH is an assumption, not a measurement: the Corn Belt trial
+# reports p80 but, as far as we have found, not the full distribution. Every
+# absolute number scales with this choice, which is precisely why it is a slider.
+PSD_REF_WIDTH_IS_ASSUMED = True
+
+# Roughness multiplier on geometric SSA, to be FITTED per deployment once
+# per-deployment particle-size distributions are available. Values outside this
+# range falsify the model rather than needing a bigger multiplier:
+# lambda < 1 is below geometric and unphysical; lambda > 100 implies BET-scale
+# reactivity for coarse grains, i.e. the kinetics are wrong, not the area.
+LAMBDA_ROUGHNESS_RANGE = (1.0, 100.0)
+LAMBDA_DEFAULT = 13.0    # mid-range placeholder; NOT fitted. See docs/VALIDATION.md
+
+# ---------------------------------------------------------------------------
 # L2 composite: value functions, floors, aggregation.
 #
 # Normalisation uses ABSOLUTE breakpoints, never min-max or percentile over the
@@ -398,14 +429,48 @@ L1_REF = {"pH": 6.5, "T_soil_C": 15.0, "saturation": 0.6}
 L1_LOG_HALF_RANGE = 30.0          # 'A': clamp at +/- log10(A)
 
 # ---------------------------------------------------------------------------
-# Transport limitation (Maher & Chamberlain 2014). eta = q / (q + D_w).
-# Form is well grounded; D_w is NOT constrained, so this is a sensitivity
-# parameter and the layer is off by default until D_w can be bounded from the
-# field trials.
+# Transport limitation (Maher & Chamberlain 2014, Science 343, 1502).
+#   eta_transport = q / (q + D_w)
+#
+# D_w IS constrained by the literature, contrary to an earlier note here. Read
+# from the paper directly: their fitted Damkohler coefficients span roughly
+# 0.001-0.3 m/yr, with 0.3 stated as the GLOBAL MAXIMUM and 0.03 as the
+# collisional/craton divide. An earlier version of this file used 0.5 as the
+# default with a 0.1-2.0 sensitivity range -- i.e. a default ABOVE their global
+# maximum and a range almost entirely outside the published one. Because
+# eta = q/(q+D_w), too large a D_w suppresses eta everywhere, so that error was
+# itself part of why the drainage term dominated the whole map.
+#
+# Magnitude of the correction, at q = 0.35 m/yr:
+#   D_w 0.5  -> eta 0.41   (the old default)
+#   D_w 0.3  -> eta 0.54   (their global maximum)
+#   D_w 0.03 -> eta 0.92   (their craton/collisional divide)  <- new default
+#
+# TWO CAVEATS, both important and neither resolved:
+#  1. Their fit uses the Gaillardet et al. 1999 river dataset, which the paper
+#     states is "mostly draining granitic lithologies", with basalt asserted to
+#     "follow the same general behavior" only by analogy in a supplementary
+#     figure. There is NO basalt-specific empirical D_w.
+#  2. Crushed ERW feedstock has far more reactive surface area than natural
+#     saprolite, which shortens the equilibration length and genuinely argues
+#     for a higher effective D_w than a natural-catchment fit gives. A value
+#     above 0.3 may therefore be defensible for ERW -- but it needs an argument,
+#     which is why it lives in its own clearly-labelled sensitivity case below
+#     rather than in the default.
 # ---------------------------------------------------------------------------
-TRANSPORT_LIMITATION_DEFAULT_ON = False
-DAMKOHLER_DW_M_YR = 0.5
-DAMKOHLER_DW_RANGE = (0.1, 2.0)
+TRANSPORT_LIMITATION_DEFAULT_ON = True     # promoted: q and D_w are both real now
+DAMKOHLER_DW_M_YR = 0.03
+DAMKOHLER_DW_RANGE = (0.001, 0.3)
+DAMKOHLER_SOURCE = "Maher & Chamberlain 2014, Science 343, 1502 (Fig. 2 contours)"
+
+# Explicitly separate, explicitly not the default. Use only with the
+# surface-area argument stated alongside any result that depends on it.
+DW_ERW_ENHANCED_SENSITIVITY = (0.3, 1.0)
+DW_ERW_ENHANCED_RATIONALE = (
+    "Crushed feedstock has orders of magnitude more reactive surface area than "
+    "saprolite, shortening equilibration time and raising effective D_w above "
+    "the natural-catchment fit. Not empirically constrained for ERW."
+)
 
 # ---------------------------------------------------------------------------
 # Grid. Analysis is done on an EQUAL-AREA grid, not EPSG:4326, so that "1 km"

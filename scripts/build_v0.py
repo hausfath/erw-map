@@ -32,6 +32,7 @@ import kinetics as K  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW, PROC = ROOT / "data/raw", ROOT / "data/processed"
+INTERIM = ROOT / "data/interim"
 SRC = ROOT / "src"
 
 
@@ -185,14 +186,45 @@ def main() -> int:
     print()
     print("computing layers")
     T_K = tair + 273.15
-    # Wetness proxy: v0 substitute for a soil-moisture climatology. Flagged.
+    # Wetness proxy: still a v0 substitute for a soil-moisture climatology.
     wet = np.clip(precip / 1200.0, 0.0, 1.0)
-    # Drainage q for transport limitation, m/yr. Crude: a fixed runoff
-    # coefficient on precipitation. Flagged; the real thing is a runoff product.
-    q = np.clip(precip / 1000.0 * 0.35, 0.0, None)
 
-    paddy = np.zeros_like(ph, dtype=bool)   # v0 has no paddy mask; see README
-    pco2 = np.where(paddy, C.PCO2_SATURATED_UATM, C.PCO2_UNSATURATED_UATM)
+    # ---- Drainage: real groundwater recharge, replacing the 0.35 x precip
+    # placeholder. Nearest-neighbour from 0.5 deg so the coarseness stays
+    # VISIBLE rather than being interpolated into a smooth field that does not
+    # exist -- the effective-resolution policy in docs/METHODOLOGY.md.
+    rech = INTERIM / "drainage_recharge_mmyr.tif"
+    if rech.exists():
+        q = onto_grid(rech, transform, w, h, crs,
+                      resampling=Resampling.nearest) / 1000.0     # mm/yr -> m/yr
+        q = np.clip(np.nan_to_num(q, nan=0.0), 0.0, None)
+        q_source = "WaterGAP2-2e recharge"
+    else:
+        q = np.clip(precip / 1000.0 * 0.35, 0.0, None)
+        q_source = "PLACEHOLDER 0.35 x precip -- run prep_layers.py"
+
+    # ---- Paddy: flooded fraction of cell-time, from two independent halves.
+    # months/12 comes from GRPI inundation presence (robust to CH4 emission
+    # factor); the sub-cell area fraction comes from SPAM irrigated rice.
+    # Multiplying them is deliberately conservative: it refuses to treat a cell
+    # that is 5% paddy as fully flooded, which would inflate the very paddy
+    # prediction this project needs to test rather than assume.
+    pm, pa = INTERIM / "paddy_months_flooded.tif", INTERIM / "paddy_area_frac.tif"
+    if pm.exists() and pa.exists():
+        months = np.nan_to_num(onto_grid(pm, transform, w, h, crs,
+                                         resampling=Resampling.nearest), nan=0.0)
+        parea = np.nan_to_num(onto_grid(pa, transform, w, h, crs,
+                                        resampling=Resampling.average), nan=0.0)
+        f_flood = np.clip(parea, 0, 1) * np.clip(months / 12.0, 0, 1)
+        paddy_source = "GRPI months x SPAM irrigated-rice fraction"
+    else:
+        f_flood = np.zeros_like(ph)
+        paddy_source = "NONE -- run prep_layers.py"
+
+    # Continuous interpolation, not a binary switch: a cell flooded three months
+    # a year does not behave like one flooded year-round.
+    pco2 = (C.PCO2_UNSATURATED_UATM
+            + f_flood * (C.PCO2_SATURATED_UATM - C.PCO2_UNSATURATED_UATM))
 
     reactivity = K.rate_ca_mg_release(C.FEEDSTOCK_DEFAULT, ph, T_K) * wet
     eta = K.eta_dic(ph, pco2, T_K)
@@ -210,9 +242,12 @@ def main() -> int:
     p_soc = exceedance_lognormal(soc_q05, soc, soc_q95, C.SOC_EXCLUSION_WT_PCT * 10.0)
     ph_warn = (ph < C.PH_WARNING_THRESHOLD)      # annotation only, zero score effect
 
-    # ---- Value functions, absolute breakpoints
-    v_react = piecewise(L1, [(-2.0, 0.0), (-1.0, 0.15), (0.0, 0.5),
-                             (0.7, 0.85), (1.5, 1.0)])
+    # ---- Value functions, absolute breakpoints.
+    # NOTE reactivity is NOT baked into a texture any more. Because a change of
+    # grind is a uniform additive shift on L1, shipping L1 itself and applying
+    # the value function in the shader is what makes the particle-size slider
+    # possible. See REACT_KNOTS.
+    v_react = piecewise(L1, REACT_KNOTS)
     v_eta = piecewise(eta, [(0.0, 0.0), (0.3, 0.25), (0.6, 0.6),
                             (0.9, 0.95), (1.0, 1.0)])
     v_drain = piecewise(eta_tr, [(0.0, 0.05), (0.3, 0.35), (0.6, 0.7), (0.9, 1.0)])
@@ -240,11 +275,17 @@ def main() -> int:
         return [float(v[g][o][np.searchsorted(cw, t)]) for t in qs]
 
     print(f"  cropland cells (>={C.CROPLAND_MIN_FRACTION:.0%}): {int(m.sum()):,}")
+    print(f"  drainage source: {q_source}")
+    print(f"  paddy source:    {paddy_source}   D_w = {C.DAMKOHLER_DW_M_YR} m/yr "
+          f"(published range {C.DAMKOHLER_DW_RANGE[0]}-{C.DAMKOHLER_DW_RANGE[1]})")
     for name, arr, fmt in (("soil pH (0-15 cm)", ph, "{:.2f}"),
                            ("air temp, deg C", tair, "{:.1f}"),
                            ("L1 log10(R/Rref)", L1, "{:+.2f}"),
                            ("eta_DIC", eta, "{:.3f}"),
                            ("eta_transport", eta_tr, "{:.3f}"),
+                           ("drainage q, m/yr", q, "{:.3f}"),
+                           ("flooded fraction of cell-time", f_flood, "{:.3f}"),
+                           ("soil pCO2, uatm", pco2, "{:.0f}"),
                            ("indicative tCO2 gross/ha/yr", cdr, "{:.2f}")):
         p10, p50, p90 = wq(arr, (0.10, 0.50, 0.90))
         print(f"    {name:28s} area-weighted p10/p50/p90  "
@@ -255,6 +296,8 @@ def main() -> int:
                         & (p_soc[m] <= C.P_EXCEED_EXCLUDED))).sum() / aw.sum())
     print(f"    SOC>5wt% screen: {excl:.1%} of cropland area excluded, "
           f"{marg:.1%} marginal")
+    paddy_share = float((aw * (f_flood[m] > 0.05)).sum() / aw.sum())
+    print(f"    cells >5% flooded cell-time: {paddy_share:.1%} of cropland area")
     print(f"    pH<5.2 annotation flag: "
           f"{float((aw * ph_warn[m]).sum() / aw.sum()):.1%} of cropland area")
 
@@ -278,6 +321,8 @@ def main() -> int:
         L1=L1.astype("float32"), eta=eta.astype("float32"),
         eta_tr=eta_tr.astype("float32"), cdr=cdr.astype("float32"),
         cascade=cascade.astype("float32"), p_soc=p_soc,
+        q=q.astype("float32"), f_flood=f_flood.astype("float32"),
+        pco2=pco2.astype("float32"),
         transform=np.array(transform).reshape(3, 3)[:2].ravel(),
     )
     print(f"  wrote {PROC / 'v0_layers.npz'} "
@@ -285,7 +330,7 @@ def main() -> int:
 
     # ---- Encode textures
     write_textures(v_react, v_eta, v_drain, crop, p_soc, ph_warn, cdr, m,
-                   cascade=cascade, ph=ph)
+                   cascade=cascade, ph=ph, L1=L1)
     emit_js(transform, w, h, gha, p50)
     print()
     print("done. Open src/index.html over HTTP:")
@@ -306,7 +351,7 @@ def quantize(v, floor: float) -> np.ndarray:
 
 
 def write_textures(v_react, v_eta, v_drain, crop, p_soc, ph_warn, cdr, valid,
-                   *, cascade, ph) -> None:
+                   *, cascade, ph, L1) -> None:
     from PIL import Image
     out = SRC / "textures"
     out.mkdir(parents=True, exist_ok=True)
@@ -317,7 +362,11 @@ def write_textures(v_react, v_eta, v_drain, crop, p_soc, ph_warn, cdr, valid,
         return Image.fromarray(np.dstack([r, g, b, a]), "RGBA")
 
     eps = C.EPS_QUANTIZE
-    r1 = np.where(valid, quantize(v_react, eps), 0).astype("uint8")
+    # tex1.r holds NORMALISED L1, not the value function. The shader applies the
+    # piecewise function after adding the particle-size shift.
+    lo, hi = L1_ENC
+    l1n = np.clip((np.nan_to_num(L1, nan=lo) - lo) / (hi - lo), 0.0, 1.0)
+    r1 = np.where(valid, np.rint(5 + l1n * 250.0), 0).astype("uint8")
     g1 = np.where(valid, quantize(v_eta, eps), 0).astype("uint8")
     b1 = np.where(valid, quantize(v_drain, C.CRITERION_FLOORS["drainage"]), 0).astype("uint8")
 
@@ -360,6 +409,14 @@ def write_textures(v_react, v_eta, v_drain, crop, p_soc, ph_warn, cdr, valid,
         print(f"  wrote {p} ({p.stat().st_size / 1e6:.2f} MB)")
 
 
+# Reactivity value function, on ABSOLUTE breakpoints in L1 = log10(R/R_ref).
+# Shared with the shader via engine_constants.js so there is one definition.
+REACT_KNOTS = [(-2.0, 0.0), (-1.0, 0.15), (0.0, 0.5), (0.7, 0.85), (1.5, 1.0)]
+
+# L1 storage range. Wide enough that the particle-size shift cannot push a real
+# value off the end of the 8-bit encoding.
+L1_ENC = (-3.0, 3.0)
+
 RAMP = [  # viridis-like, colour-blind safe, legible in light and dark
     (0.00, "#3b1f4d"), (0.20, "#3d4a8f"), (0.40, "#2a7b8f"),
     (0.60, "#3fa66b"), (0.80, "#a8c93a"), (1.00, "#f7e94a"),
@@ -387,6 +444,27 @@ def emit_js(transform, w, h, gha, cdr_p50) -> None:
              "hint": "q/(q+Dw); low where water residence limits export"},
         ],
         "ramp": RAMP,
+        "reactKnots": REACT_KNOTS,
+        "l1Enc": {"lo": L1_ENC[0], "hi": L1_ENC[1]},
+        "psd": {
+            "refD80": C.PSD_REF_D80_UM, "refWidth": C.PSD_REF_WIDTH,
+            "d80Range": list(C.PSD_D80_SLIDER_RANGE),
+            "widthRange": list(C.PSD_WIDTH_SLIDER_RANGE),
+            "refSsa": round(K.ssa_geometric(C.PSD_REF_D80_UM, C.PSD_REF_WIDTH), 5),
+            "lambdaDefault": C.LAMBDA_DEFAULT,
+            "lambdaRange": list(C.LAMBDA_ROUGHNESS_RANGE),
+            "deliveryRangeUm": [67, 500],
+            "refWidthAssumed": C.PSD_REF_WIDTH_IS_ASSUMED,
+            # Precomputed shift table so the browser needs no gamma function:
+            # log10(SSA(d80, n) / SSA(ref)) on a grid the UI interpolates.
+            "d80Grid": [round(x, 1) for x in np.linspace(*C.PSD_D80_SLIDER_RANGE, 24).tolist()],
+            "widthGrid": [round(x, 3) for x in np.linspace(*C.PSD_WIDTH_SLIDER_RANGE, 13).tolist()],
+            "shiftTable": [
+                [round(float(K.ssa_log_shift(d, n)), 4)
+                 for d in np.linspace(*C.PSD_D80_SLIDER_RANGE, 24)]
+                for n in np.linspace(*C.PSD_WIDTH_SLIDER_RANGE, 13)
+            ],
+        },
         "cascadeEncoding": {"kind": "log10_ratio_to_median",
                             "lo": -2.0, "hi": 2.0},
         "phEncoding": {"lo": 3.0, "hi": 10.0},
@@ -408,13 +486,17 @@ def emit_js(transform, w, h, gha, cdr_p50) -> None:
         "provenance": {
             "soil": "SoilGrids v2.0 via ISRIC WCS (pH 0-15 cm, SOC 0-5 cm + quantiles)",
             "climate": "WorldClim 2.1 BIO1 / BIO12, 10 arc-min",
-            "cropland": "GLAD global cropland probability (Potapov et al.)",
+            "cropland": "Potapov et al. 2022 percent-cropland, 3 km",
+            "drainage": "WaterGAP2-2e groundwater recharge via ISIMIP3a, 0.5 deg",
+            "paddy": "GRPI Landsat inundation months x SPAM2010 irrigated rice",
             "substitutions": [
                 "AIR temperature stands in for monthly SOIL temperature",
                 "PRECIPITATION stands in for a soil-moisture climatology",
-                "no paddy mask yet, so all cells use the unsaturated soil pCO2",
                 "no feedstock or haul-cost layer yet",
             ],
+            "dw": {"value": C.DAMKOHLER_DW_M_YR,
+                   "range": list(C.DAMKOHLER_DW_RANGE),
+                   "source": C.DAMKOHLER_SOURCE},
         },
     }
     (SRC / "engine_constants.js").write_text(

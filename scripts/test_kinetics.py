@@ -12,7 +12,10 @@ Gate 2  eta_dic derives the protocols' own pH screening thresholds.
 Gate 3  The three-mechanism law compresses pH leverage vs Cascade's n=1 form.
 Gate 4  Constants match the primary PDF, re-extracted rather than trusted.
 Gate 5  Monotonicity: rate rises with T, eta_dic rises with pH and pCO2.
-Gate 6  Stoichiometric ceiling per feedstock archetype is physically sane.
+Gate 6  Per-mineral CO2 capacity matches published values.
+Gate 7  delivered_basalt reproduces the measured deliveries.
+Gate 8  The generated browser constants reproduce Python (anti-drift).
+Gate 9  Specific surface area scales sensibly with grind.
 
 NOT covered here, and the most important one still outstanding: the
 Gudbrandsson et al. 2011 no-free-parameter test, which requires digitising
@@ -284,6 +287,111 @@ def gate7_delivered_basalt_matches_measurement() -> None:
            f"{fresh_tco2:.3f}, i.e. +{(fresh_tco2 / ours - 1):.0%} optimistic")
 
 
+def gate8_browser_constants_match_python() -> None:
+    """The generated src/engine_constants.js must reproduce Python.
+
+    This is the anti-drift gate. The browser applies the reactivity value
+    function and the particle-size shift itself, so those definitions now exist
+    in two places at runtime. Hand-mirrored constants silently breaking
+    production is exactly what happened to the sibling BiCRS Atlas, so the
+    agreement is asserted rather than assumed.
+
+    Two tolerances, for different reasons:
+      knots      must match EXACTLY (they are the same literal, emitted).
+      shift table is a 24x13 grid the browser interpolates bilinearly, so a
+                 small interpolation error against the exact integral is
+                 expected; it is bounded here, not ignored.
+    """
+    import json
+
+    root = Path(__file__).resolve().parent.parent
+    js = root / "src/engine_constants.js"
+    if not js.exists():
+        record("8. Browser constants match Python", None,
+               "src/engine_constants.js not built yet; run scripts/build_v0.py")
+        return
+
+    txt = js.read_text()
+    payload = json.loads(txt[txt.index("{"):txt.rindex(";")])
+
+    try:
+        from build_v0 import L1_ENC, REACT_KNOTS
+    except Exception as exc:            # build_v0 imports rasterio
+        record("8. Browser constants match Python", None,
+               f"could not import build_v0 ({type(exc).__name__})")
+        return
+
+    problems = []
+    if [list(k) for k in REACT_KNOTS] != [list(k) for k in payload["reactKnots"]]:
+        problems.append("reactKnots differ")
+    if [payload["l1Enc"]["lo"], payload["l1Enc"]["hi"]] != list(L1_ENC):
+        problems.append("l1Enc differs")
+
+    # Bilinear-interpolate the emitted table the way app.js does, and compare
+    # against the exact integral at points deliberately BETWEEN grid nodes.
+    P = payload["psd"]
+    gx, gy, T = P["d80Grid"], P["widthGrid"], P["shiftTable"]
+
+    def lookup(d80, width):
+        def frac(arr, v):
+            if v <= arr[0]:
+                return 0, 0.0
+            if v >= arr[-1]:
+                return len(arr) - 2, 1.0
+            i = 0
+            while i < len(arr) - 2 and v > arr[i + 1]:
+                i += 1
+            return i, (v - arr[i]) / (arr[i + 1] - arr[i])
+        i, fi = frac(gx, d80)
+        j, fj = frac(gy, width)
+        a = T[j][i] + (T[j][i + 1] - T[j][i]) * fi
+        b = T[j + 1][i] + (T[j + 1][i + 1] - T[j + 1][i]) * fi
+        return a + (b - a) * fj
+
+    worst, at = 0.0, ""
+    for d80 in (67.0, 100.0, 187.0, 267.0, 333.0, 500.0):
+        for wid in (0.7, 1.1, 1.5, 2.0, 2.5):
+            e = abs(lookup(d80, wid) - K.ssa_log_shift(d80, wid))
+            if e > worst:
+                worst, at = e, f"d80={d80:.0f} n={wid}"
+    if worst > 0.01:                    # 0.01 log10 = 2.3% in rate
+        problems.append(f"shift table off by {worst:.4f} log units at {at}")
+
+    record("8. Browser constants match Python", not problems,
+           f"knots and L1 encoding identical; shift-table interpolation error "
+           f"max {worst:.4f} log units ({10 ** worst - 1:+.1%} in rate) at {at}"
+           + ("; " + "; ".join(problems) if problems else ""))
+
+
+def gate9_ssa_scaling() -> None:
+    """Surface area must scale sensibly with grind, and the honest version of a
+    claim made earlier in this project needs correcting.
+
+    An earlier note said distribution width moves SSA by 'up to 33x' at fixed
+    d80. That figure comes from an UNTRUNCATED Rosin-Rammler tail, where
+    arbitrarily fine particles carry unbounded area. With a physical 1 um floor
+    the width effect over the slider range is closer to 8x. Both the number and
+    the reason are recorded so the smaller, correct figure is the one quoted.
+    """
+    ref = K.ssa_geometric(C.PSD_REF_D80_UM, C.PSD_REF_WIDTH)
+    fine = K.ssa_geometric(67.0, C.PSD_REF_WIDTH)
+    coarse = K.ssa_geometric(500.0, C.PSD_REF_WIDTH)
+    broad = K.ssa_geometric(C.PSD_REF_D80_UM, C.PSD_WIDTH_SLIDER_RANGE[0])
+    narrow = K.ssa_geometric(C.PSD_REF_D80_UM, C.PSD_WIDTH_SLIDER_RANGE[1])
+
+    d_effect = fine / coarse
+    w_effect = broad / narrow
+    monotone = fine > ref > coarse and broad > narrow
+    # 6/(rho*d) puts geometric SSA for a few-hundred-micron grind at ~0.01-0.1
+    plausible = 0.001 < ref < 1.0
+    ok = monotone and plausible and 3.0 < d_effect < 15.0 and 3.0 < w_effect < 15.0
+    record("9. SSA scales with grind", ok,
+           f"ref {ref:.4f} m2/g; d80 67 vs 500 um -> {d_effect:.1f}x; "
+           f"width {C.PSD_WIDTH_SLIDER_RANGE[0]} vs "
+           f"{C.PSD_WIDTH_SLIDER_RANGE[1]} -> {w_effect:.1f}x "
+           f"(NOT the 33x an untruncated tail gives)")
+
+
 def report_calibration_arithmetic() -> None:
     """Not a gate -- context that catches the error class that bit us once.
 
@@ -315,7 +423,8 @@ def main() -> int:
                gate3_ph_leverage, gate4_constants_match_source,
                gate5_monotonicity, gate6_cdrmax_vs_published,
                gate6b_archetype_ceilings,
-               gate7_delivered_basalt_matches_measurement):
+               gate7_delivered_basalt_matches_measurement,
+               gate8_browser_constants_match_python, gate9_ssa_scaling):
         try:
             fn()
         except Exception as exc:  # a crashing gate is a failing gate

@@ -1,6 +1,10 @@
 # Raw source data: downloaded, derived from, then deleted. Never committed.
 data/raw/
-data/interim/
+
+# data/interim/ IS committed: the three derived layers total ~860 kB and let
+# build_v0.py run without re-downloading 304 MB of NetCDF. This is the
+# "keep derived files small and sufficient to regenerate the figures" rule.
+!data/interim/
 
 # Derived rasters. Large; regenerate with scripts/build_all.sh.
 data/processed/*.tif

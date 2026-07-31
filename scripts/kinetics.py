@@ -30,6 +30,8 @@ import constants as C
 
 __all__ = [
     "arrhenius_factor",
+    "ssa_geometric",
+    "ssa_log_shift",
     "mineral_rate",
     "rate_ca_mg_release",
     "carbonate_constants",
@@ -245,6 +247,74 @@ def ph_half(pco2_uatm, T_K):
     """
     K1, _, KH, _ = carbonate_constants(T_K)
     return -np.log10(np.sqrt(KH * (np.asarray(pco2_uatm, dtype=float) * 1e-6) * K1))
+
+
+# ---------------------------------------------------------------------------
+# Reactive surface area from a particle-size distribution
+# ---------------------------------------------------------------------------
+def ssa_geometric(d80_um, rr_width, *, rho=None, d_min_um=None, d_max_um=None):
+    """Mass-weighted geometric specific surface area, m2/g, for a Rosin-Rammler
+    particle-size distribution characterised by d80 and width.
+
+    Rosin-Rammler cumulative mass finer than d:  F(d) = 1 - exp(-(d/d_c)^n)
+    so d80 fixes the scale:                      d_c = d80 / (ln 5)^(1/n)
+
+    For spheres, surface area per unit mass goes as 6/(rho*d), so
+        SSA = (6/rho) * integral (1/d) dF(d)
+    which we evaluate numerically over a truncated size range rather than with
+    the closed form (6/(rho*d_c))*Gamma(1 - 1/n). The closed form DIVERGES for
+    n <= 1, because an unbounded fine tail carries unbounded surface area, and
+    real grinds do have widths near and below 1. Truncating at d_min is both
+    numerically safe and physically honest: there is a finest particle.
+
+    THIS IS GEOMETRIC AREA, NOT BET. The two differ by 130-670x at ERW grain
+    sizes, and that gap is the single largest uncertainty in any absolute CDR
+    number this project produces. It is carried explicitly as a fitted roughness
+    multiplier lambda, whose plausible range is constants.LAMBDA_ROUGHNESS_RANGE,
+    so that an unphysical demand is visible rather than hidden.
+
+    Note also that d80 alone is not sufficient: at fixed d80, varying the width
+    over a realistic range moves SSA by more than an order of magnitude. That is
+    why width is a separate argument and a separate slider, not a hidden default.
+    """
+    rho = C.FEEDSTOCK_DENSITY_KG_M3 if rho is None else rho
+    d_min_um = C.PSD_D_MIN_UM if d_min_um is None else d_min_um
+    d_max_um = C.PSD_D_MAX_UM if d_max_um is None else d_max_um
+
+    d80 = np.asarray(d80_um, dtype=float)
+    n = np.asarray(rr_width, dtype=float)
+    d_c = d80 / np.power(np.log(5.0), 1.0 / n)
+
+    # Log-spaced size bins; mass in each bin from the RR cumulative.
+    edges = np.logspace(np.log10(d_min_um), np.log10(d_max_um), 400)
+    def one(d_c_i, n_i):
+        Fe = 1.0 - np.exp(-np.power(edges / d_c_i, n_i))
+        dm = np.diff(Fe)                        # mass fraction in each bin
+        dm = np.clip(dm, 0.0, None)
+        tot = dm.sum()
+        if tot <= 0:
+            return 0.0
+        dm = dm / tot                           # renormalise over the truncation
+        dmid = np.sqrt(edges[:-1] * edges[1:])  # geometric-mean bin diameter, um
+        # 6/(rho*d): rho in kg/m3, d in um -> m2/g needs 6/(rho[kg/m3] * d[m])
+        # m2/kg = 6/(rho*d_m); /1000 for m2/g
+        return float(np.sum(dm * 6.0 / (rho * dmid * 1e-6)) / 1000.0)
+
+    if np.ndim(d_c) == 0:
+        return one(float(d_c), float(n))
+    return np.array([one(float(a), float(b))
+                     for a, b in np.broadcast(d_c, n)]).reshape(np.shape(d_c))
+
+
+def ssa_log_shift(d80_um, rr_width):
+    """log10(SSA(d80, width) / SSA(reference)).
+
+    The rate is linear in reactive surface area, and L1 is a log10 ratio, so a
+    change of grind is a UNIFORM ADDITIVE SHIFT on L1. That is what makes a
+    particle-size slider cheap: one uniform in the shader rather than a rebuild.
+    """
+    ref = ssa_geometric(C.PSD_REF_D80_UM, C.PSD_REF_WIDTH)
+    return float(np.log10(ssa_geometric(d80_um, rr_width) / ref))
 
 
 # ---------------------------------------------------------------------------

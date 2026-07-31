@@ -48,6 +48,30 @@
     get latSpan() { return this.north - this.south; },
     get latMid() { return (this.north + this.south) / 2; },
   };
+  // Particle size. Held separately from the weights because it is a physical
+  // assumption about the feedstock, not a preference about what matters.
+  const psd = { d80: E.psd.refD80, width: E.psd.refWidth };
+
+  /* Bilinear lookup into the precomputed log10(SSA/SSA_ref) table. Precomputed
+     in Python so the browser needs no gamma function and cannot disagree with
+     the pipeline about the integral. */
+  function ssaShift() {
+    const P = E.psd, gx = P.d80Grid, gy = P.widthGrid, T = P.shiftTable;
+    const f = (arr, v) => {
+      if (v <= arr[0]) return [0, 0];
+      if (v >= arr[arr.length - 1]) return [arr.length - 2, 1];
+      let i = 0; while (i < arr.length - 2 && v > arr[i + 1]) i++;
+      return [i, (v - arr[i]) / (arr[i + 1] - arr[i])];
+    };
+    const [i, fi] = f(gx, psd.d80), [j, fj] = f(gy, psd.width);
+    const a = T[j][i] + (T[j][i + 1] - T[j][i]) * fi;
+    const b = T[j + 1][i] + (T[j + 1][i + 1] - T[j + 1][i]) * fi;
+    return a + (b - a) * fj;
+  }
+
+  /* Implied geometric SSA, m2/g, for display. */
+  const ssaNow = () => E.psd.refSsa * Math.pow(10, ssaShift());
+
   // view: centre lon/lat + a zoom multiplier on the fit-to-data scale.
   const view = { lon: 10, lat: DATA.latMid, zoom: 1 };
 
@@ -99,6 +123,9 @@
   uniform int  uMode;             // 0 score, 1 limiting, 2 cascade
   uniform bool uElig;
   uniform float uEps;
+  uniform vec2 uL1Enc;            // lo, hi of the stored L1 range
+  uniform float uSsaShift;        // log10(SSA(d80,width) / SSA(ref))
+  uniform float uKx[5], uKy[5];   // reactivity value-function knots
 
   const vec4 OUT_OF_DOMAIN = vec4(0.0, 0.0, 0.0, 0.0);
 
@@ -137,8 +164,28 @@
       return;
     }
 
-    // Dequantise: 0 is reserved for masked, data starts at 5/255.
-    vec3 v = (a.rgb * 255.0 - 5.0) / 250.0 * (1.0 - uEps) + uEps;
+    // Dequantise. 0 is reserved for masked cells, so data starts at 5/255.
+    vec3 raw = (a.rgb * 255.0 - 5.0) / 250.0;
+
+    // tex1.r stores NORMALISED L1, not a value function, so that a change of
+    // grind is one uniform here rather than a pipeline rebuild. The rate is
+    // linear in reactive surface area and L1 is a log10 ratio, so particle size
+    // enters as a uniform additive shift.
+    float l1 = mix(uL1Enc.x, uL1Enc.y, clamp(raw.r, 0.0, 1.0)) + uSsaShift;
+
+    // Piecewise-linear value function on ABSOLUTE breakpoints. Absolute is what
+    // keeps the colour scale stable while the sliders move.
+    float vr = uKy[0];
+    for (int i = 0; i < 4; i++) {
+      if (l1 >= uKx[i] && l1 <= uKx[i + 1]) {
+        vr = mix(uKy[i], uKy[i + 1], (l1 - uKx[i]) / (uKx[i + 1] - uKx[i]));
+      }
+    }
+    if (l1 > uKx[4]) vr = uKy[4];
+
+    vec3 v = vec3(vr,
+                  raw.g * (1.0 - uEps) + uEps,
+                  raw.b * (1.0 - uEps) + uEps);
     v = clamp(v, uEps, 1.0);
 
     vec3 col;
@@ -301,6 +348,10 @@
     gl.uniform1i(u("uMode"), mode === "score" ? 0 : (mode === "limiting" ? 1 : 2));
     gl.uniform1i(u("uElig"), showElig ? 1 : 0);
     gl.uniform1f(u("uEps"), E.epsQuantize);
+    gl.uniform2f(u("uL1Enc"), E.l1Enc.lo, E.l1Enc.hi);
+    gl.uniform1f(u("uSsaShift"), ssaShift());
+    gl.uniform1fv(u("uKx"), new Float32Array(E.reactKnots.map(k => k[0])));
+    gl.uniform1fv(u("uKy"), new Float32Array(E.reactKnots.map(k => k[1])));
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texA);
     gl.uniform1i(u("uA"), 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texB);
@@ -397,6 +448,58 @@
     });
   }
 
+  function buildPsdSliders() {
+    const P = E.psd, host = $("psd-sliders");
+    const rows = [
+      {k: "d80", label: "d80, particle size", unit: " \u00b5m",
+       min: P.d80Range[0], max: P.d80Range[1], step: 1,
+       why: `Verified 2026 deliveries span ${P.deliveryRangeUm[0]}\u2013${P.deliveryRangeUm[1]} \u00b5m. ` +
+            `Reference ${P.refD80} \u00b5m is the Corn Belt trial.`},
+      {k: "width", label: "Distribution width", unit: "",
+       min: P.widthRange[0], max: P.widthRange[1], step: 0.05,
+       why: "Rosin\u2013Rammler n. Low is a broad grind with more fines. " +
+            (P.refWidthAssumed
+              ? "The reference value is ASSUMED \u2014 the trial reports d80 but not the full distribution."
+              : "")},
+    ];
+    host.innerHTML = "";
+    rows.forEach((r) => {
+      const d = document.createElement("div");
+      d.className = "slider";
+      d.innerHTML =
+        `<div class="row"><span class="name">${r.label}</span>` +
+        `<span class="val" id="pv-${r.k}"></span></div>` +
+        `<input type="range" id="ps-${r.k}" min="${r.min}" max="${r.max}" step="${r.step}">` +
+        `<div class="why">${r.why}</div>`;
+      host.appendChild(d);
+      const inp = d.querySelector("input");
+      inp.value = psd[r.k];
+      inp.addEventListener("input", () => { psd[r.k] = +inp.value; refresh(); });
+    });
+  }
+
+  function syncPsd() {
+    const P = E.psd;
+    const d = $("pv-d80"), w = $("pv-width");
+    if (d) d.textContent = psd.d80.toFixed(0) + " \u00b5m";
+    if (w) w.textContent = psd.width.toFixed(2);
+    const ssa = ssaNow();
+    const rel = Math.pow(10, ssaShift());
+    // Show the implied roughness multiplier that a BET-scale area would demand.
+    // If a fit ever needs lambda far outside 1-100 the model is being asked
+    // something unphysical -- that is a falsification bound, not a knob.
+    $("psd-readout").innerHTML =
+      `geometric SSA ${ssa.toFixed(4)} m\u00b2/g &nbsp;\u00b7&nbsp; ` +
+      `${rel >= 1 ? rel.toFixed(2) + "\u00d7 faster" : (1 / rel).toFixed(2) + "\u00d7 slower"} ` +
+      `than reference<br>` +
+      `<span style="opacity:.75">BET-scale area (1\u20135 m\u00b2/g) would imply ` +
+      `\u03bb \u2248 ${Math.round(1 / ssa)}\u2013${Math.round(5 / ssa)}; ` +
+      `plausible range is ${P.lambdaRange[0]}\u2013${P.lambdaRange[1]}</span>`;
+    const atRef = Math.abs(psd.d80 - P.refD80) < 0.5
+                  && Math.abs(psd.width - P.refWidth) < 0.01;
+    $("psd-tag").textContent = atRef ? "Reference" : "Custom";
+  }
+
   function syncSliders() {
     CRIT.forEach((c, i) => {
       const inp = $("s-" + c.key);
@@ -428,14 +531,30 @@
     if (!(flags & 1)) { box.classList.add("hidden"); return; }
 
     const eps = E.epsQuantize;
-    const deq = (b) => clamp(eps, (b * 255 / 255 - 5 / 255) / (250 / 255) * (1 - eps) + eps, 1);
-    const v = [deq(A[i] / 255), deq(A[i + 1] / 255), deq(A[i + 2] / 255)];
+    const raw = (b) => (b - 5) / 250;
+    const deq = (b) => clamp(eps, raw(b) * (1 - eps) + eps, 1);
+    // Mirror the shader exactly: L1 from tex1.r, plus the grind shift, then the
+    // same piecewise value function. The shared knots in engine_constants.js are
+    // what keep the two from drifting.
+    const l1 = E.l1Enc.lo + clamp(0, raw(A[i]), 1) * (E.l1Enc.hi - E.l1Enc.lo)
+               + ssaShift();
+    const KN = E.reactKnots;
+    let vr = KN[0][1];
+    for (let k = 0; k < KN.length - 1; k++) {
+      if (l1 >= KN[k][0] && l1 <= KN[k + 1][0]) {
+        vr = KN[k][1] + (KN[k + 1][1] - KN[k][1])
+             * (l1 - KN[k][0]) / (KN[k + 1][0] - KN[k][0]);
+      }
+    }
+    if (l1 > KN[KN.length - 1][0]) vr = KN[KN.length - 1][1];
+    const v = [clamp(eps, vr, 1), deq(A[i + 1]), deq(A[i + 2])];
     const nw = normWeights();
     const score = Math.exp(nw.reduce((a, wv, k) => a + wv * Math.log(v[k]), 0));
     let lo = 0; for (let k = 1; k < 3; k++) if (v[k] < v[lo]) lo = k;
 
     const cropPct = (B[i] / 255 * 100);
-    const cdr = (B[i + 2] / 255 * 10);
+    // CDR scales linearly with reactive surface area, so it moves with the grind.
+    const cdr = (B[i + 2] / 255 * 10) * Math.pow(10, ssaShift());
     const pe = E.phEncoding;
     const soilPh = pe.lo + (cpu.C[i + 1] / 255) * (pe.hi - pe.lo);
 
@@ -453,6 +572,7 @@
       `<tr><td class="k">Limiting factor</td><td class="v">${CRIT[lo].label}</td></tr>` +
       `<tr><td class="k">Soil pH (0–15 cm)</td><td class="v">${soilPh.toFixed(2)}</td></tr>` +
       `<tr><td class="k">Cropland</td><td class="v">${cropPct.toFixed(0)}%</td></tr>` +
+      `<tr><td class="k">L1 log₁₀(R/R_ref)</td><td class="v">${l1 >= 0 ? "+" : ""}${l1.toFixed(2)}</td></tr>` +
       `<tr><td class="k">Indicative gross CO₂</td><td class="v">${cdr.toFixed(2)}</td></tr>` +
       `</table>` +
       `<div class="flag">tCO₂ gross/ha/yr at ${E.feedstock.rateTHaYr} t/ha. Gross, not net; low confidence.</div>` +
@@ -594,27 +714,48 @@
       <p><b>Protocol eligibility as a mapped layer,</b> in three states rather
       than two, from exceedance probabilities on SoilGrids quantiles.</p>
 
-      <h3>Stand-ins in this build</h3>
+      <h3>Remaining stand-ins</h3>
       <ul>${p.substitutions.map((s) => `<li>${s}</li>`).join("")}</ul>
-      <p>The first two mean the temperature and moisture terms are currently
-      <i>Cascade's own inputs</i>, so the "Cascade baseline" comparison is
-      like-for-like, but our own claim to a soil-temperature improvement is not
-      yet realised. Planned: Lembrechts et al. (2022) monthly soil temperature at
-      30 arc-second, and a monthly soil-moisture climatology.</p>
+      <p>These mean the temperature and moisture terms are still <i>Cascade's own
+      inputs</i>, so the "Cascade baseline" comparison is like-for-like, but our
+      claim to a soil-temperature improvement is not yet realised. Planned:
+      Lembrechts et al. (2022) monthly soil temperature at 30 arc-second, and a
+      monthly soil-moisture climatology.</p>
+
+      <h3>Fixed since the first preview</h3>
+      <p><b>Drainage is now real recharge, and the Damköhler coefficient was
+      wrong.</b> Transport limitation previously used a fixed runoff coefficient
+      on precipitation, giving a median η of 0.32 almost everywhere. It now uses
+      WaterGAP2-2e groundwater recharge — the water that actually percolates
+      below the root zone carrying bicarbonate, rather than overland flow, and
+      which includes simulated irrigation return flow. Separately, the default
+      D_w was 0.5 m/yr, <i>above</i> Maher &amp; Chamberlain's stated global
+      maximum of 0.3, with a sensitivity range almost entirely outside the
+      published one; it is now 0.03 with a 0.001–0.3 range. Because η = q/(q+D_w),
+      both errors suppressed η, and they partly cancelled. Median η is now 0.71
+      with real spread (0.21–0.88), and drainage limits 19.5% of cropland area
+      instead of nearly all of it — reactivity now limits 74.6%, which is the
+      physically expected answer for a weathering map.</p>
+      <p><b>Rice paddies are now mapped.</b> Soil pCO₂ is interpolated
+      continuously from a flooded fraction of cell-time, built from two
+      independent halves: GRPI Landsat inundation months, and SPAM irrigated-rice
+      sub-cell area. Multiplying them is deliberately conservative — it refuses to
+      treat a cell that is 5% paddy as fully flooded, which would inflate the very
+      paddy prediction this project needs to test.</p>
+      <p><b>The CO₂ gap narrowed without being tuned.</b> Verified deliveries
+      imply roughly 1.9 tCO₂/ha at 20 t/ha. This build's median moved from 0.32 to
+      0.62 purely because the physics improved. The remaining ~3× gap is reported,
+      not fitted away: closing it honestly needs per-delivery particle-size
+      distributions we do not have.</p>
 
       <h3>Known problems, stated plainly</h3>
-      <p><b>The drainage term is a placeholder and it is dragging the map down.</b>
-      Transport limitation uses a fixed runoff coefficient on annual
-      precipitation rather than a runoff product, giving a median η of about 0.32
-      almost everywhere. That is why absolute suitability looks low; treat the
-      pattern as more meaningful than the level.</p>
-      <p><b>The indicative CO₂ layer is ~6× below the verified deliveries.</b>
-      Normalised to a common application rate, verified 2026 deliveries imply
-      roughly 1.9 tCO₂/ha at 20 t/ha, and this build's median is 0.32. The
-      effective-surface-area multiplier has deliberately <i>not</i> been tuned to
-      close that gap, because doing so requires per-deployment particle-size
-      distributions we do not have. The discrepancy is reported rather than
-      fitted away.</p>
+      <p><b>Surface area is now a control, not a hidden constant.</b> The grind
+      sliders move the reactivity term and the CO₂ figure directly, because rate
+      is linear in reactive surface area. Note what the panel reports: at the
+      reference 267 µm grind, matching a BET-scale area of 1–5 m²/g would demand a
+      roughness multiplier λ of roughly 39–196, which straddles the top of the
+      plausible 1–100 range. That is the dominant uncertainty in the product made
+      visible rather than buried.</p>
       <p><b>Most cropland is "marginal" on the SOC screen.</b> On a point
       estimate only ~0.2% of cropland area would be excluded; carrying SoilGrids'
       predictive spread honestly puts ~73% in the band where the threshold can be
@@ -647,10 +788,16 @@
         <tr><td>Soil pH, SOC + quantiles</td><td>${p.soil}</td></tr>
         <tr><td>Climate</td><td>${p.climate}</td></tr>
         <tr><td>Cropland</td><td>${p.cropland}</td></tr>
+        <tr><td>Drainage</td><td>${p.drainage || "—"}</td></tr>
+        <tr><td>Rice paddy</td><td>${p.paddy || "—"}</td></tr>
         <tr><td>Kinetics</td><td>Palandri &amp; Kharaka 2004, USGS OFR 2004-1068</td></tr>
         <tr><td>Carbonate system</td><td>Plummer &amp; Busenberg 1982, GCA 46, 1011</td></tr>
         <tr><td>Efficiency term</td><td>Bertagni &amp; Porporato 2022, STE 838, 156524</td></tr>
-        <tr><td>Transport limitation</td><td>Maher &amp; Chamberlain 2014, Science 343, 1502</td></tr>
+        <tr><td>Transport limitation</td><td>Maher &amp; Chamberlain 2014, Science 343, 1502 —
+          D_w = ${E.provenance.dw ? E.provenance.dw.value : "?"} m/yr,
+          published range ${E.provenance.dw ? E.provenance.dw.range.join("\u2013") : "?"}</td></tr>
+        <tr><td>Particle size</td><td>Rosin\u2013Rammler over a ${E.psd.d80Range[0]}\u2013${E.psd.d80Range[1]} \u00b5m
+          d80 range; geometric area, not BET</td></tr>
         <tr><td>Eligibility</td><td>Puro.earth ERW 2025 v1; Isometric EW-in-agriculture v1.2</td></tr>
         <tr><td>Coastlines</td><td>Natural Earth 110m (public domain)</td></tr>
       </table>
@@ -660,7 +807,9 @@
   }
 
   /* ---------------- wiring ---------------- */
-  function refresh() { syncSliders(); renderLegend(); updateStability(); draw(); }
+  function refresh() {
+    syncSliders(); syncPsd(); renderLegend(); updateStability(); draw();
+  }
 
   function setMode(m) {
     mode = m;
@@ -668,6 +817,9 @@
       b.classList.toggle("active", b.dataset.mode === m));
     $("mode-hint").textContent = MODE_HINT[m];
     $("weights-group").classList.toggle("hidden", m !== "score");
+    // Grind does not apply to Cascade's index: their formulation has no surface
+    // area term at all, which is part of the point of showing it.
+    $("psd-group").classList.toggle("hidden", m === "cascade");
     refresh();
   }
 
@@ -733,6 +885,7 @@
     buildSample();
 
     buildSliders();
+    buildPsdSliders();
     attachPanZoom();
     document.querySelectorAll("#mode-seg .seg-btn").forEach((btn) =>
       btn.addEventListener("click", () => setMode(btn.dataset.mode)));
@@ -741,6 +894,11 @@
     });
     $("btn-reset").onclick = () => {
       Object.assign(weights, E.weights); refresh();
+    };
+    $("btn-psd-reset").onclick = () => {
+      psd.d80 = E.psd.refD80; psd.width = E.psd.refWidth;
+      $("ps-d80").value = psd.d80; $("ps-width").value = psd.width;
+      refresh();
     };
     $("btn-random").onclick = () => {
       CRIT.forEach((c) => { weights[c.key] = 0.1 + Math.random() * 0.9; });
