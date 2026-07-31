@@ -131,12 +131,24 @@ primary laboratory value for basaltic glass is 25.5 kJ/mol. Do not assert fabric
 ### Change 2 — alkalinity-to-DIC conversion efficiency (the biggest change)
 
 Fast dissolution at low pH does not produce CDR, because DIC speciation shifts
-toward aqueous CO₂ rather than bicarbonate. Cascade cites Bertagni & Porporato 2022
-as their "normalized weathering flux potential framework," but that paper is titled
-*The Carbon-Capture Efficiency of Natural Water Alkalinization* and defines the
-Alkalinization Carbon-capture Efficiency, ACE ≡ d[DIC]/d[Alk] — **it is the
-efficiency term Cascade omitted, and contains no kinetic index.** The citation is
-inverted.
+toward aqueous CO₂ rather than bicarbonate. Bertagni & Porporato 2022 defines the
+Alkalinization Carbon-capture Efficiency, ACE ≡ d[DIC]/d[Alk] — the efficiency
+term Cascade omits, and the term added here.
+
+> **RETRACTED, 2026-07.** This section originally continued: "…and contains no
+> kinetic index. The citation is inverted." That was **wrong**, and it was
+> written while the paper was paywalled and unread (see the provenance caveat
+> below). The paper's Appendix C, Eq. C.1 is
+> `r ∝ s·[H⁺]^θ·exp(−E/RT)` with θ = 1 and A = 60 kJ/mol (Lasaga 1984),
+> normalised so `min(r/r₀) = 1` and mapped globally as their Fig. 3b — i.e. a
+> normalised weathering-flux index, which is what Cascade cites it for. Cascade's
+> citation is essentially correct.
+>
+> What survives is narrower and still sufficient: Cascade implements the
+> Appendix C kinetic index while omitting the efficiency term the paper's main
+> text derives. Note also that Eq. C.1 uses θ = 1, the same first-order form we
+> criticise, and that the paper's own Section 5.1 reports the
+> rate-versus-efficiency trade-off we presented as novel.
 
 Add η_DIC as a multiplicative factor. For an open system at fixed soil pCO₂ (the
 correct idealization for soil, where pCO₂ is buffered by respiration), with
@@ -187,7 +199,11 @@ above pH 8 (0.993) as the carbonate ion term grows, which is physically right an
 which a monotonic penalty function would have missed.
 
 **Caveat on provenance:** Bertagni & Porporato 2022 is paywalled and was not read in
-full during planning. The ACE definition, the "sharp transition in a narrow pH
+full during planning. *(Resolved 2026-07: the PDF is now in the repo root and has
+been read. The ACE derivation checks out against their Appendix A; one claim made
+from the abstract did not survive the reading and is retracted above. Treat this as
+the worked example of why the standing rule is to verify against the primary
+source before publishing a critique of someone else's sourcing.)* The ACE definition, the "sharp transition in a narrow pH
 interval" finding, and the paper's actual subject are verified from the abstract; the
 closed form above is **our derivation following their definition**, not a
 transcription of their equation. Check it against their published equation before

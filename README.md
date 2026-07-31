@@ -78,7 +78,9 @@ whole-basalt Ca+Mg release, reached by an unclear route." That concession was
 wrong, and the independent kinetics test below is what caught it. Gudbrandsson et
 al. (2011) *measure* an apparent activation energy for whole-rock crystalline
 basalt of **~36 kJ/mol** (range 24–54 across pH). Cascade's 68.8 is therefore
-roughly 2× too high — and so is our own Palandri–Kharaka mixture, at 46–63 kJ/mol.
+roughly 2× too high — and so is our own Palandri–Kharaka mixture, at 62–69 kJ/mol
+over 5–25 °C (an earlier version of this line said 46–63, which was wrong in the
+flattering direction: only the metabasalt archetype reaches the low end).
 
 That matters geographically, because temperature sensitivity is what drives the
 tropical tilt: at 36 kJ/mol a soil 20 °C warmer is 2.7× faster, at 68 kJ/mol it is
@@ -130,13 +132,26 @@ results that are not ours to publish. The script is here and exits with the
 expected CSV schema if the fixture is absent, so the method stays reviewable even
 though the inputs are not redistributed. Only aggregate findings appear below.
 
-**1. Fraction weathered is not a site property — it falls with application rate.**
-Within a single regime the relationship is perfectly monotonic across four
-deliveries, and across all eight it fits `fw ~ rate^-0.58` (R² 0.48, n = 8). This
-is the self-limiting behaviour you would expect as soil pH rises and alkalinity
-export becomes drainage-limited rather than kinetically limited. **Design
-consequence:** the map must never present fraction weathered as a suitability
-metric, and any cross-site comparison of it has to hold application rate fixed.
+**1. Fraction weathered is not a site property.** Across all eight deliveries it
+fits `fw ~ rate^-0.58` (R² 0.48, n = 8), which looks like the self-limiting
+behaviour you would expect as soil pH rises and export becomes drainage-limited.
+
+**That exponent is not a rate effect, and treating it as one was an error.**
+Application rate, grind and operator are mutually collinear in this dataset:
+corr(ln rate, ln p50) = **+0.60**, because the operators who apply high rates also
+grind coarse. The **within-operator** slope — same feedstock, same grind — is
+**−0.01 ± 0.57**, indistinguishable from zero. Grind is perfectly nested in
+operator, so the independent cluster count is **4**, not 8.
+
+So −0.58 is the operator/grind contrast wearing a rate label. That matters because
+`analyse_deployments.py` used it to "normalise to a common application rate",
+which removed the grind contrast a second time through a coefficient that *is* the
+grind contrast — see finding 3, whose ordering reversal is withdrawn as an artefact
+of that double-removal rather than merely hedged.
+
+**Design consequence, which survives intact:** the map must never present fraction
+weathered as a suitability metric, and any cross-site comparison has to hold both
+application rate **and** grind fixed.
 
 **2. Real delivered basalt is less CO₂-dense than a fresh-basalt idealisation.**
 Averaged over the deliveries carrying an independent CDR measurement, implied CO₂
@@ -159,11 +174,12 @@ spread of only 3.35×.
 
 Normalising to a common grind (inverting through `Fw = 1 − exp(−kX)`, since scaling
 fraction weathered directly produced a physically impossible 106%) *reverses* the
-ordering, putting acidic paddy first at 64% against the Corn Belt's 18%. That is
-**not** support for the model either: because the two variables are identical here,
-"normalising for grain size" and "removing the regime effect" are the same
-operation, and the reversal only reveals which variable the variance was attributed
-to.
+ordering, putting acidic paddy first at 64% against the Corn Belt's 18%. **That
+reversal is now withdrawn entirely.** It is not merely uninformative — it is an
+artefact. The normalisation used the −0.58 rate exponent from finding 1, which is
+itself the grind contrast, so the procedure removed one degree of freedom twice.
+Rate, grind and regime are three labels for one variable here, and no
+rearrangement of them recovers a regime effect.
 
 What it establishes is narrower and more useful: **these deliveries are
 uninformative about regime, not contrary to it.**
@@ -214,19 +230,26 @@ deliveries) also showed our own 20% annual-dissolution cap was falsified by data
 |---|---|
 | Drainage was a fixed 0.35 runoff coefficient on precipitation, giving η ≈ 0.32 almost everywhere | **WaterGAP2-2e groundwater recharge** — the water percolating below the root zone, with simulated irrigation return flow. Median η 0.71 with real spread 0.21–0.88 |
 | `D_w` defaulted to 0.5 m/yr with a 0.1–2.0 range | **0.03 m/yr, range 0.001–0.3.** The old default was *above* Maher & Chamberlain's stated global maximum, and the range sat almost entirely outside the published one. Both errors suppressed η and partly cancelled |
-| Drainage limited nearly all cropland | Drainage limits **19.5%**; reactivity limits **74.6%**, the physically expected answer for a weathering map |
+| Drainage limited nearly all cropland | Recomputed from the shipped layers: drainage limits **59.3%**, reactivity **34.0%**, alkalinity retention **6.7%**. The 19.5%/74.6% split previously stated here does not reproduce and has been withdrawn — the map is still majority drainage-limited, and that share is itself contingent on the reference condition the dissolution term is measured against |
 | No paddy mask, so the headline paddy prediction could not appear at all | **Soil pCO₂ interpolated continuously** from flooded fraction of cell-time: GRPI Landsat inundation months × SPAM irrigated-rice sub-cell area. 7.6% of cropland area has >5% flooded cell-time |
-| Surface area buried in a hardcoded `0.22` | **Two grind sliders** (d80, Rosin–Rammler width). Rate is linear in reactive area and L1 is a log ratio, so grind is a uniform shift — the value function moved into the shader to make it live |
-| CO₂ layer ~6× below verified deliveries | **~2.3× below** (median 0.83 vs field-implied ~1.9 tCO₂/ha/yr), and it moved without any tuning — better physics, then removing the clip |
+| Surface area buried in a hardcoded `0.22` | **Two grind sliders** (d50, Rosin–Rammler width). Rate is linear in reactive area and L1 is a log ratio, so grind is a uniform shift — the value function moved into the shader to make it live |
+| CO₂ layer ~6× below verified deliveries | **median 0.79 tCO₂/ha/yr** vs a field-implied ~1.9, and it moved without tuning — better physics, then removing the clip. But see the reconciliation caveat below: most of that apparent gap is the reference-condition choice, and the absolute level is now known to be unreconciled with the water flux |
 
-The λ readout is the useful diagnostic to watch: at the reference 267 µm grind,
-matching a BET-scale area of 1–5 m²/g would demand a roughness multiplier of
-roughly 39–196, straddling the top of the plausible 1–100 range. That is the
-dominant uncertainty made visible rather than buried.
+The λ readout is a plausibility diagnostic, not a constraint the model is bound
+by: at the reference **150 µm** grind, matching the **measured 0.703 m²/g** BET of
+a real crushed basalt implies a roughness multiplier of about **27**, comfortably
+inside the plausible 1–100 range. An earlier version quoted λ 39–196 against an
+unsourced "BET 1–5 m²/g" anchor, which put our own default above the falsification
+ceiling; that anchor was wrong, not the model. Note also that λ **does not enter
+the calculation** — the map works in rate ratios, which divide a constant
+multiplier out — so it cannot be read as evidence the absolute scale is
+constrained.
 
-One number corrected downward in the process: distribution width moves surface
-area by about **8×** over the slider range, not the 33× quoted earlier. The larger
-figure assumes an untruncated fine tail; with a physical 1 µm floor it is smaller.
+Two numbers corrected in the process: distribution width moves surface area by
+about **4.2×** over the slider range and **grain size** by about **8.2×** over the
+observed 67–600 µm p50 span. The 33× figure quoted earlier assumed an untruncated
+fine tail; with a physical 1 µm floor it is smaller, and the 8× was the diameter
+effect mislabelled as the width effect.
 
 ### Feedstock and delivered cost
 
@@ -234,7 +257,7 @@ Built from full-resolution GLiM (93,220 basic-igneous polygons) plus a quarry
 point inventory cross-filtered against that lithology. Two constructs, because
 inventory completeness is uneven: globally an outcrop-distance **upper bound**, and
 where the inventory is usable the quarry distance that actually sets cost. Inside
-the trusted area quarry distance is **1.9× outcrop distance**, and that *measured*
+the trusted area quarry distance is **2.0× outcrop distance**, and that *measured*
 ratio scales the bound elsewhere.
 
 The inventory is **5,295 mafic-hosted quarries** from three sources of differing
@@ -292,20 +315,21 @@ overstated, without perturbing the map.
 **This reverses an earlier change, and the earlier reasoning was bad.** A rail mode
 was added because a truck-only median of $252/t "looked implausible". Two errors:
 that $252 was the median over *all land*, not cropland — cropland sits far closer
-to quarries, and its truck-only median is $61/t, which was always plausible. And
+to quarries, and its truck-only median is $43/t, which was always plausible. And
 having misread the number, the response was to add a mechanism that made the output
 look better rather than to find out why it looked odd. The standing rule applies:
 when a number looks wrong, diagnose before changing the model.
 
-**The penalty applies to the haul increment only.** A site at the $25/t gate cost
+**The penalty applies to the haul increment only.** A site at the $10/t gate cost
 takes no penalty, because you must buy and crush rock wherever you are and that
 carries no spatial information. From there the multiplier declines as
 `1/(1 + (cost − gate)/S)` with S = $100/t, putting the half-penalty point at $125/t
 delivered. This replaced five hand-placed breakpoints that ramped hard enough for a
-cell at the cropland median of $61/t to lose 38%; it now loses 27%.
+cell at the cropland median of $43/t to lose 38%; it now loses 27%.
 
 S is an editorial choice, not a derived one, so the readout reports feedstock cost
-per tonne CO₂ alongside — $87/tCO₂ gross at the gate, $211 at the cropland median —
+per tonne CO₂ alongside — **$35/tCO₂ gross at the gate, $149 at the cropland
+median** ($10 and $43 per tonne of rock divided by 0.289 tCO₂/t) —
 letting the trade-off be judged in units that mean something.
 
 Cost is compensatory with a floor, not annihilating: expensive rock is bad, not
@@ -336,16 +360,21 @@ sit at ~1.
 
 | Problem | Effect |
 |---|---|
-
-
 | **The SOC screen barely binds on cropland** | Only 0.04% of cropland area is confidently excluded (P > 0.9), and 96% of the cells flagged worldwide are north of 50°N: SOC above 5 wt% is a peatland and boreal-forest phenomenon. A *marginal* class (0.1 < P < 0.9) covering 53% of cropland was drawn in an earlier version and is now reported rather than mapped — it was the dominant visual feature of the map while saying little that was actionable, and it is largely a statement about the width of SoilGrids' predictive intervals (on a point estimate the same figure is ~0.2%). Still a screening likelihood, not a calibrated eligibility probability, because the quantiles describe a block average and the threshold applies to a field |
 | **Grid is 0.1° (~11 km), not 1 km** | The header says so. Effective resolution is coarser again |
 | **Gudbrandsson kinetics test now runs, and FAILS** | See below. The rate law over-predicts measured basalt Ca and Mg release, with structured residuals. This is the most important open problem in the model |
 
-Weight sensitivity is not hidden: moving reactivity from equal weighting to 77%
-changes the decile of **63.7% of cropland area**. The sidebar reports that number
-live, because a suitability map whose ranking is that weight-contingent should say
-so rather than present one weighting as the answer.
+Weight sensitivity is not hidden: lowering the reactivity exponent from 1.00 to
+0.77 moves **15% of cropland area** into a different decile, and halving it moves
+**38%**. The sidebar reports this live.
+
+The **63.7%** previously quoted here was an artefact of a broken metric: it
+digitised both the perturbed and baseline settings against the *baseline's* decile
+edges, so any change in level — including transformations that alter no ranking at
+all — registered as instability. A common exponent on all three terms is exactly
+monotone in the score and now reads ~2%, against ~50% under the old metric. The
+figure also described weights summing to one, a parameterisation that no longer
+exists.
 
 ## The independent kinetics test, and what it found
 
@@ -379,11 +408,19 @@ Two separate problems, both diagnosable:
   precipitating near neutral pH, where they are least soluble, removing Mg from
   the outlet solution the experiment measures.
 
-**Why this had to be an independent test.** The CO₂ layer currently sits ~2.3×
-*below* field observations while the kinetics over-predict lab rates by 3–7×.
-Those errors pull in opposite directions, so they partly cancel — meaning the
-surface-area multiplier has been quietly absorbing a kinetics error. Comparing to
-field trials alone could never have revealed that.
+**Why this had to be an independent test.** The kinetics over-predict lab rates
+while the CO₂ layer sits below field observations, so a field comparison alone
+would have shown a model that looked roughly right in aggregate while being wrong
+in its parts. Only a test that isolates the rate law can separate those.
+
+> **Correction, 2026-07.** This paragraph used to say the two errors "pull in
+> opposite directions, so they partly cancel — meaning the surface-area
+> multiplier has been quietly absorbing a kinetics error." That mechanism is
+> wrong. λ never enters the CDR chain: the model works in rate *ratios*
+> (`L1 = log10(R/R_ref)`), which divides any constant surface-area multiplier out
+> exactly. The absolute level is set solely by the dissolved-fraction anchor. The
+> two errors are real and both documented, but they live in different parts of
+> the model and cannot cancel.
 
 ## What it deliberately does not claim
 
@@ -464,7 +501,16 @@ products are kept, sufficient to regenerate every figure without re-downloading.
 Thresholds are set before the pipeline runs, and violations are published even
 if we release anyway. Current status:
 
-`python3 scripts/test_kinetics.py` — 11 gates, all passing:
+`python3 scripts/test_kinetics.py` — **16 gates, 14 passing and 2 failing.**
+
+Be careful how that count is read. Exactly **one** gate compares the model
+against independent measurements it was not built from (gate 11, Gudbrandsson et
+al. 2011), and it **fails**. A second failing gate (6c) is an internal
+consistency check. Everything else is a unit conversion, a reproduction of a
+published constant, a monotonicity invariant, or a code-drift assertion — all
+worth having, none of them validation. Gate 7 in particular is an arithmetic
+self-check: `delivered_basalt`'s oxides were chosen to reproduce the CO₂ figure
+it verifies, so it tests arithmetic rather than the archetype.
 
 | Gate | Result |
 |---|---|

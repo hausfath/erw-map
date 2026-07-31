@@ -5,6 +5,123 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Post-review fixes, July 2026
+
+Implemented after the six-reviewer audit. The **flux-reconciliation cluster is
+deliberately not addressed here** — the missing concentration ceiling and the
+Damköhler limb question set the map's absolute level, they need reconciling
+against the field-trial literature rather than patching, and they are recorded as
+the largest open problem in `docs/METHODOLOGY.md` §6 and in the Methods panel.
+
+**Two bugs that produced wrong numbers.**
+
+- **The grind shift was applied twice** in every browser CO₂ path — once inside
+  `l1` and again on the CO₂ figure. At d50 = 40 µm that inflated gross CO₂ by
+  **3.45×** and broke the stoichiometric ceiling by 3.46× (0.999 tCO₂ per tonne of
+  rock against a 0.289 maximum). The shift is exactly zero at the default grind,
+  so the landing map and every published figure were unaffected and the Python
+  gates could not see it — the build only ever evaluates the reference condition.
+  Fixed in the shader, the hover readout and the stability sampler. Verified in
+  the browser: `CO₂ / (frac × 5.78)` is now constant at 0.988 across the whole
+  slider range, and CO₂ at the fine extreme is 5.67 against the 5.78 ceiling.
+- **The stability metric measured level, not rank.** It digitised both the
+  perturbed and the baseline setting against the *baseline's* decile edges, so any
+  change in level registered as instability even when no cell changed rank. Each
+  setting is now digitised against its own edges. A common exponent on all three
+  terms — exactly monotone in the score, therefore rank-preserving — now reads
+  **2%** against ~50% before. The baseline edges are cached and invalidated on
+  grind and cost, which the old code never did.
+
+**Two structural corrections to the model.**
+
+- **η_DIC moved outside the dissolution exponential.** Carbonate speciation does
+  not slow rock dissolving; it discounts the carbon each unit of alkalinity
+  carries. Inside the exponential it suppressed the predicted *fraction weathered*
+  — the one layer field trials can measure — by up to ~2× in acid soils.
+- **Flooded pCO₂ is no longer paired with drained pH.** SoilGrids pH is an
+  air-dried, drained measurement, but submergence drives soil pH toward 6–7 (van
+  Breemen 1987; +1.0–1.5 units measured in Schulz et al. 2024). The chemistry now
+  uses a flooding-adjusted pH. **This closes the paddy question against the
+  mechanism:** the high-pCO₂ advantage exists only below about pH 5.5 and
+  submergence removes exactly that acidity, so the retracted paddy prediction now
+  has a mechanistic, self-cancelling explanation rather than only a population
+  one. Map effect is small (paddy-weighted median pH is already 6.4 and mean
+  flooded cell-time is 0.014).
+
+**Validation apparatus.**
+
+- **`docs/VALIDATION.md` and `docs/METHODOLOGY.md` now exist.** Roughly 18 call
+  sites cited them as the authority for the pre-registered tolerance, the
+  constancy test and the sampling design, and `docs/` was empty — so the
+  pre-registration lived only in a mutable Python file and a gitignored notes
+  file. The Phase 2 kinetics criteria are now tracked, with amendments: a
+  parameter budget, a leave-one-temperature-band-out split, Si and Fe held out as
+  out-of-sample elements, and boundary solutions counted as failures. The original
+  criterion 1 could not discriminate — it is passed by a trivial per-band offset
+  and, when run, produced a degenerate fit with pyroxene at exactly zero for a
+  rock that is 39 vol% pyroxene.
+- **Gate 11 now scores on the shipped basis**: volume fractions and the Ca+Mg
+  charge sum, rather than the paper's own fitted surface fractions. Those are
+  three parameters fitted to the same 25 experiments, so scoring on them borrowed
+  an in-sample fit into a gate titled "no free parameters". The gate got redder,
+  correctly: the charge-sum residual is **+1.14 bias / 1.19 MAD**, worse than the
+  per-element figures (Ca +0.50, Mg +1.59) implied.
+- **New gate 6c: archetype mineralogy must mass-balance its stated oxides.** It
+  **fails**, and that is the point — `delivered_basalt`'s mineral modes imply
+  **1.99× its stated MgO**, and `ultramafic` states 3 wt% CaO with no Ca-bearing
+  mineral at all. An independent line of evidence that olivine is over-weighted,
+  reached with no external data. Related: forsterite is 11.8 vol% of the default
+  archetype but supplies **80.1%** of its Ca+Mg release, so the shipped rate law
+  is closer to an olivine model than a basalt one.
+- **Gate 7 relabelled an arithmetic self-check.** `delivered_basalt`'s oxides were
+  chosen to reproduce the CO₂ figure it verifies. It was appearing in the README's
+  gate table as evidence.
+- **The suite no longer reports "N passed" without context.** Exactly one gate
+  compares the model against independent data and it fails; everything else is
+  internal consistency, literature reproduction or an invariant.
+- **`DIVALENT_PER_FORMULA` and `ELEMENT_PER_FORMULA` reconciled** and asserted
+  equal at import. They disagreed on augite (1.60 vs 1.30) and bronzite (1.00 vs
+  0.80), meaning the validated function was not the shipped one. Note the augite
+  fix *raises* modelled Mg release, so it makes gate 11 slightly worse.
+
+**The pH convention question, half resolved.** Isometric v1.2 states in three
+places that its 5.2 threshold is measured in a soil-water slurry, i.e. pH(H₂O) —
+the same basis SoilGrids reports. So no offset applies, and the dead
+`PH_H2O_MINUS_CACL2` constants are removed rather than left for someone to apply:
+using them would have *introduced* an error moving 55% of cropland by decile.
+Puro remains unpinned (it cites only ISO 10390:2021, which permits all three
+bases). A different and still-open offset is slurry versus *soil solution*, which
+is what the rate law and η_DIC actually want.
+
+## Corrections to this file, July 2026
+
+A six-reviewer scientific audit found that several numbers recorded below were
+stale, unreproducible, or measured by a broken diagnostic. The narrative is left
+intact — it is the record of what was believed at the time — and the corrections
+are listed here. Where an entry below states an outcome that did not occur, that
+is noted rather than edited away.
+
+| Recorded below | Actual | Why it was wrong |
+|---|---|---|
+| drainage limits 19.5%, reactivity 74.6% of cropland | **drainage 59.3%, reactivity 34.0%, alkalinity retention 6.7%** | Does not reproduce from the shipped layers. The map is still majority drainage-limited, i.e. the outcome that change was described as achieving did not occur. The share is also contingent on the reference condition the dissolution term is measured against |
+| delivered cost $28 / $61 / $138 per tonne (p10/p50/p90) | **$14 / $43 / $123** | Computed while the gate cost was still $25/t; never recomputed after the cut to $10/t. The "23% above $100/t" figure derived from it is also withdrawn |
+| $159/tCO₂ at the cropland median haul | **$149/tCO₂** | Did not follow from any stated $/t figure ($43/t ÷ 0.289 tCO₂/t = $149) |
+| median CO₂ moved from 0.32 to 0.83 tCO₂/ha/yr | **0.79** | Was never 0.83 at any point in the build history |
+| our Palandri–Kharaka mixture gives Ea 46–63 kJ/mol | **61.9–69.3 over 5–25 °C** (66.0 at pH 6.5) | Wrong in the flattering direction; only the metabasalt archetype reaches the low end, and it is not the shipped default |
+| Ca +0.5, Mg +0.8 to +1.6 log units vs Gudbrandsson | those stand, but the **Ca+Mg charge sum the map actually uses is +1.2** | The gate reported per-element residuals; the map uses the charge sum, which is worse than either element implies. Gate 11 now scores on the charge sum under the shipped volume weighting rather than on the paper's own fitted surface fractions |
+| distribution width moves surface area ~8× | **width 4.2×; grain size 8.2×** | The 8× was the diameter effect mislabelled as the width effect |
+| quarry distance is 2.0× outcrop distance | unchanged, but README said 1.9× | Simple inconsistency; 2.0 is the value in `constants.py` |
+| the surface-area multiplier "has been quietly absorbing a kinetics error" and the two errors "partly cancel" | **mechanically impossible** | λ never enters the CDR chain — the model works in rate ratios, which divide a constant multiplier out exactly. The absolute level is set solely by the dissolved-fraction anchor |
+| Cascade cites Bertagni & Porporato for a framework that paper does not contain | **retracted; their citation is essentially correct** | B&P Appendix C, Eq. C.1 *is* a normalised weathering-flux index (θ = 1, 60 kJ/mol, Lasaga 1984, mapped as their Fig. 3b). The claim was made while the paper was paywalled and unread. The surviving critique is narrower: Cascade implements that index while omitting the efficiency term the main text derives |
+
+One further correction, to a claim that appeared in the README rather than here:
+the "63.7% of cropland changes decile" weight-sensitivity figure was produced by
+a metric that compared both settings against the *baseline's* decile edges, so
+pure level changes — including transformations that alter no ranking at all —
+registered as instability. On a corrected rank-based metric, lowering the
+reactivity exponent to 0.77 moves **15%** of cropland area and a common exponent
+on all three terms moves **~2%** rather than ~50%.
+
 ## v0 preview (July 2026)
 
 ### The changelog moved here from the map
@@ -198,8 +315,9 @@ The haul multiplier replaced five hand-placed breakpoints which, while also
 lost 38%. It now loses 27%. One stated parameter instead of five, and S is an
 editorial choice rather than a derived one — which is why the readout also
 reports feedstock cost per tonne of CO₂, so the trade-off can be judged in
-units that mean something. At the gate that is $35/tCO₂ gross; at the cropland
-median haul, $159.
+units that mean something. At the gate that is $35/tCO₂ gross; at the cropland median haul, **$149**
+($43/t divided by 0.289 tCO₂/t). *(The $159 originally recorded here did not
+follow from any stated $/t figure.)*
 
 Cost is the first genuinely *tradeable* factor here, so unlike the physical
 terms it is compensatory with a floor — it discounts the score without zeroing
