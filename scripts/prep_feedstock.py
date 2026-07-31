@@ -39,6 +39,7 @@ road graph; see to_do.md.
 from __future__ import annotations
 
 import csv
+import json
 import sys
 import warnings
 from pathlib import Path
@@ -65,6 +66,17 @@ FINE_DEG = 0.025                 # rasterise here, then average to the grid
 # Countries where MRDS coverage is dense enough to use the quarry layer at all.
 # Deliberately conservative: MRDS is a US product with incidental foreign records.
 MRDS_TRUSTED_BBOX = (-172.0, 18.0, -66.0, 72.0)     # continental US + AK
+
+# Confidence assigned to each inventory source, used to decide whether the quarry
+# distance is trustworthy enough to replace the outcrop bound. Graded rather than
+# binary, because an authoritative national register and a crowd-sourced layer are
+# not the same evidence.
+SOURCE_CONFIDENCE = {
+    "MRDS": 1.0,   # US national register; stale since ~2011 but authoritative
+    "ANM": 1.0,    # Brazilian national mining-title register, daily updated
+    "OSM": 0.6,    # crowd-sourced, uneven coverage, but the only global option
+}
+CONF_USABLE = 0.5      # above this, prefer quarry distance over the outcrop bound
 
 
 def grid():
@@ -154,6 +166,32 @@ def km_to_nearest(mask, transform, h, w):
     return (dist_deg * scale[:, None]).astype("float32")
 
 
+def load_external_quarries():
+    """Non-US inventory built by fetch_quarries.py.
+
+    ANM rows carry a substance field so basalt/diabase/gabbro is selected
+    directly. OSM rows mostly do not, so they are cross-filtered against the
+    lithology by the caller, the same way MRDS is.
+    """
+    src = INTERIM / "quarries.csv"
+    if not src.exists():
+        print("  no external inventory (run scripts/fetch_quarries.py)")
+        return []
+    rows = []
+    with src.open() as fh:
+        for r in csv.DictReader(fh):
+            try:
+                rows.append((float(r["lon"]), float(r["lat"]), r["source"],
+                             r["country"], r.get("substance", "")))
+            except (TypeError, ValueError):
+                continue
+    import collections
+    print("  external inventory: "
+          + ", ".join(f"{k} {v:,}" for k, v in
+                      collections.Counter(f"{r[2]}/{r[3]}" for r in rows).items()))
+    return rows
+
+
 def load_stone_quarries():
     """MRDS records that are operating stone/aggregate producers.
 
@@ -198,10 +236,12 @@ def main() -> int:
           f"p50 {np.percentile(v, 50):.0f}  p90 {np.percentile(v, 90):.0f}")
     write_tif(INTERIM / "mafic_km.tif", mafic_km, transform, crs, as_int=True)
 
-    print("mafic-hosted stone quarries from USGS MRDS")
+    print("mafic-hosted stone quarries")
     pts = load_stone_quarries()
+    ext = load_external_quarries()
     quarry_km = np.full((h, w), np.nan, dtype="float32")
     conf = np.zeros((h, w), dtype="float32")
+    kept_pts = []          # for the map overlay
     if pts is not None and len(pts):
         # Keep only quarries that sit on mafic rock: MRDS cannot tell us the rock
         # type, so the lithology has to.
@@ -215,21 +255,49 @@ def main() -> int:
 
         qmask = np.zeros((h, w), dtype=bool)
         qmask[gy[on_mafic], gx[on_mafic]] = True
-        quarry_km = km_to_nearest(qmask, transform, h, w)
+        for i in np.where(on_mafic)[0]:
+            kept_pts.append((pts[i, 0], pts[i, 1], "MRDS"))
 
-        # Confidence: MRDS is a US inventory frozen around 2011. Outside the
-        # trusted box the quarry distance is not usable, and saying so is more
-        # informative than blurring a bad number across the globe.
+        # Confidence starts as the MRDS box: a US inventory frozen around 2011.
         lon = transform.c + (np.arange(w) + 0.5) * abs(transform.a)
         lat = transform.f + (np.arange(h) + 0.5) * transform.e
         W, S, E, N = MRDS_TRUSTED_BBOX
         inbox = ((lon >= W) & (lon <= E))[None, :] & ((lat >= S) & (lat <= N))[:, None]
-        conf = np.where(inbox, 1.0, 0.0).astype("float32")
+        conf = np.where(inbox, SOURCE_CONFIDENCE["MRDS"], 0.0).astype("float32")
 
-        # Measure how much outcrop proximity overstates quarry proximity, in the
-        # one region where both are known. This is the honest uncertainty
-        # elsewhere, quantified rather than asserted.
-        both = inbox & np.isfinite(quarry_km) & np.isfinite(mafic_km) & (mafic_km > 0)
+        # Add the non-US inventory. ANM rows are selected on SUBSTANCE, so they
+        # need no lithology cross-filter; OSM rows mostly lack a rock type and are
+        # cross-filtered against the mafic map exactly as MRDS is.
+        added = {"ANM": 0, "OSM": 0}
+        for lo, la, source, country, subs in ext:
+            ex = int((lo - transform.c) / abs(transform.a))
+            ey = int((transform.f - la) / abs(transform.e))
+            if not (0 <= ex < w and 0 <= ey < h):
+                continue
+            if source != "ANM" and frac[ey, ex] <= 0.02:
+                continue                      # OSM: require mapped mafic rock
+            qmask[ey, ex] = True
+            kept_pts.append((lo, la, source))
+            added[source] = added.get(source, 0) + 1
+            # Raise confidence over the country this inventory covers. Done as a
+            # generous radius around each point rather than a country polygon,
+            # because a national register only tells you about the ground it
+            # actually surveyed.
+            c_new = SOURCE_CONFIDENCE.get(source, 0.5)
+            r = 25                             # ~250 km at 0.1 deg
+            y0, y1 = max(0, ey - r), min(h, ey + r + 1)
+            x0, x1 = max(0, ex - r), min(w, ex + r + 1)
+            np.maximum(conf[y0:y1, x0:x1], c_new, out=conf[y0:y1, x0:x1])
+        print("  added to the mask: "
+              + ", ".join(f"{k} {v:,}" for k, v in added.items() if v))
+
+        quarry_km = km_to_nearest(qmask, transform, h, w)
+
+        # Measure how much outcrop proximity overstates quarry proximity, wherever
+        # an inventory exists. This is the honest uncertainty elsewhere,
+        # quantified rather than asserted.
+        both = (conf > CONF_USABLE) & np.isfinite(quarry_km) \
+            & np.isfinite(mafic_km) & (mafic_km > 0)
         if both.any():
             ratio = np.median(quarry_km[both] / np.maximum(mafic_km[both], 1e-6))
             print(f"  within the trusted inventory area, distance to a mafic "
@@ -240,7 +308,7 @@ def main() -> int:
 
     # Indicative delivered cost. Deliberately simple and fully stated.
     print("indicative delivered cost")
-    haul_km = np.where(np.isfinite(quarry_km) & (conf > 0.5), quarry_km,
+    haul_km = np.where(np.isfinite(quarry_km) & (conf > CONF_USABLE), quarry_km,
                        mafic_km * C.OUTCROP_TO_QUARRY_FACTOR)
     # Truck for the whole haul. Basalt is rarely railed for ERW today, and rail
     # still needs a first- and last-mile truck leg, so a rail rate would flatter
@@ -254,6 +322,21 @@ def main() -> int:
     print(f"  $/t delivered: p10 {np.percentile(v, 10):.0f}  "
           f"p50 {np.percentile(v, 50):.0f}  p90 {np.percentile(v, 90):.0f}")
     write_tif(INTERIM / "feedstock_cost.tif", cost, transform, crs, as_int=True)
+
+    # Point list for the map overlay. Rounded to 2 dp (~1 km), which is finer than
+    # the display grid, and de-duplicated per cell so dense clusters do not bloat
+    # the payload.
+    seen, pl = set(), []
+    for lo, la, src in kept_pts:
+        k = (round(lo, 2), round(la, 2), src)
+        if k not in seen:
+            seen.add(k)
+            pl.append(k)
+    pj = INTERIM / "quarry_points.json"
+    pj.write_text(json.dumps({"points": [[a, b, c] for a, b, c in sorted(pl)]},
+                             separators=(",", ":")))
+    print(f"  wrote {pj.name}: {len(pl):,} unique points "
+          f"({pj.stat().st_size / 1e3:.0f} kB) for the map overlay")
 
     if "--delete-raw" in sys.argv:
         import shutil

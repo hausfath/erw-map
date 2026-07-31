@@ -652,11 +652,49 @@ DW_ERW_ENHANCED_RATIONALE = (
 # screening cost surface, NOT a routed haul model: distance is great-circle times
 # a tortuosity factor. Real routing needs a friction surface or a road graph.
 #
-# Gate cost is crushed aggregate at the quarry. USGS reports US crushed stone
-# averaging roughly $14-20/t f.o.b. in recent years; ERW-grade material is ground
-# finer than road aggregate, so the gate cost here is above that range.
+# GATE COST: $10/t, revised DOWN from $25/t. The old figure reasoned from the
+# wrong product entirely.
+#
+# ERW does not buy graded construction aggregate. It buys quarry FINES -- crusher
+# dust, screenings, manufactured-sand feed -- which is the cheapest product class
+# a quarry makes and in many markets an unsold byproduct it stockpiles. The old
+# $25/t started from the USGS blended crushed-stone unit value (~$15-18/t f.o.b.,
+# an average across ALL graded products and end uses) and then reasoned UPWARD for
+# "finer grinding". Both halves of that were wrong: fines sit below the blended
+# average, not above it, and the target sizes largely overlap what fines already
+# deliver, so little or no extra grinding is needed.
+#
+# What operators actually report:
+#   Lithos          ~$12/t, ground basalt delivered by quarries described as
+#                   "delighted to be rid of" it
+#   Isometric       states industry-wide that "rock dust costs less than $10 per
+#                   tonne of basalt", calling waste fines an ideal ERW feedstock
+#   InPlanet (BR)   ~$10/t quarry byproduct, D50 111 um straight from the stream
+#   Brazil          po de pedra at R$45-50/t (~$8-10/t), quarry price list
+#   India           raw crusher dust reported as low as ~Rs200/t (~$2-3/t), vs
+#                   ~$17-26/t for finished manufactured sand
+#   Free            UNDO, Mati Carbon and Silicate all supply material to farmers
+#                   at no charge, so the floor really can reach $0
+#
+# Grinding, where needed, is small: from a 300 um waste-fines baseline, reaching
+# p80 100 um costs ~$1/t and p80 50 um ~$2/t (Frontiers in Climate 2024).
+#
+# NOTE this constant does NOT move the map. Because the penalty applies to the
+# haul increment only, v = 1/(1 + haul/S), the gate cost cancels out of the
+# multiplier entirely. Lowering it changes the REPORTED $/t and $/tCO2 -- which is
+# the point, since those were overstated -- without perturbing the spatial pattern.
 # ---------------------------------------------------------------------------
-FEEDSTOCK_GATE_COST_USD_T = 25.0     # crushed, at the quarry gate
+FEEDSTOCK_GATE_COST_USD_T = 10.0     # quarry fines at the gate
+FEEDSTOCK_GATE_COST_RANGE = (0.0, 15.0)
+FEEDSTOCK_GATE_REGIONAL_USD_T = {   # indicative, not yet applied spatially
+    "BR": 9.0,      # po de pedra, quarry price list
+    "IN": 3.0,      # raw crusher dust; weakly sourced, single vendor figure
+    "US": 12.0,     # Lithos reported
+}
+FEEDSTOCK_GATE_SOURCE = (
+    "Operator-reported quarry-fines prices (Lithos ~$12/t, Isometric <$10/t, "
+    "InPlanet ~$10/t); Brazilian po de pedra R$45-50/t; Indian crusher dust "
+    "~Rs200/t. Several operators supply free, so the true floor can be $0.")
 ROAD_TORTUOSITY = 1.35               # great-circle -> road distance
 
 # TRUCK ONLY. Basalt for ERW is rarely railed today, and even where rail exists

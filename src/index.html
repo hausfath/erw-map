@@ -26,20 +26,35 @@
       <p class="hint" id="mode-hint"></p>
     </section>
 
-    <section class="group" id="weights-group">
-      <h2>Term sensitivity <span class="tag" id="weight-tag">Physics</span></h2>
+    <section class="group">
+      <h2>Legend</h2>
+      <div id="legend"></div>
+    </section>
+
+    <section class="group" id="overlay-group">
+      <h2>Overlays</h2>
+      <label class="check"><input type="checkbox" id="chk-quarries">
+        <span>Quarry locations</span></label>
+      <p class="hint" id="quarry-hint"></p>
+    </section>
+
+    <section class="group">
+      <h2>Eligibility <span class="tag" id="elig-version"></span></h2>
+      <label class="check"><input type="checkbox" id="chk-elig" checked>
+        <span>Show protocol screens</span></label>
+      <p class="hint" id="elig-hint"></p>
+    </section>
+
+    <section class="group" id="psd-group">
+      <h2>Feedstock grind <span class="tag" id="psd-tag"></span></h2>
       <p class="hint">
-        These are <b>exponents on a physical product</b>, not importance weights.
-        At 1.00 the composite <i>is</i> gross CO&#8322; removal, so a location with
-        no removal scores zero. Lower a term to ask what the map looks like if you
-        distrust it — that is a what-if, not a preference.
+        A physical assumption about the rock, not a preference. Specific surface
+        area is the largest single uncertainty in any absolute CO&#8322; figure
+        here, so it is a control rather than a hidden constant.
       </p>
-      <div id="sliders"></div>
-      <div class="btn-row">
-        <button class="mini" id="btn-reset">Reset to physics</button>
-        <button class="mini" id="btn-random">Randomise</button>
-      </div>
-      <p class="hint stability" id="stability"></p>
+      <div id="psd-sliders"></div>
+      <p class="hint stability" id="psd-readout"></p>
+      <button class="mini" id="btn-psd-reset" style="margin-top:10px">Reset grind</button>
     </section>
 
     <section class="group" id="econ-group">
@@ -59,29 +74,33 @@
       <p class="hint stability" id="econ-readout"></p>
     </section>
 
-    <section class="group" id="psd-group">
-      <h2>Feedstock grind <span class="tag" id="psd-tag"></span></h2>
+    <section class="group" id="weights-group">
+      <h2>Term sensitivity <span class="tag" id="weight-tag">Physics</span></h2>
       <p class="hint">
-        A physical assumption about the rock, not a preference. Specific surface
-        area is the largest single uncertainty in any absolute CO&#8322; figure
-        here, so it is a control rather than a hidden constant.
+        These are <b>exponents on a physical product</b>, not importance weights.
+        At 1.00 the composite <i>is</i> gross CO&#8322; removal, so a location with
+        no removal scores zero. Lower a term to ask what the map looks like if you
+        distrust it — that is a what-if, not a preference.
       </p>
-      <div id="psd-sliders"></div>
-      <p class="hint stability" id="psd-readout"></p>
-      <button class="mini" id="btn-psd-reset" style="margin-top:10px">Reset grind</button>
+      <div id="sliders"></div>
+      <div class="btn-row">
+        <button class="mini" id="btn-reset">Reset to physics</button>
+        <button class="mini" id="btn-random">Randomise</button>
+      </div>
+      <p class="hint stability" id="stability"></p>
     </section>
 
-    <section class="group">
-      <h2>Eligibility <span class="tag" id="elig-version"></span></h2>
-      <label class="check"><input type="checkbox" id="chk-elig" checked>
-        <span>Show protocol screens</span></label>
-      <p class="hint" id="elig-hint"></p>
-    </section>
+    
 
-    <section class="group">
-      <h2>Legend</h2>
-      <div id="legend"></div>
-    </section>
+    
+
+    
+
+    
+
+    
+
+    
 
     <section class="group">
       <button class="link-btn" id="open-method">Methods, caveats &amp; sources &rsaquo;</button>
@@ -115,6 +134,7 @@
 
 <script src="engine_constants.js"></script>
 <script src="land.js"></script>
+<script src="quarries.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

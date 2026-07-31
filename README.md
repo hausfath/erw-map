@@ -220,9 +220,22 @@ quarry distance that actually sets cost. Inside the trusted area quarry distance
 is **2.0× outcrop distance**, and that *measured* ratio scales the bound elsewhere.
 
 Haul is **truck only**: basalt is rarely railed for ERW today, and even where rail
-exists there is still a first- and last-mile trucking leg. Gate cost $25/t plus
-truck at $0.12/t-km over 1.35× great-circle distance gives **$28 / $61 / $138** per
-tonne at p10/p50/p90 of cropland, with **23% of cropland area above $100/t**.
+exists there is still a first- and last-mile trucking leg.
+
+**The gate cost was revised down from $25/t to $10/t, because the old figure priced
+the wrong product.** ERW does not buy graded construction aggregate; it buys quarry
+*fines* — crusher dust and screenings — the cheapest class a quarry makes and in
+many markets an unsold byproduct. The old $25 started from the USGS blended
+crushed-stone unit value (~$15–18/t across all graded products) and reasoned
+*upward* for grinding. Both halves were wrong: fines sit below that average, and
+ERW target sizes largely overlap what fines already deliver. Reported prices:
+~$12/t (Lithos), <$10/t (Isometric's own figure), ~$10/t (InPlanet), $8–10/t for
+Brazilian pó de pedra, $2–3/t for Indian raw crusher dust. UNDO, Mati and Silicate
+all supply free, so the floor genuinely reaches $0.
+
+Because the penalty applies to the haul increment only, the gate cost **cancels out
+of the multiplier** — this correction fixes reported $/t and $/tCO₂, which were
+overstated, without perturbing the map.
 
 **This reverses an earlier change, and the earlier reasoning was bad.** A rail mode
 was added because a truck-only median of $252/t "looked implausible". Two errors:

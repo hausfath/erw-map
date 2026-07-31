@@ -42,6 +42,7 @@
   let gl, prog, quad, texA, texB, texC, texRamp, cpu = null;
   let mode = "score";
   let showElig = true;
+  let showQuarries = false;
   // Term exponents, NOT importance weights. Default 1 means the composite is
   // exactly the physical product, so gross CDR -- and hence suitability -- is
   // zero wherever any required term is zero.
@@ -439,6 +440,25 @@
       }
     }
     g.stroke();
+
+    // Quarry points. Drawn on the 2-D overlay rather than in the shader because
+    // they are vector features at a finer scale than the raster grid, and because
+    // they should stay legible when zoomed out without becoming a solid blob.
+    if (showQuarries && window.QUARRIES) {
+      const pts = window.QUARRIES.points;
+      const src = {MRDS: "#e8734a", ANM: "#4ad2a8", OSM: "#c9a227"};
+      const rad = Math.max(1.1, Math.min(3.4, 0.9 * dpr * Math.sqrt(view.zoom)));
+      g.globalAlpha = 0.85;
+      for (let i = 0; i < pts.length; i++) {
+        const x = X(pts[i][0]), y = Y(pts[i][1]);
+        if (x < -8 || y < -8 || x > w + 8 || y > h + 8) continue;
+        g.beginPath();
+        g.fillStyle = src[pts[i][2]] || "#999";
+        g.arc(x, y, rad, 0, 6.2832);
+        g.fill();
+      }
+      g.globalAlpha = 1;
+    }
 
     // Graticule every 30 deg, so the projection is legible.
     g.lineWidth = Math.max(0.4, 0.5 * dpr);
@@ -963,13 +983,29 @@
       something unavoidable that carries no spatial information. From there the
       multiplier declines as <code>1/(1 + (cost − gate)/S)</code> with S = $100/t,
       so the half-penalty point is $125/t delivered.</p>
-      <p>That replaced five hand-placed breakpoints which, while also 1.0 at $25,
-      ramped hard enough that a cell at the <i>cropland median</i> of $61/t lost
-      38%. It now loses 27%. One stated parameter instead of five, and S is an
+      <p><b>The gate cost was revised down from $25/t to $10/t, because the old
+      figure priced the wrong product.</b> ERW does not buy graded construction
+      aggregate; it buys quarry <i>fines</i> — crusher dust and screenings — which
+      are the cheapest class a quarry makes and in many markets an unsold byproduct
+      it stockpiles. The old $25 started from the USGS blended crushed-stone unit
+      value (~$15–18/t, averaged across all graded products) and then reasoned
+      <i>upward</i> for finer grinding. Both halves were wrong: fines sit below that
+      average, not above it, and ERW target sizes largely overlap what fines already
+      deliver, so little extra grinding is needed. Operators report ~$12/t (Lithos),
+      &lt;$10/t (Isometric's own figure), ~$10/t (InPlanet); Brazilian pó de pedra
+      runs $8–10/t and Indian raw crusher dust as little as $2–3/t. UNDO, Mati and
+      Silicate all supply free, so the floor genuinely reaches $0.</p>
+      <p>Because the penalty applies to the haul increment only, the gate cost
+      <i>cancels out of the multiplier</i> — so this correction changes the reported
+      $/t and $/tCO₂, which were overstated, without perturbing the map at all.</p>
+      <p>That replaced five hand-placed breakpoints which, while also 1.0 at the
+      gate,
+      ramped hard enough that a cell at the <i>cropland median</i> haul lost 38%.
+      It now loses 27%. One stated parameter instead of five, and S is an
       editorial choice rather than a derived one — which is why the readout also
       reports feedstock cost per tonne of CO₂, so the trade-off can be judged in
-      units that mean something. At the gate that is $87/tCO₂ gross; at the
-      cropland median, $211.</p>
+      units that mean something. At the gate that is $35/tCO₂ gross; at the
+      cropland median haul, $159.</p>
       <p>Cost is the first genuinely <i>tradeable</i> factor here, so unlike the
       physical terms it is compensatory with a floor — it discounts the score
       without zeroing it. It is <b>off by default</b>: the landing map is a
@@ -1141,6 +1177,22 @@
       `${E.eligibility.pPasses} and ${E.eligibility.pExcluded}. A hatch, not a ` +
       `blend — a marginal site should not read as a slightly worse good site.`;
     $("stat-main").textContent = E.stats.croplandGha.toFixed(2) + " Gha";
+    const nq = (window.QUARRIES && window.QUARRIES.points.length) || 0;
+    const bySrc = {};
+    if (nq) window.QUARRIES.points.forEach((p) => {
+      bySrc[p[2]] = (bySrc[p[2]] || 0) + 1;
+    });
+    $("quarry-hint").innerHTML = nq
+      ? `${nq.toLocaleString()} mafic-hosted quarries: ` +
+        Object.entries(bySrc).map(([k, v]) =>
+          `<span style="color:${{MRDS: "#e8734a", ANM: "#4ad2a8",
+            OSM: "#c9a227"}[k] || "#999"}">\u25cf</span> ${k} ` +
+          `${v.toLocaleString()}`).join(", ") +
+        `. MRDS is the US national register, ANM the Brazilian mining-title ` +
+        `register, OSM crowd-sourced. A title is not a producing quarry, so all ` +
+        `three overstate active supply \u2014 less than the outcrop bound they ` +
+        `replace, but in the same direction.`
+      : "No quarry inventory built. Run scripts/fetch_quarries.py.";
     $("attrib").textContent =
       "SoilGrids · WorldClim · Potapov et al. cropland · Natural Earth";
     $("method-body").innerHTML = methodsHTML();
@@ -1164,6 +1216,15 @@
     $("chk-elig").addEventListener("change", (e) => {
       showElig = e.target.checked; refresh();
     });
+    const cq = $("chk-quarries");
+    if (window.QUARRIES && window.QUARRIES.points.length) {
+      cq.addEventListener("change", (e) => {
+        showQuarries = e.target.checked; refresh();
+      });
+    } else {
+      cq.disabled = true;
+      $("overlay-group").classList.add("hidden");
+    }
     $("btn-reset").onclick = () => {
       CRIT.forEach((c) => { termExp[c.key] = 1; }); refresh();
     };
