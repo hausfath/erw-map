@@ -219,15 +219,23 @@ globally an outcrop-distance **upper bound**, and where MRDS is usable the
 quarry distance that actually sets cost. Inside the trusted area quarry distance
 is **2.0× outcrop distance**, and that *measured* ratio scales the bound elsewhere.
 
-A truck-only haul model gave a $252/t median — an artefact that would make ERW
-uneconomic everywhere. Bulk minerals move by rail; taking the cheaper of truck and
-rail-plus-transload gives **$28/$46/$65 per tonne** at p10/p50/p90 of cropland, and
-**no cropland in the worst cost bracket**. With rail, basalt is within economic
-reach of most cropland.
+Haul is **truck only**: basalt is rarely railed for ERW today, and even where rail
+exists there is still a first- and last-mile trucking leg. Gate cost $25/t plus
+truck at $0.12/t-km over 1.35× great-circle distance gives **$28 / $61 / $138** per
+tonne at p10/p50/p90 of cropland, with **23% of cropland area above $100/t**.
+
+**This reverses an earlier change, and the earlier reasoning was bad.** A rail mode
+was added because a truck-only median of $252/t "looked implausible". Two errors:
+that $252 was the median over *all land*, not cropland — cropland sits far closer
+to quarries, and its truck-only median is $61/t, which was always plausible. And
+having misread the number, the response was to add a mechanism that made the output
+look better rather than to find out why it looked odd. The standing rule applies:
+when a number looks wrong, diagnose before changing the model.
 
 Cost is compensatory with a floor, not annihilating: expensive rock is bad, not
-impossible. It is the first genuinely tradeable factor, so its slider is a real
-preference rather than a what-if.
+impossible. It is **off by default** — the landing map is a statement about physical
+potential, and economics is a layer of assumption on top that should be switched on
+deliberately. Turning it on takes the area-weighted score from 0.49 to 0.30.
 
 ### Monthly soil temperature and moisture
 

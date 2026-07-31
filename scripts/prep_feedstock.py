@@ -30,9 +30,10 @@ Having both in one region lets us MEASURE how much outcrop proximity overstates
 quarry proximity, and report that ratio as the honest uncertainty everywhere
 else, instead of asserting a caveat.
 
-Haul cost is great-circle distance x a tortuosity factor, NOT network routing.
-That is the minimum defensible treatment and it is labelled as such. Real routing
-needs a friction surface or a road graph; see to_do.md.
+Haul is TRUCK ONLY, at great-circle distance x a tortuosity factor, NOT network
+routing. Truck-only because basalt is rarely railed for ERW today and rail still
+requires first- and last-mile trucking. Real routing needs a friction surface or a
+road graph; see to_do.md.
 """
 
 from __future__ import annotations
@@ -241,12 +242,14 @@ def main() -> int:
     print("indicative delivered cost")
     haul_km = np.where(np.isfinite(quarry_km) & (conf > 0.5), quarry_km,
                        mafic_km * C.OUTCROP_TO_QUARRY_FACTOR)
+    # Truck for the whole haul. Basalt is rarely railed for ERW today, and rail
+    # still needs a first- and last-mile truck leg, so a rail rate would flatter
+    # current practice. See constants.TRUCK_COST_USD_T_KM for why an earlier
+    # rail mode was removed.
     road_km = C.ROAD_TORTUOSITY * haul_km
-    truck = C.TRUCK_COST_USD_T_KM * road_km
-    rail = C.RAIL_COST_USD_T_KM * road_km + C.RAIL_TRANSLOAD_USD_T
-    cost = C.FEEDSTOCK_GATE_COST_USD_T + np.minimum(truck, rail)
-    cross = C.RAIL_TRANSLOAD_USD_T / (C.TRUCK_COST_USD_T_KM - C.RAIL_COST_USD_T_KM)
-    print(f"  truck below ~{cross:.0f} km road distance, rail above it")
+    cost = C.FEEDSTOCK_GATE_COST_USD_T + C.TRUCK_COST_USD_T_KM * road_km
+    print(f"  truck only, ${C.TRUCK_COST_USD_T_KM}/t-km on "
+          f"{C.ROAD_TORTUOSITY}x great-circle distance")
     v = cost[np.isfinite(cost)]
     print(f"  $/t delivered: p10 {np.percentile(v, 10):.0f}  "
           f"p50 {np.percentile(v, 50):.0f}  p90 {np.percentile(v, 90):.0f}")

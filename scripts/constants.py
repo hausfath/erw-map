@@ -659,22 +659,29 @@ DW_ERW_ENHANCED_RATIONALE = (
 FEEDSTOCK_GATE_COST_USD_T = 25.0     # crushed, at the quarry gate
 ROAD_TORTUOSITY = 1.35               # great-circle -> road distance
 
-# TWO HAUL MODES, and this matters more than it looks. A truck-only model put the
-# median delivered cost at $252/t and the 90th percentile at $1,240/t, which would
-# make ERW uneconomic almost everywhere -- an artefact, not a finding. Bulk
-# minerals move long distances by rail, not truck. Taking the cheaper of the two
-# modes brings the median to a plausible figure.
+# TRUCK ONLY. Basalt for ERW is rarely railed today, and even where rail exists
+# there is still a first- and last-mile trucking leg, so a rail rate would flatter
+# the cost of moving this material in current practice.
 #
-#   cost_haul = min( truck_rate * d ,  rail_rate * d + transload )
+#   cost_haul = truck_rate * road_distance
 #
-# The crossover is transload / (truck_rate - rail_rate) ~ 133 km, which is the
-# right order for bulk aggregate. Still not network routing: there may be no rail
-# where this assumes it, which is why the confidence layer exists.
+# THIS REVERSES A CHANGE WE MADE EARLIER, AND THE EARLIER REASONING WAS BAD.
+# A truck-only model was replaced with min(truck, rail + transload) because the
+# truck median "looked implausible" at $252/t. Two errors in that:
+#   1. $252 was the median over ALL LAND, not over cropland. Cropland sits much
+#      closer to quarries. Truck-only on cropland is $61/t median, which is
+#      entirely plausible and always was.
+#   2. Having mis-read the number, we added a mechanism to make the output look
+#      better rather than diagnosing why it looked odd. That is backwards.
+# The lesson is the standing one: when a number looks wrong, find out why before
+# changing the model.
+#
+# Rail can come back if and when a rail-served-quarry layer exists to gate it,
+# rather than being assumed available everywhere.
 TRUCK_COST_USD_T_KM = 0.12
-RAIL_COST_USD_T_KM = 0.03
-RAIL_TRANSLOAD_USD_T = 12.0          # two handlings, quarry and railhead
 FEEDSTOCK_COST_SOURCE = ("USGS crushed-stone unit values for the gate cost; "
-                         "haul rates and the rail crossover are assumptions")
+                         "truck haul rate is an assumption. Truck only: basalt is "
+                         "rarely railed, and rail still needs first/last-mile truck")
 
 # Outcrop distance -> quarry distance where no usable inventory exists.
 # MEASURED at 2.0 inside the trusted MRDS area (prep_feedstock.py reports it),
@@ -689,8 +696,8 @@ COST_VALUE_KNOTS = [(25.0, 1.0), (50.0, 0.7), (100.0, 0.35), (200.0, 0.1),
 COST_FLOOR = 0.05
 
 # Cost is the FIRST genuinely tradeable factor in this model, so unlike the
-# physical terms its slider is a real preference rather than a what-if. It enters
-# as an exponent on a compensatory multiplier:
+# physical terms it is a real preference rather than a what-if. It enters as an
+# exponent on a compensatory multiplier:
 #
 #     suitability = f(gross CDR) * v_cost ^ w_cost
 #
@@ -698,10 +705,20 @@ COST_FLOOR = 0.05
 # cost -- while expensive rock reduces the score without zeroing it, because
 # expensive is bad, not impossible.
 #
-# Default 1.0 rather than some middle value: 1.0 is the straightforward reading
-# of "delivered cost matters", and inventing a 0.5 to soften it would be an
-# unlabelled editorial thumb on the scale. Users who disagree can move it.
-COST_EXPONENT_DEFAULT = 1.0
+# DEFAULT OFF, with a toggle to full. Two reasons this is the better default:
+#   - It keeps the landing map a statement about PHYSICAL potential, which is what
+#     this model computes from measured inputs. Economics is a layer of assumption
+#     on top: a gate cost, a truck rate, a tortuosity factor, and a quarry
+#     inventory of very uneven completeness.
+#   - It makes the economic view something the reader opts into and can switch off
+#     again, so the effect of those assumptions shows up as a visible change
+#     rather than being baked invisibly into every number.
+#
+# On means 1.0, the straightforward reading of "delivered cost matters". There is
+# deliberately no middle default: inventing a 0.5 to soften it would be an
+# unlabelled editorial thumb on the scale.
+COST_EXPONENT_DEFAULT = 0.0
+COST_EXPONENT_ON = 1.0
 
 # ---------------------------------------------------------------------------
 # Grid. Analysis is done on an EQUAL-AREA grid, not EPSG:4326, so that "1 km"

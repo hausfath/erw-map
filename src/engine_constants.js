@@ -555,7 +555,7 @@ window.ERW = {
   },
   "cost": {
     "floor": 0.05,
-    "expDefault": 1.0,
+    "expDefault": 0.0,
     "knots": [
       [
         25.0,
@@ -580,10 +580,10 @@ window.ERW = {
     ],
     "gateUsdT": 25.0,
     "truckUsdTKm": 0.12,
-    "railUsdTKm": 0.03,
-    "railTransloadUsdT": 12.0,
+    "expOn": 1.0,
+    "tortuosity": 1.35,
     "outcropToQuarry": 2.0,
-    "source": "USGS crushed-stone unit values for the gate cost; haul rates and the rail crossover are assumptions"
+    "source": "USGS crushed-stone unit values for the gate cost; truck haul rate is an assumption. Truck only: basalt is rarely railed, and rail still needs first/last-mile truck"
   },
   "eligibility": {
     "version": "puro_v2025_isometric_v1.2",

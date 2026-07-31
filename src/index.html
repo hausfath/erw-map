@@ -45,11 +45,16 @@
     <section class="group" id="econ-group">
       <h2>Economics <span class="tag" id="econ-tag"></span></h2>
       <p class="hint">
-        Delivered feedstock cost is the <b>first genuinely tradeable</b> factor
-        here, so unlike the physical terms this slider is a real preference. It
-        discounts the score without zeroing it — expensive rock is bad, not
-        impossible.
+        Off by default, so the landing map is a statement about <b>physical
+        potential</b>. Economics adds a layer of assumption on top — a gate cost, a
+        truck rate, a tortuosity factor, and a quarry inventory of uneven
+        completeness — so it is something to switch on deliberately and switch off
+        again.
       </p>
+      <div class="seg" id="econ-seg">
+        <button class="seg-btn active" data-econ="0">Off</button>
+        <button class="seg-btn" data-econ="1">Delivered cost</button>
+      </div>
       <div id="econ-sliders"></div>
       <p class="hint stability" id="econ-readout"></p>
     </section>

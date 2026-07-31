@@ -589,35 +589,34 @@
 
   function buildEconSliders() {
     if (!E.cost) { $("econ-group").classList.add("hidden"); return; }
-    const host = $("econ-sliders");
-    host.innerHTML =
-      `<div class="slider"><div class="row">` +
-      `<span class="name">Weight on delivered cost</span>` +
-      `<span class="val" id="v-costexp"></span></div>` +
-      `<input type="range" id="s-costexp" min="0" max="150" step="5">` +
-      `<div class="why">0 ignores cost entirely; 1.00 applies it in full. ` +
-      `Gate $${E.cost.gateUsdT}/t, truck $${E.cost.truckUsdTKm}/t-km, ` +
-      `rail $${E.cost.railUsdTKm}/t-km plus $${E.cost.railTransloadUsdT}/t ` +
-      `transload. Great-circle distance, not routed.</div></div>`;
-    const inp = $("s-costexp");
-    inp.value = Math.round(econ.costExp * 100);
-    inp.addEventListener("input", () => {
-      econ.costExp = +inp.value / 100; refresh();
+    // A two-state toggle, not a continuous slider: there is no principled middle
+    // value, and inventing one would be an unlabelled thumb on the scale.
+    $("econ-sliders").innerHTML =
+      `<p class="why" style="margin-top:10px">Gate $${E.cost.gateUsdT}/t plus ` +
+      `truck at $${E.cost.truckUsdTKm}/t-km over ${E.cost.tortuosity}\u00d7 ` +
+      `great-circle distance. <b>Truck only</b> \u2014 basalt is rarely railed for ` +
+      `ERW today, and rail would still need a first- and last-mile truck leg. ` +
+      `Not network routing.</p>`;
+    document.querySelectorAll("#econ-seg .seg-btn").forEach((b) => {
+      b.addEventListener("click", () => {
+        econ.costExp = +b.dataset.econ ? E.cost.expOn : 0;
+        refresh();
+      });
     });
   }
 
   function syncEcon() {
     if (!E.cost) return;
-    const inp = $("s-costexp");
-    if (inp) inp.value = Math.round(econ.costExp * 100);
-    const lab = $("v-costexp");
-    if (lab) lab.textContent = econ.costExp.toFixed(2);
-    $("econ-tag").textContent = econ.costExp === 0 ? "Ignored"
-      : (Math.abs(econ.costExp - E.cost.expDefault) < 0.005 ? "Full" : "Custom");
-    $("econ-readout").innerHTML =
-      `Where the quarry inventory is unusable, outcrop distance is scaled by ` +
-      `${E.cost.outcropToQuarry}\u00d7 to approximate quarry distance \u2014 a ratio ` +
-      `<i>measured</i> inside the trusted inventory area, not assumed.`;
+    const on = econ.costExp > 0;
+    document.querySelectorAll("#econ-seg .seg-btn").forEach((b) =>
+      b.classList.toggle("active", (+b.dataset.econ > 0) === on));
+    $("econ-tag").textContent = on ? "On" : "Off";
+    $("econ-readout").innerHTML = on
+      ? `Where no quarry inventory is usable, outcrop distance is scaled by ` +
+        `${E.cost.outcropToQuarry}\u00d7 to approximate quarry distance \u2014 a ratio ` +
+        `<i>measured</i> inside the trusted inventory area, not assumed.`
+      : `Suitability currently reflects physical potential only. Turn cost on to ` +
+        `see how much of the map is reachable at what delivered price.`;
   }
 
   function syncSliders() {
@@ -944,17 +943,28 @@
       cost. Having both in one region lets us <b>measure</b> the gap instead of
       asserting a caveat: quarry distance is <b>2.0× outcrop distance</b> there,
       and that measured ratio is what scales the outcrop bound elsewhere.</p>
-      <p><b>Haul mode matters more than it looks.</b> A truck-only model gave a
-      $252/t median and $1,240/t at the 90th percentile, which would make ERW
-      uneconomic almost everywhere — an artefact, not a finding. Bulk minerals move
-      by rail. Taking the cheaper of truck and rail-plus-transload (crossover
-      ~133 km) gives $28/$46/$65 per tonne at the 10th/50th/90th percentile of
-      cropland. Notably <b>no cropland falls in the worst cost bracket</b>: with
-      rail, basalt is within economic reach of most cropland.</p>
+      <p><b>Truck only.</b> Basalt is rarely railed for ERW today, and even where
+      rail exists there is still a first- and last-mile trucking leg, so a rail
+      rate would flatter how this material actually moves. Gate cost $25/t plus
+      truck at $0.12/t-km over 1.35× great-circle distance gives
+      <b>$28 / $61 / $138</b> per tonne at the 10th/50th/90th percentile of
+      cropland. About <b>23% of cropland area sits above $100/t</b> and 3.5% above
+      $200/t.</p>
+      <div class="flagbox"><p><b>This reverses an earlier change, and the earlier
+      reasoning was bad.</b> A rail mode was added because a truck-only median of
+      $252/t "looked implausible". Two errors: that $252 was the median over
+      <i>all land</i>, not cropland — cropland sits far closer to quarries, and its
+      truck-only median is $61/t, which was always plausible. And having misread
+      the number, the response was to add a mechanism that made the output look
+      better rather than to find out why it looked odd. When a number looks wrong,
+      diagnose before changing the model.</p></div>
       <p>Cost is the first genuinely <i>tradeable</i> factor here, so unlike the
       physical terms it is compensatory with a floor — it discounts the score
       without zeroing it, because expensive rock is bad rather than impossible.
-      That also makes its slider a real preference rather than a what-if.</p>
+      It is <b>off by default</b>: the landing map is a statement about physical
+      potential, and economics adds a layer of assumption on top that should be
+      switched on deliberately. Turning it on discounts the area-weighted score
+      from 0.49 to 0.30.</p>
       <p>Still not routed: distance is great-circle times a tortuosity factor.
       Real routing needs a friction surface or a road graph.</p>
 
