@@ -110,17 +110,26 @@ def onto(src_path: Path, transform, w, h, crs, *, band=1,
     return dst
 
 
-def write_stack(path: Path, bands: list[np.ndarray], transform, crs, desc: str):
+def write_stack(path: Path, bands: list[np.ndarray], transform, crs, desc: str,
+                *, scale: float = 1.0, lo: int = -32000, hi: int = 32000):
+    """Write a 12-band stack as int16 with a scale factor recorded in the tags.
+
+    float32 is wasteful here: decidegrees C and mm of storage both fit int16
+    comfortably, and it takes the two stacks from 111 MB to 27 MB. These files are
+    committed so the build runs without re-downloading 3.3 GB, so the difference
+    is the difference between a clean repo and one GitHub warns about.
+    """
     INTERIM.mkdir(parents=True, exist_ok=True)
     h, w = bands[0].shape
     with rasterio.open(path, "w", driver="GTiff", height=h, width=w,
-                       count=len(bands), dtype="float32", crs=crs,
-                       transform=transform, nodata=np.nan,
-                       compress="deflate", tiled=True) as dst:
+                       count=len(bands), dtype="int16", crs=crs,
+                       transform=transform, nodata=-32768,
+                       compress="deflate", predictor=2, tiled=True) as dst:
         for i, b in enumerate(bands, 1):
-            dst.write(b.astype("float32"), i)
+            q = np.where(np.isfinite(b), np.clip(np.rint(b * scale), lo, hi), -32768)
+            dst.write(q.astype("int16"), i)
             dst.set_band_description(i, f"month {i}")
-        dst.update_tags(description=desc)
+        dst.update_tags(description=desc, scale_factor=str(scale))
     print(f"  wrote {path.name}  {len(bands)} bands  "
           f"{path.stat().st_size / 1e6:.1f} MB")
 
@@ -144,7 +153,8 @@ def fetch_soil_temperature(months, transform, w, h, crs) -> bool:
         print(f"  month {m:2d}: {mb:6.1f} MB fetched then deleted; "
               f"land mean {v.mean():6.2f} C, range {v.min():6.1f} to {v.max():5.1f}")
     write_stack(out, bands, transform, crs,
-                f"Lembrechts et al. 2022 soil temperature {DEPTH_LABEL}, deg C, monthly")
+                f"Lembrechts et al. 2022 soil temperature {DEPTH_LABEL}, deg C, monthly",
+                scale=10.0, lo=-600, hi=600)
     return True
 
 
@@ -174,7 +184,8 @@ def fetch_soil_moisture(transform, w, h, crs) -> bool:
     v = bands[6][bands[6] > 0]
     print(f"  {n} years; July land mean {v.mean():.1f} mm root-zone storage")
     write_stack(out, bands, transform, crs,
-                "TerraClimate root-zone soil moisture, mm, monthly climatology")
+                "TerraClimate root-zone soil moisture, mm, monthly climatology",
+                scale=1.0, lo=0, hi=6000)
     return True
 
 

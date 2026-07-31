@@ -39,6 +39,7 @@ __all__ = [
     "ph_half",
     "eta_transport",
     "cascade_baseline_index",
+    "element_release",
 ]
 
 
@@ -126,6 +127,45 @@ DIVALENT_PER_FORMULA = {
     "bronzite": 1.0,       # ~(Mg,Fe)SiO3
     "wollastonite": 1.0,   # CaSiO3
 }
+
+
+# Moles of each element released per mole of mineral dissolved. Separate from
+# DIVALENT_PER_FORMULA because a validation against measured ELEMENT release needs
+# element stoichiometry, not the CDR-relevant charge sum.
+ELEMENT_PER_FORMULA = {
+    "anorthite":    {"Ca": 1.0, "Mg": 0.0},   # CaAl2Si2O8
+    "bytownite":    {"Ca": 0.8, "Mg": 0.0},
+    "labradorite":  {"Ca": 0.6, "Mg": 0.0},   # ~An60, remainder Na
+    "andesine":     {"Ca": 0.4, "Mg": 0.0},
+    "oligoclase":   {"Ca": 0.2, "Mg": 0.0},
+    "albite":       {"Ca": 0.0, "Mg": 0.0},
+    "forsterite":   {"Ca": 0.0, "Mg": 2.0},   # Mg2SiO4
+    "fayalite":     {"Ca": 0.0, "Mg": 0.0},
+    "diopside":     {"Ca": 1.0, "Mg": 1.0},   # CaMgSi2O6
+    "augite":       {"Ca": 0.7, "Mg": 0.6},   # (Ca,Mg,Fe)2Si2O6, Fe-bearing
+    "enstatite":    {"Ca": 0.0, "Mg": 1.0},   # MgSiO3
+    "bronzite":     {"Ca": 0.0, "Mg": 0.8},
+    "wollastonite": {"Ca": 1.0, "Mg": 0.0},   # CaSiO3
+}
+
+
+def element_release(fractions: dict, element: str, pH, T_K):
+    """Release rate of one element, mol m-2 s-1, for a mineral mixture.
+
+    `fractions` maps mineral name to its share of the REACTING SURFACE (not
+    necessarily its volume share -- the distinction is the whole point of the
+    Gudbrandsson validation, since their own fit needed plagioclase to occupy
+    83% of the surface against a 44% volume share).
+    """
+    norm = sum(fractions.values()) or 1.0
+    total = None
+    for mineral, f in fractions.items():
+        nu = ELEMENT_PER_FORMULA[mineral].get(element, 0.0)
+        if nu == 0.0:
+            continue
+        c = (f / norm) * nu * mineral_rate(mineral, pH, T_K)
+        total = c if total is None else total + c
+    return total if total is not None else np.zeros_like(np.asarray(pH, dtype=float))
 
 
 def rate_ca_mg_release(archetype: str, pH, T_K, *, return_parts: bool = False):

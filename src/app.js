@@ -826,6 +826,38 @@
       <p><b>Protocol eligibility as a mapped layer,</b> in three states rather
       than two, from exceedance probabilities on SoilGrids quantiles.</p>
 
+      <h3>The independent kinetics test, and what it found</h3>
+      <div class="flagbox"><p><b>This test fails, and it is the most important open
+      problem in the model.</b> It also caught us conceding something to Cascade
+      that the data does not support.</p></div>
+      <p>Gudbrandsson et al. (2011) measured crystalline-basalt release rates across
+      pH 2–11 and 5–75 °C. That isolates the rate law in a way the field trials
+      cannot, since grain size and loss terms there absorb any error.</p>
+      <p>Against the pre-registered 0.5 log-unit tolerance, our Palandri–Kharaka
+      mixture <b>over-predicts</b>: Ca by +0.5 log units, Mg by +0.8 to +1.6. The
+      residuals are structured, not noisy, in two separate ways.</p>
+      <p><b>By temperature</b>, the bias grows from +0.01 at 5 °C to +1.58 at 75 °C.
+      That is an activation-energy error. Gudbrandsson measure an apparent Ea for
+      whole-rock basalt of <b>~36 kJ/mol</b> (24–54 across pH). Our mixture gives
+      46–63, and Cascade uses 68.8. <b>We previously called Cascade's 68.8 "a
+      reasonable number reached by an unclear route" — that concession was wrong.</b>
+      It is roughly 2× too high, and so is ours.</p>
+      <p>This matters geographically, because temperature sensitivity is what drives
+      the tropical tilt. At 36 kJ/mol a soil 20 °C warmer is 2.7× faster; at 68 it
+      is 6.7×. <b>The tropics-versus-temperate contrast is about 2.5× smaller than
+      either formulation implies.</b></p>
+      <p><b>By pH</b>, Mg over-prediction peaks at pH 4–8 (+1.4 to +2.1) and nearly
+      vanishes below 4 and above 8 — the signature of secondary Mg/Fe phases
+      precipitating near neutral pH, where they are least soluble, removing Mg from
+      the solution the experiment measures.</p>
+      <p><b>Why an independent test was necessary.</b> The CO₂ layer sits ~2.3×
+      <i>below</i> field observations while the kinetics over-predict lab rates by
+      3–7×. Those pull opposite ways, so the surface-area multiplier has been
+      quietly absorbing a kinetics error. Comparing against field trials alone
+      could never have shown that. Neither problem is corrected in the default
+      model: recorded rather than silently retuned, because the fix is a modelling
+      decision that needs its own review.</p>
+
       <h3>Remaining stand-ins</h3>
       <ul>${p.substitutions.map((s) => `<li>${s}</li>`).join("")}</ul>
       <p>These mean the temperature and moisture terms are still <i>Cascade's own
@@ -863,6 +895,69 @@
       dissolved fraction is anchored to the midpoint of observation (first-period
       fraction weathered across the verified deliveries spans roughly 15–56%),
       which also means our own 20% cap constant was falsified by the data.</p>
+
+      <h3>Monthly soil temperature and moisture</h3>
+      <p>Both stand-ins are gone. Soil temperature is Lembrechts et al. (2022) at
+      5–15 cm, natively 30 arc-second and monthly — the deeper layer because
+      Isometric's near-field zone is the deeper of 20 cm or tillage depth plus
+      5–10 cm. Moisture is a ten-year TerraClimate root-zone climatology.</p>
+      <p>The rate is now computed <b>each month and the rate averaged</b>, never
+      the drivers. Two reasons: the rate is convex in temperature, so the mean of
+      the rate exceeds the rate at the mean (Jensen); and weathering needs warm
+      <i>and</i> wet simultaneously, which annual means destroy.</p>
+      <p><b>The effect is real but smaller than we predicted, and we were wrong
+      about the size.</b> Literature estimates based on air-temperature amplitude
+      suggested ~1.4×. Measured here: median 1.04, range 0.89–1.33. Soil
+      temperature at 5–15 cm is strongly damped relative to air, so the Jensen
+      term is much weaker than an air-based estimate implies — and the covariance
+      term pulls the other way in places, partly cancelling it.</p>
+      <p>It is spatially structured as the mechanism predicts: Mediterranean
+      climates come out <i>below</i> 1 (Andalusia 0.85, Central Valley 0.93), where
+      annual means flatter a site whose warm and wet seasons never coincide;
+      monsoon and continental cropland come out above (Punjab 1.19, Iowa 1.18);
+      the wet tropics sit at ~1, having little seasonality to lose.</p>
+
+      <h3>Feedstock and delivered cost</h3>
+      <p>The largest gap versus a deployment tool, and it needed two constructs
+      rather than one. Lithology is <i>not</i> delivered cost: basalt under a field
+      is irrelevant if nobody quarries it within haul range. But usable quarry
+      inventories are very uneven — USGS MRDS is the only large open one, it is
+      reliable mainly for the United States, and USGS stopped systematic updates
+      in 2011 while itself counting 3,531 operating US crushed-stone quarries in
+      2023.</p>
+      <p>So the map carries both: globally, distance to mafic outcrop from
+      full-resolution GLiM (1.24 million polygons, 93,220 of them basic igneous),
+      which is an <b>upper bound</b> since outcrop is not a quarry; and where MRDS
+      is usable, distance to a mafic-hosted quarry, which is what actually sets
+      cost. Having both in one region lets us <b>measure</b> the gap instead of
+      asserting a caveat: quarry distance is <b>2.0× outcrop distance</b> there,
+      and that measured ratio is what scales the outcrop bound elsewhere.</p>
+      <p><b>Haul mode matters more than it looks.</b> A truck-only model gave a
+      $252/t median and $1,240/t at the 90th percentile, which would make ERW
+      uneconomic almost everywhere — an artefact, not a finding. Bulk minerals move
+      by rail. Taking the cheaper of truck and rail-plus-transload (crossover
+      ~133 km) gives $28/$46/$65 per tonne at the 10th/50th/90th percentile of
+      cropland. Notably <b>no cropland falls in the worst cost bracket</b>: with
+      rail, basalt is within economic reach of most cropland.</p>
+      <p>Cost is the first genuinely <i>tradeable</i> factor here, so unlike the
+      physical terms it is compensatory with a floor — it discounts the score
+      without zeroing it, because expensive rock is bad rather than impossible.
+      That also makes its slider a real preference rather than a what-if.</p>
+      <p>Still not routed: distance is great-circle times a tortuosity factor.
+      Real routing needs a friction surface or a road graph.</p>
+
+      <h3>The SOC screen, computed correctly</h3>
+      <p>Previously the q05/q50/q95 quantiles were resampled to the analysis grid
+      and the probability computed from the <i>averaged quantiles</i>. Averaging
+      quantiles is not averaging distributions, so that was not valid uncertainty
+      propagation, and it widened the apparent spread and inflated the marginal
+      class. The probability is now computed at ~2.8 km and the <b>probability</b>
+      is averaged, which is valid — the result is the expected area fraction of the
+      cell that exceeds. Marginal cropland drops from 73% to <b>53%</b>.</p>
+      <p>Reduced but not removed: SoilGrids quantiles describe a ~250 m block
+      average while the protocol threshold applies to a sampled field, so this
+      remains a screening likelihood rather than a calibrated eligibility
+      probability.</p>
 
       <h3>Fixed earlier in this preview</h3>
       <p><b>Drainage is now real recharge, and the Damköhler coefficient was

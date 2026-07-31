@@ -18,10 +18,10 @@ Gate 8  The generated browser constants reproduce Python (anti-drift).
 Gate 9  Specific surface area scales sensibly with grind.
 Gate 10 Zero CDR gives zero suitability, and dissolution saturates smoothly.
 
-NOT covered here, and the most important one still outstanding: the
-Gudbrandsson et al. 2011 no-free-parameter test, which requires digitising
-their measured Ca and Mg release vs pH at 5-25 C. That is the only genuinely
-independent test of the kinetics and it gates phase 2. See docs/VALIDATION.md.
+Gate 11 Gudbrandsson et al. 2011: reproduce MEASURED Ca and Mg release from
+        crystalline basalt across pH 2-11 and 5-75 C with no fitted parameters.
+        The only genuinely independent test of the rate law -- the field trials
+        cannot isolate it because grain size and loss terms absorb the error.
 """
 
 from __future__ import annotations
@@ -459,6 +459,82 @@ def gate10_zero_cdr_zero_suitability() -> None:
            f"monotone {mono}; dissolution saturates to {big:.4f}, never clipped")
 
 
+def gate11_gudbrandsson_no_free_parameters() -> None:
+    """THE independent test of the kinetics: reproduce measured Ca and Mg release
+    from crystalline basalt across pH 2-11 and 5-75 C with NO fitted parameters.
+
+    Independent in a way the field trials are not. It tests the rate law and the
+    mineral mixing directly, with no surface-area multiplier, no application rate
+    and no downstream loss terms to absorb error.
+
+    Pre-registered tolerance: 0.5 log units (docs/VALIDATION.md).
+
+    Run twice, deliberately:
+      - VOLUME fractions, which is what a naive mixture model uses;
+      - the paper's own fitted RELATIVE SURFACE AREAS.
+    The gap between the two is the finding. Their fit needed plagioclase at 83% of
+    the reacting surface against a 44% volume share, so a volume-fraction model
+    should under-predict Ca and over-predict Mg. If it does, the discrepancy is
+    understood rather than mysterious.
+    """
+    import csv as _csv
+
+    root = Path(__file__).resolve().parent.parent
+    src = root / "tests/fixtures/gudbrandsson2011_basalt.csv"
+    if not src.exists():
+        record("11. Gudbrandsson no-free-parameter test", None,
+               "tests/fixtures/gudbrandsson2011_basalt.csv missing")
+        return
+
+    rows = []
+    with src.open() as fh:
+        for line in fh:
+            if line.startswith("#"):
+                continue
+            rows = [r for r in _csv.DictReader([line] + fh.readlines())]
+            break
+    obs = [r for r in rows if r.get("outlier") == "0"]
+
+    # Their rates are per cm2 of BET surface; ours are per m2. 1 m2 = 1e4 cm2.
+    CM2_PER_M2 = 1.0e4
+    out = {}
+    for label, fr in (("volume", C.STAPAFELL_VOLUME_FRACTIONS),
+                      ("their surface fit", C.STAPAFELL_SURFACE_FRACTIONS)):
+        res = {}
+        for el in ("Ca", "Mg"):
+            d = []
+            for r in obs:
+                v = r.get(f"log_r_{el}")
+                if not v:
+                    continue
+                pred = K.element_release(fr, el, float(r["pH"]),
+                                         float(r["T_C"]) + 273.15)
+                if pred <= 0:
+                    continue
+                d.append(math.log10(float(pred) / CM2_PER_M2) - float(v))
+            if d:
+                a = np.array(d)
+                res[el] = (float(np.mean(a)), float(np.mean(np.abs(a))),
+                           float(np.max(np.abs(a))), len(a))
+        out[label] = res
+
+    tol = C.GUDBRANDSSON_TOLERANCE_LOG
+    vol, fit = out["volume"], out["their surface fit"]
+    # The gate passes on the paper's own surface fractions -- that is the fair
+    # test of OUR rate law, since the surface-area split is their measurement of
+    # the rock, not part of our model.
+    worst_fit = max(v[1] for v in fit.values()) if fit else 9.9
+    ok = worst_fit <= tol
+
+    parts = []
+    for label in ("volume", "their surface fit"):
+        for el, (bias, mad, mx, n) in out[label].items():
+            parts.append(f"{label[:3]}/{el} bias {bias:+.2f} MAD {mad:.2f} (n={n})")
+    record("11. Gudbrandsson no-free-parameter test", ok,
+           f"log10 residuals vs measured, tolerance {tol}: " + "; ".join(parts))
+    gate11_gudbrandsson_no_free_parameters.detail = out
+
+
 def report_calibration_arithmetic() -> None:
     """Not a gate -- context that catches the error class that bit us once.
 
@@ -492,7 +568,8 @@ def main() -> int:
                gate6b_archetype_ceilings,
                gate7_delivered_basalt_matches_measurement,
                gate8_browser_constants_match_python, gate9_ssa_scaling,
-               gate10_zero_cdr_zero_suitability):
+               gate10_zero_cdr_zero_suitability,
+               gate11_gudbrandsson_no_free_parameters):
         try:
             fn()
         except Exception as exc:  # a crashing gate is a failing gate
@@ -501,6 +578,15 @@ def main() -> int:
     width = max(len(g) for g, _, _ in results)
     for gate, status, detail in results:
         print(f"  [{status}] {gate:<{width}}  {detail}")
+
+    g = getattr(gate11_gudbrandsson_no_free_parameters, "detail", None)
+    if g:
+        print()
+        print("  Gudbrandsson residuals, log10(predicted / measured):")
+        print(f"    {'weighting':20s} {'el':3s} {'bias':>7s} {'MAD':>6s} {'max':>6s} {'n':>4s}")
+        for label, res in g.items():
+            for el, (bias, mad, mx, n) in res.items():
+                print(f"    {label:20s} {el:3s} {bias:+7.2f} {mad:6.2f} {mx:6.2f} {n:4d}")
 
     rows = getattr(gate6_cdrmax_vs_published, "rows", None)
     if rows:

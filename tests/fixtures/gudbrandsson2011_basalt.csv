@@ -1,0 +1,56 @@
+# Crystalline basalt (Stapafell, Iceland) dissolution rates.
+# Gudbrandsson, Wolff-Boenisch, Gislason & Oelkers (2011), Geochim. Cosmochim.
+# Acta 75, 5496-5509. doi:10.1016/j.gca.2011.06.035
+#
+# PROVENANCE, because it matters for how much weight this carries:
+# The paper tabulates outlet CONCENTRATIONS of Si, Al, Ca, Fe, Mg (Table 4) but
+# prints a RATE column only for Si. The Ca, Mg and Fe rates below were derived
+# from those concentrations using the paper's own Eq. 5,
+#     r(i) = C_i * FR / (A * m)
+# with the BET surface area A = 7030 cm2/g given in the text and masses from
+# their Table 3. The derivation was checked by recomputing log r(Si) the same way
+# and comparing against the printed values: agreement 0.02-0.05 log units, i.e.
+# rounding level. So these are OUR ARITHMETIC ON THEIR MEASUREMENTS, not numbers
+# they printed. Treat accordingly.
+#
+# Obtained from the full paper reproduced as Chapter 2 of S. Gudbrandsson's PhD
+# thesis (Univ. Toulouse III / Univ. Iceland, 2013), mirrored openly at
+# utheme.utoulouse.fr. ScienceDirect, ResearchGate and HAL all blocked access.
+#
+# Units: log10 of mol element per cm2 of BET surface per second.
+# Reported basalt mineralogy, by VOLUME: 44% plagioclase, 39% pyroxene,
+# 17% olivine. Note the paper's own mixing model needed RELATIVE SURFACE AREAS of
+# 83.3% plagioclase, 13.9% pyroxene, 2.8% olivine to fit within 0.5 log units --
+# i.e. plagioclase dominates the reacting surface far more than its volume share,
+# which is exactly what a volume-fraction model like ours will get wrong.
+#
+# outlier: 11-05 has log r(Ca) above log r(Si), inconsistent with the rest of the
+# pH-11 series. Verified as printed in the source, so it is a data anomaly rather
+# than a transcription error; excluded from the fit by the flag below.
+exp,T_C,pH,log_r_Si,log_r_Ca,log_r_Mg,log_r_Fe,outlier
+02-05,5,2.04,-13.44,-14.16,-13.46,-13.62,0
+03-05,5,3.05,-14.12,-14.62,-14.19,-14.36,0
+03-25,25,2.94,-13.77,-14.58,-13.78,-14.20,0
+03-50,50,3.16,-12.76,-13.81,-12.70,-13.07,0
+04-05,5,4.06,-15.02,-14.81,-15.18,-15.25,0
+04-25,25,4.13,-14.31,-14.90,-14.53,-14.86,0
+04-50,50,4.09,-14.03,-14.66,-14.41,-14.58,0
+04-75,75,4.04,-13.67,-14.23,-14.28,-14.42,0
+05-05,5,5.00,-15.50,-15.28,-15.99,-15.54,0
+05-25,25,5.03,-15.13,-15.45,-15.56,-15.66,0
+05-50,50,5.14,-14.76,-15.22,-15.63,-15.90,0
+05-75,75,5.65,-14.16,-14.71,-15.40,-16.23,0
+06-25,25,5.86,-15.45,-15.90,-16.10,-16.21,0
+07-50,50,6.89,-14.95,-15.52,-16.18,-16.67,0
+07-75,75,6.59,-14.13,-14.67,-15.59,,0
+09-05,5,9.24,-15.26,-15.82,-16.04,-16.23,0
+09-25,25,9.22,-14.94,-15.60,-15.79,-16.08,0
+09-50,50,9.28,-14.48,-15.16,-15.55,-16.49,0
+09-75,75,9.27,-14.06,-14.64,-14.88,-16.47,0
+10-25,25,10.10,-14.39,-15.21,-15.70,-15.88,0
+10-50,50,10.12,-13.75,-14.68,-14.88,-15.23,0
+10-75,75,10.09,-13.53,-14.22,-14.51,-15.75,0
+11-05,5,10.74,-14.24,-14.00,-15.91,-16.99,1
+11-25,25,11.01,-13.95,-14.32,-16.37,-16.97,0
+11-50,50,10.76,-13.89,-14.73,-15.34,-16.94,0
+11-75,75,10.96,-13.27,-14.06,-14.84,-16.47,0

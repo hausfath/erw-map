@@ -285,6 +285,56 @@ FEEDSTOCK_ARCHETYPES = {
 }
 FEEDSTOCK_DEFAULT = "delivered_basalt"
 
+# Stapafell crystalline basalt as characterised by Gudbrandsson et al. 2011, for
+# the no-free-parameter kinetics validation. Reported VOLUME fractions.
+# Their own mixing model needed RELATIVE SURFACE AREAS of 83.3 / 13.9 / 2.8
+# (plagioclase / pyroxene / olivine) to fit within 0.5 log units, against volume
+# fractions of 44 / 39 / 17 -- so the surface is far more plagioclase-rich than
+# the rock is. Both are recorded because the difference between them IS the test.
+STAPAFELL_VOLUME_FRACTIONS = {"labradorite": 0.44, "augite": 0.39,
+                              "forsterite": 0.17}
+STAPAFELL_SURFACE_FRACTIONS = {"labradorite": 0.833, "augite": 0.139,
+                               "forsterite": 0.028}
+STAPAFELL_BET_CM2_PER_G = 7030.0
+GUDBRANDSSON_SOURCE = ("Gudbrandsson et al. 2011, GCA 75, 5496-5509; rates for "
+                       "Ca/Mg derived from their Table 4 concentrations via "
+                       "their Eq. 5")
+# Pre-registered pass criterion, from docs/VALIDATION.md.
+GUDBRANDSSON_TOLERANCE_LOG = 0.5
+
+# MEASURED apparent activation energy for whole-rock crystalline basalt, from
+# Gudbrandsson et al. 2011 Table 5 (Si release, Arrhenius fit over 5-75 C):
+#   pH 3: 54.1   pH 4: 33.8   pH 5: 35.2   pH 9: 33.9   pH 10: 35.0   pH 11: 24.2
+# Mean ~36 kJ/mol.
+#
+# THIS RETRACTS A CONCESSION WE MADE TO CASCADE. We previously wrote that the
+# effective Ea of a basalt mixture for Ca+Mg release is 65.6-67.9 kJ/mol, and that
+# Cascade's 68.8 was therefore "a good number reached by an unsupported route".
+# Measured whole-rock basalt is ~36. So Cascade's value is roughly 2x too high --
+# and so is our own Palandri-Kharaka mixture, whose effective Ea comes out at
+# 46-63 kJ/mol depending on pH. Both over-weight temperature.
+#
+# The consequence is geographic and it is not small: at 36 kJ/mol a soil 20 C
+# warmer is 2.7x faster, at 68 it is 6.7x. The tropics-versus-temperate contrast
+# is therefore about 2.5x SMALLER than either formulation implies.
+BASALT_APPARENT_EA_MEASURED_KJ = 36.0
+BASALT_APPARENT_EA_MEASURED_RANGE = (24.2, 54.1)
+BASALT_APPARENT_EA_SOURCE = "Gudbrandsson et al. 2011 GCA 75, Table 5 (Si, 5-75 C)"
+
+# Per-mineral Palandri-Kharaka rates over-predict measured basalt release, and the
+# residual is STRUCTURED, not noise (test_kinetics.py gate 11 prints the breakdown):
+#   - by temperature: bias grows +0.01 -> +1.58 log units from 5 to 75 C, which is
+#     the activation-energy problem above;
+#   - by pH: Mg over-prediction peaks at pH 4-8 (+1.4 to +2.1) and nearly vanishes
+#     at pH 2-4 and above pH 8. That is the signature of secondary Mg/Fe phases
+#     precipitating near neutral pH, where they are least soluble, removing Mg
+#     from the outlet solution the experiment measures.
+#
+# Neither is corrected in the default model yet. Recording the diagnosis rather
+# than silently retuning, because the fix is a modelling decision that needs its
+# own review, and because an unexplained tuning would hide the finding.
+KINETICS_OVERPREDICTS = True
+
 # Mean implied CO2 potential of independently verified basalt deliveries, and
 # the spread across them. Used by gate 7.
 DELIVERED_BASALT_TCO2_PER_T = 0.289

@@ -54,9 +54,19 @@ the standard three-parallel-mechanism law from [Palandri & Kharaka
 comparable to the temperature range. Measured in `scripts/test_kinetics.py`:
 Cascade's form overstates pH leverage by **281×**.
 
-In fairness, their activation energy of 68.8 kJ/mol turns out to be a reasonable
-number for whole-basalt Ca+Mg release (65.6–67.9 kJ/mol), reached by an unclear
-route.
+**Correction to an earlier version of this README.** We previously conceded that
+Cascade's activation energy of 68.8 kJ/mol was "a reasonable number for
+whole-basalt Ca+Mg release, reached by an unclear route." That concession was
+wrong, and the independent kinetics test below is what caught it. Gudbrandsson et
+al. (2011) *measure* an apparent activation energy for whole-rock crystalline
+basalt of **~36 kJ/mol** (range 24–54 across pH). Cascade's 68.8 is therefore
+roughly 2× too high — and so is our own Palandri–Kharaka mixture, at 46–63 kJ/mol.
+
+That matters geographically, because temperature sensitivity is what drives the
+tropical tilt: at 36 kJ/mol a soil 20 °C warmer is 2.7× faster, at 68 kJ/mol it is
+6.7×. **The tropics-versus-temperate contrast is about 2.5× smaller than either
+formulation implies.** Not yet corrected in the default model — recorded rather
+than silently retuned, because the fix needs its own review.
 
 **3. The alkalinity-to-DIC efficiency term.** Fast dissolution at low pH does
 not produce carbon removal, because DIC speciation shifts toward aqueous CO₂
@@ -195,20 +205,96 @@ One number corrected downward in the process: distribution width moves surface
 area by about **8×** over the slider range, not the 33× quoted earlier. The larger
 figure assumes an untruncated fine tail; with a physical 1 µm floor it is smaller.
 
+### Feedstock and delivered cost
+
+Built from full-resolution GLiM (93,220 basic-igneous polygons) plus USGS MRDS
+operating stone producers cross-filtered against that lithology, since MRDS has no
+basalt commodity code. Two constructs, because quarry inventories are uneven:
+globally an outcrop-distance **upper bound**, and where MRDS is usable the
+quarry distance that actually sets cost. Inside the trusted area quarry distance
+is **2.0× outcrop distance**, and that *measured* ratio scales the bound elsewhere.
+
+A truck-only haul model gave a $252/t median — an artefact that would make ERW
+uneconomic everywhere. Bulk minerals move by rail; taking the cheaper of truck and
+rail-plus-transload gives **$28/$46/$65 per tonne** at p10/p50/p90 of cropland, and
+**no cropland in the worst cost bracket**. With rail, basalt is within economic
+reach of most cropland.
+
+Cost is compensatory with a floor, not annihilating: expensive rock is bad, not
+impossible. It is the first genuinely tradeable factor, so its slider is a real
+preference rather than a what-if.
+
+### Monthly soil temperature and moisture
+
+Both stand-ins are gone: Lembrechts et al. (2022) soil temperature at 5–15 cm,
+natively 30 arc-second and monthly, plus a ten-year TerraClimate root-zone
+moisture climatology. The rate is computed **each month and the rate averaged**,
+never the drivers.
+
+**We were wrong about the size of the effect.** Air-temperature-based literature
+estimates suggested ~1.4×; measured here it is median **1.04**, range 0.89–1.33.
+Soil temperature at 5–15 cm is strongly damped relative to air, so the Jensen term
+is much weaker than an air-based estimate implies, and the covariance term pulls
+the other way in places.
+
+It is spatially structured as the mechanism predicts, which is the real check:
+Mediterranean cropland comes out *below* 1 (Andalusia 0.85, Central Valley 0.93),
+where annual means flatter a site whose warm and wet seasons never coincide;
+monsoon and continental come out above (Punjab 1.19, Iowa 1.18); the wet tropics
+sit at ~1.
+
 ### Still not fixed
 
 | Problem | Effect |
 |---|---|
-| **Air temperature stands in for soil temperature; precipitation for soil moisture** | These are Cascade's own inputs, so the baseline comparison is like-for-like — but our claimed soil-temperature improvement is not yet realised |
-| **No feedstock or haul-cost layer** | The single biggest gap versus a deployment-recommendation tool |
-| **~73% of cropland is "marginal" on the SOC screen** | A point estimate would exclude 0.2%; carrying SoilGrids' predictive spread honestly leaves most cropland unresolvable. Also, averaging quantiles onto a coarser grid is not valid uncertainty propagation |
+
+
+| **~53% of cropland is "marginal" on the SOC screen** | Down from 73% once the probability was computed at ~2.8 km and the *probability* averaged rather than the quantiles. The remainder is genuine: SoilGrids' predictive intervals are wide. Still a screening likelihood, not a calibrated eligibility probability, because the quantiles describe a block average and the threshold applies to a field |
 | **Grid is 0.1° (~11 km), not 1 km** | The header says so. Effective resolution is coarser again |
-| **Gudbrandsson kinetics test not run** | Still the only genuinely independent test of the rate law, and it gates the next phase |
+| **Gudbrandsson kinetics test now runs, and FAILS** | See below. The rate law over-predicts measured basalt Ca and Mg release, with structured residuals. This is the most important open problem in the model |
 
 Weight sensitivity is not hidden: moving reactivity from equal weighting to 77%
 changes the decile of **63.7% of cropland area**. The sidebar reports that number
 live, because a suitability map whose ranking is that weight-contingent should say
 so rather than present one weighting as the answer.
+
+## The independent kinetics test, and what it found
+
+`tests/fixtures/gudbrandsson2011_basalt.csv` holds measured crystalline-basalt
+release rates across pH 2–11 and 5–75 °C, obtained from the full paper as
+reproduced in the lead author's openly-mirrored PhD thesis. Ca and Mg rates are
+*our arithmetic on their measurements* — the paper tabulates concentrations and
+prints a rate column only for Si — derived via their own Eq. 5 and checked by
+recomputing their printed Si rates to within 0.02–0.05 log units.
+
+This is the only test that isolates the rate law. The field trials cannot: grain
+size and loss terms absorb the error.
+
+**It fails the pre-registered 0.5 log-unit tolerance**, and the residuals are
+structured rather than noisy:
+
+| Weighting | Element | Bias | MAD |
+|---|---|---|---|
+| Volume fractions | Ca | +0.50 | 0.68 |
+| Volume fractions | Mg | +1.58 | 1.58 |
+| Their fitted surface fractions | Ca | +0.49 | 0.59 |
+| Their fitted surface fractions | Mg | +0.82 | 0.92 |
+
+Two separate problems, both diagnosable:
+
+- **By temperature**, bias grows monotonically from +0.01 at 5 °C to +1.58 at
+  75 °C. That is the activation-energy error above: our temperature sensitivity is
+  roughly twice what the rock shows.
+- **By pH**, Mg over-prediction peaks at pH 4–8 (+1.4 to +2.1) and nearly vanishes
+  below pH 4 and above pH 8. That is the signature of secondary Mg/Fe phases
+  precipitating near neutral pH, where they are least soluble, removing Mg from
+  the outlet solution the experiment measures.
+
+**Why this had to be an independent test.** The CO₂ layer currently sits ~2.3×
+*below* field observations while the kinetics over-predict lab rates by 3–7×.
+Those errors pull in opposite directions, so they partly cancel — meaning the
+surface-area multiplier has been quietly absorbing a kinetics error. Comparing to
+field trials alone could never have revealed that.
 
 ## What it deliberately does not claim
 

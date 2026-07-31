@@ -585,7 +585,7 @@ window.ERW = {
   },
   "stats": {
     "croplandGha": 1.215,
-    "cdrMedian": 0.76
+    "cdrMedian": 0.8
   },
   "provenance": {
     "soil": "SoilGrids v2.0 via ISRIC WCS (pH 0-15 cm, SOC 0-5 cm + quantiles)",

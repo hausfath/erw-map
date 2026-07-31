@@ -142,8 +142,12 @@ def main() -> int:
     mS = INTERIM / "soilmoist_monthly.tif"
     monthly = mT.exists() and mS.exists()
     if monthly:
+        # Stored as int16 decidegrees to keep the committed artefact small; the
+        # scale factor lives in the file's tags so it cannot be lost.
+        with rasterio.open(mT) as _s:
+            t_scale = float(_s.tags().get("scale_factor", 1.0))
         soilT_m = np.stack([onto_grid(mT, transform, w, h, crs, band=b)
-                            for b in range(1, 13)])
+                            for b in range(1, 13)]) / t_scale
         moist_m = np.stack([onto_grid(mS, transform, w, h, crs, band=b)
                             for b in range(1, 13)])
 
