@@ -16,6 +16,7 @@ Gate 6  Per-mineral CO2 capacity matches published values.
 Gate 7  delivered_basalt reproduces the measured deliveries.
 Gate 8  The generated browser constants reproduce Python (anti-drift).
 Gate 9  Specific surface area scales sensibly with grind.
+Gate 10 Zero CDR gives zero suitability, and dissolution saturates smoothly.
 
 NOT covered here, and the most important one still outstanding: the
 Gudbrandsson et al. 2011 no-free-parameter test, which requires digitising
@@ -315,17 +316,31 @@ def gate8_browser_constants_match_python() -> None:
     payload = json.loads(txt[txt.index("{"):txt.rindex(";")])
 
     try:
-        from build_v0 import L1_ENC, REACT_KNOTS
+        from build_v0 import L1_ENC
     except Exception as exc:            # build_v0 imports rasterio
         record("8. Browser constants match Python", None,
                f"could not import build_v0 ({type(exc).__name__})")
         return
 
     problems = []
-    if [list(k) for k in REACT_KNOTS] != [list(k) for k in payload["reactKnots"]]:
-        problems.append("reactKnots differ")
+    # The suitability knots and the dissolution constant are the two things the
+    # browser now computes with, so they are what must not drift.
+    if [list(k) for k in C.CDR_SUITABILITY_KNOTS] != [list(k) for k in payload["cdrKnots"]]:
+        problems.append("cdrKnots differ")
     if [payload["l1Enc"]["lo"], payload["l1Enc"]["hi"]] != list(L1_ENC):
         problems.append("l1Enc differs")
+    if abs(payload["dissolvedFracAtRef"] - C.DISSOLVED_FRAC_AT_REF) > 1e-9:
+        problems.append("dissolvedFracAtRef differs")
+    if abs(payload["cdrNegligible"] - C.CDR_NEGLIGIBLE_T_HA_YR) > 1e-9:
+        problems.append("cdrNegligible differs")
+    # cdrPerFrac must equal rate x tCO2 per tonne for the default archetype,
+    # because the shader multiplies its dissolved fraction by exactly this.
+    spec = C.FEEDSTOCK_ARCHETYPES[C.FEEDSTOCK_DEFAULT]
+    expect = (C.APPLICATION_RATE_T_HA_YR
+              * (spec["CaO_wt"] / C.M_CAO + spec["MgO_wt"] / C.M_MGO)
+              * 1000.0 * 2.0 * C.MOL_CO2_PER_KMOL_CHARGE_T)
+    if abs(payload["cdrPerFrac"] - expect) > 1e-4:
+        problems.append(f"cdrPerFrac {payload['cdrPerFrac']} != {expect:.4f}")
 
     # Bilinear-interpolate the emitted table the way app.js does, and compare
     # against the exact integral at points deliberately BETWEEN grid nodes.
@@ -358,7 +373,8 @@ def gate8_browser_constants_match_python() -> None:
         problems.append(f"shift table off by {worst:.4f} log units at {at}")
 
     record("8. Browser constants match Python", not problems,
-           f"knots and L1 encoding identical; shift-table interpolation error "
+           f"CDR knots, L1 encoding, dissolution constant and cdrPerFrac all "
+           f"identical; shift-table interpolation error "
            f"max {worst:.4f} log units ({10 ** worst - 1:+.1%} in rate) at {at}"
            + ("; " + "; ".join(problems) if problems else ""))
 
@@ -390,6 +406,57 @@ def gate9_ssa_scaling() -> None:
            f"width {C.PSD_WIDTH_SLIDER_RANGE[0]} vs "
            f"{C.PSD_WIDTH_SLIDER_RANGE[1]} -> {w_effect:.1f}x "
            f"(NOT the 33x an untruncated tail gives)")
+
+
+def gate10_zero_cdr_zero_suitability() -> None:
+    """Zero carbon removal must give zero suitability.
+
+    This is the defect that prompted tying suitability to CDR. Suitability used
+    to be a weighted geometric mean of value-function transforms of the same
+    three physical terms, with a uniform 0.02 quantisation floor applied as if it
+    were a physical floor. A cell with zero reactivity -- hence zero carbon --
+    scored exp(ln(0.02)/3) x 100 = 27. The floor existed to stop 8-bit
+    quantisation swinging the score; it should never have manufactured
+    suitability where the physics says none.
+    """
+    import numpy as np
+
+    knots = C.CDR_SUITABILITY_KNOTS
+    k = -math.log(1.0 - C.DISSOLVED_FRAC_AT_REF)
+
+    def suit(cdr):
+        if cdr < C.CDR_NEGLIGIBLE_T_HA_YR:
+            return 0.0
+        xs = [math.log10(x) for x, _ in knots]
+        ys = [y for _, y in knots]
+        return float(np.interp(math.log10(cdr), xs, ys))
+
+    # The old scheme, for the record.
+    old = math.exp(math.log(C.EPS_QUANTIZE) / 3.0) * 100.0
+
+    checks = {
+        "zero reactivity": 0.0,
+        "zero alkalinity retention": 0.0,
+        "zero drainage": 0.0,
+    }
+    # Each with the other two terms perfect.
+    cases = [(0.0, 1.0, 1.0), (1e6, 0.0, 1.0), (1e6, 1.0, 0.0)]
+    worst = 0.0
+    for (rel, ed, et), name in zip(cases, checks):
+        X = rel * ed * et
+        cdr = (1.0 - math.exp(-k * X)) * C.APPLICATION_RATE_T_HA_YR * 0.29
+        worst = max(worst, suit(cdr))
+
+    # Monotone increasing, and saturating rather than clipping.
+    mono = all(suit(a) <= suit(b) for a, b in zip([0.05, 0.2, 1, 3, 8],
+                                                 [0.2, 1, 3, 8, 20]))
+    big = 1.0 - math.exp(-k * 1e4)
+    ok = worst == 0.0 and mono and big < 1.0 + 1e-12 and big > 0.999
+
+    record("10. Zero CDR -> zero suitability", ok,
+           f"all three annihilating cases give suitability {worst:.1f} "
+           f"(the superseded geometric-mean scheme gave {old:.0f}); "
+           f"monotone {mono}; dissolution saturates to {big:.4f}, never clipped")
 
 
 def report_calibration_arithmetic() -> None:
@@ -424,7 +491,8 @@ def main() -> int:
                gate5_monotonicity, gate6_cdrmax_vs_published,
                gate6b_archetype_ceilings,
                gate7_delivered_basalt_matches_measurement,
-               gate8_browser_constants_match_python, gate9_ssa_scaling):
+               gate8_browser_constants_match_python, gate9_ssa_scaling,
+               gate10_zero_cdr_zero_suitability):
         try:
             fn()
         except Exception as exc:  # a crashing gate is a failing gate

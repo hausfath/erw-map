@@ -242,26 +242,35 @@ def main() -> int:
     p_soc = exceedance_lognormal(soc_q05, soc, soc_q95, C.SOC_EXCLUSION_WT_PCT * 10.0)
     ph_warn = (ph < C.PH_WARNING_THRESHOLD)      # annotation only, zero score effect
 
-    # ---- Value functions, absolute breakpoints.
-    # NOTE reactivity is NOT baked into a texture any more. Because a change of
-    # grind is a uniform additive shift on L1, shipping L1 itself and applying
-    # the value function in the shader is what makes the particle-size slider
-    # possible. See REACT_KNOTS.
-    v_react = piecewise(L1, REACT_KNOTS)
-    v_eta = piecewise(eta, [(0.0, 0.0), (0.3, 0.25), (0.6, 0.6),
-                            (0.9, 0.95), (1.0, 1.0)])
-    v_drain = piecewise(eta_tr, [(0.0, 0.05), (0.3, 0.35), (0.6, 0.7), (0.9, 1.0)])
+    # ---- Suitability is now a value function of GROSS CDR, not a weighted mean
+    # of transformed proxies. One set of breakpoints, on a quantity with units,
+    # and zero CDR gives zero suitability by construction.
+    #
+    # The per-term value functions that used to live here are gone. They imposed
+    # three sets of arbitrary breakpoints and, combined with a uniform 0.02
+    # quantisation floor, gave a cell with zero reactivity a suitability of 27.
 
-    # ---- Indicative gross CO2, tCO2 gross/ha/yr. LOW CONFIDENCE.
-    # One global effective-surface-area multiplier, NOT yet calibrated against
-    # the verified deliveries -- that requires per-deployment particle-size
-    # distributions we do not have. Scaled here only so the layer sits inside
-    # the observed 0.3-10 envelope; treat as illustrative, not predictive.
+    # ---- Indicative gross CO2, tCO2 gross/ha/yr. LOW CONFIDENCE, and the
+    # surface-area term is user-controllable rather than hidden.
+    #
+    # X is the dimensionless rate relative to the reference condition. The three
+    # physical terms enter as a PRODUCT with unit exponents, because they are
+    # terms in a physical product: no reactivity means no carbon regardless of
+    # how well alkalinity would have been retained.
     ceil_t = ((C.FEEDSTOCK_ARCHETYPES[C.FEEDSTOCK_DEFAULT]["CaO_wt"] / C.M_CAO
                + C.FEEDSTOCK_ARCHETYPES[C.FEEDSTOCK_DEFAULT]["MgO_wt"] / C.M_MGO)
               * 1000.0 * 2.0 * C.MOL_CO2_PER_KMOL_CHARGE_T)
-    frac = np.clip(0.22 * (reactivity / float(ref)) * eta * eta_tr, 0.0, 0.6)
+    X = (reactivity / float(ref)) * eta * eta_tr
+
+    # First-order decay of remaining mass. Replaces a hard clip at 0.6 that
+    # pinned 18.9% of cropland area at one value, giving the layer a flat top.
+    k_diss = -np.log(1.0 - C.DISSOLVED_FRAC_AT_REF)
+    frac = 1.0 - np.exp(-k_diss * np.clip(X, 0.0, None))
     cdr = frac * C.APPLICATION_RATE_T_HA_YR * ceil_t
+
+    suit = piecewise(np.log10(np.maximum(cdr, 1e-9)),
+                     [(np.log10(x), y) for x, y in C.CDR_SUITABILITY_KNOTS])
+    suit = np.where(cdr < C.CDR_NEGLIGIBLE_T_HA_YR, 0.0, suit)
 
     # ---- Report
     m = (crop >= C.CROPLAND_MIN_FRACTION) & np.isfinite(ph)
@@ -286,7 +295,8 @@ def main() -> int:
                            ("drainage q, m/yr", q, "{:.3f}"),
                            ("flooded fraction of cell-time", f_flood, "{:.3f}"),
                            ("soil pCO2, uatm", pco2, "{:.0f}"),
-                           ("indicative tCO2 gross/ha/yr", cdr, "{:.2f}")):
+                           ("indicative tCO2 gross/ha/yr", cdr, "{:.2f}"),
+                           ("suitability 0-1", suit, "{:.2f}")):
         p10, p50, p90 = wq(arr, (0.10, 0.50, 0.90))
         print(f"    {name:28s} area-weighted p10/p50/p90  "
               + " / ".join(fmt.format(v) for v in (p10, p50, p90)))
@@ -300,6 +310,23 @@ def main() -> int:
     print(f"    cells >5% flooded cell-time: {paddy_share:.1%} of cropland area")
     print(f"    pH<5.2 annotation flag: "
           f"{float((aw * ph_warn[m]).sum() / aw.sum()):.1%} of cropland area")
+
+    # ---- GATE 4: zero CDR must give zero suitability. This is the defect that
+    # prompted the redesign: a cell with no carbon removal scored 27.
+    zero = cdr < C.CDR_NEGLIGIBLE_T_HA_YR
+    worst_suit = float(np.nanmax(suit[zero])) if zero.any() else 0.0
+    ok4 = worst_suit <= 1e-6
+    print(f"  GATE 4 zero CDR -> zero suitability: max suitability among "
+          f"{float((aw * zero[m]).sum() / aw.sum()):.1%} of cropland area with "
+          f"CDR < {C.CDR_NEGLIGIBLE_T_HA_YR} is {worst_suit:.4f}  "
+          f"[{'PASS' if ok4 else 'FAIL'}]")
+
+    # ---- GATE 5: the dissolution function must not saturate against a ceiling
+    frac_max = float(np.nanmax(frac))
+    pinned = float((aw * (frac[m] > 0.99)).sum() / aw.sum())
+    ok5 = pinned < 0.02
+    print(f"  GATE 5 no flat top: max dissolved fraction {frac_max:.3f}, "
+          f"{pinned:.2%} of area above 0.99  [{'PASS' if ok5 else 'FAIL'}]")
 
     # ---- GATE 2: indicative CO2 inside the physically plausible envelope
     p50 = wq(cdr, (0.5,))[0]
@@ -329,9 +356,10 @@ def main() -> int:
           f"({(PROC / 'v0_layers.npz').stat().st_size / 1e6:.1f} MB)")
 
     # ---- Encode textures
-    write_textures(v_react, v_eta, v_drain, crop, p_soc, ph_warn, cdr, m,
-                   cascade=cascade, ph=ph, L1=L1)
-    emit_js(transform, w, h, gha, p50)
+    write_textures(crop, p_soc, ph_warn, cdr, m,
+                   cascade=cascade, ph=ph, L1=L1, eta=eta, eta_tr=eta_tr)
+    emit_js(transform, w, h, gha, p50,
+            cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t)
     print()
     print("done. Open src/index.html over HTTP:")
     print("  python3 -m http.server 8000 --directory src")
@@ -350,8 +378,8 @@ def quantize(v, floor: float) -> np.ndarray:
     return (5 + np.rint((x - floor) / (1.0 - floor) * 250.0)).astype("uint8")
 
 
-def write_textures(v_react, v_eta, v_drain, crop, p_soc, ph_warn, cdr, valid,
-                   *, cascade, ph, L1) -> None:
+def write_textures(crop, p_soc, ph_warn, cdr, valid,
+                   *, cascade, ph, L1, eta, eta_tr) -> None:
     from PIL import Image
     out = SRC / "textures"
     out.mkdir(parents=True, exist_ok=True)
@@ -361,14 +389,20 @@ def write_textures(v_react, v_eta, v_drain, crop, p_soc, ph_warn, cdr, valid,
         a = np.full((h, w), 255, dtype="uint8")   # alpha ALWAYS 255, never data
         return Image.fromarray(np.dstack([r, g, b, a]), "RGBA")
 
-    eps = C.EPS_QUANTIZE
-    # tex1.r holds NORMALISED L1, not the value function. The shader applies the
-    # piecewise function after adding the particle-size shift.
+    # tex1 now carries the RAW PHYSICAL TERMS, not value functions, so the shader
+    # can compute gross CDR itself and derive suitability from it. Value 0 is
+    # reserved for masked cells; data starts at 5/255.
+    #   r = normalised L1 = log10(R/R_ref), so (R/R_ref) = 10^L1
+    #   g = eta_DIC        (already 0-1, no transform needed)
+    #   b = eta_transport  (already 0-1)
+    # A raw value of exactly 0 must survive encoding, because zero really does
+    # mean zero carbon -- hence the linear 5..255 map with no epsilon floor here.
     lo, hi = L1_ENC
     l1n = np.clip((np.nan_to_num(L1, nan=lo) - lo) / (hi - lo), 0.0, 1.0)
+    enc = lambda x: np.rint(5 + np.clip(np.nan_to_num(x, nan=0.0), 0, 1) * 250.0)
     r1 = np.where(valid, np.rint(5 + l1n * 250.0), 0).astype("uint8")
-    g1 = np.where(valid, quantize(v_eta, eps), 0).astype("uint8")
-    b1 = np.where(valid, quantize(v_drain, C.CRITERION_FLOORS["drainage"]), 0).astype("uint8")
+    g1 = np.where(valid, enc(eta), 0).astype("uint8")
+    b1 = np.where(valid, enc(eta_tr), 0).astype("uint8")
 
     # Bit-packed flags. NEAREST filtering only; bilinear across a flag boundary
     # would interpolate garbage bit patterns.
@@ -409,10 +443,6 @@ def write_textures(v_react, v_eta, v_drain, crop, p_soc, ph_warn, cdr, valid,
         print(f"  wrote {p} ({p.stat().st_size / 1e6:.2f} MB)")
 
 
-# Reactivity value function, on ABSOLUTE breakpoints in L1 = log10(R/R_ref).
-# Shared with the shader via engine_constants.js so there is one definition.
-REACT_KNOTS = [(-2.0, 0.0), (-1.0, 0.15), (0.0, 0.5), (0.7, 0.85), (1.5, 1.0)]
-
 # L1 storage range. Wide enough that the particle-size shift cannot push a real
 # value off the end of the 8-bit encoding.
 L1_ENC = (-3.0, 3.0)
@@ -423,7 +453,7 @@ RAMP = [  # viridis-like, colour-blind safe, legible in light and dark
 ]
 
 
-def emit_js(transform, w, h, gha, cdr_p50) -> None:
+def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0) -> None:
     km = abs(transform.a) * 2.0 * np.pi * C.EARTH_RADIUS_M / 1000.0 / 360.0
     """One generator for BOTH the legend stops and the shader ramp, so they
     cannot drift. This is the failure mode that broke the sibling BiCRS Atlas."""
@@ -431,8 +461,14 @@ def emit_js(transform, w, h, gha, cdr_p50) -> None:
         "grid": {"width": w, "height": h,
                  "west": transform.c, "north": transform.f,
                  "dlon": abs(transform.a), "dlat": abs(transform.e)},
-        "weights": C.WEIGHTS_DEFAULT,
-        "floors": C.CRITERION_FLOORS,
+        "terms": [
+            {"key": "reactivity", "label": "Dissolution rate",
+             "hint": "Palandri-Kharaka Ca+Mg release, relative to pH 6.5 / 15 C"},
+            {"key": "eta_dic", "label": "Alkalinity retained as DIC",
+             "hint": "Carbonate-equilibrium efficiency; the term Cascade omits"},
+            {"key": "drainage", "label": "Drainage / transport",
+             "hint": "q/(q+Dw) on WaterGAP recharge; low where water residence limits export"},
+        ],
         "epsQuantize": C.EPS_QUANTIZE,
         "aggP": C.AGG_P_DEFAULT,
         "criteria": [
@@ -444,7 +480,15 @@ def emit_js(transform, w, h, gha, cdr_p50) -> None:
              "hint": "q/(q+Dw); low where water residence limits export"},
         ],
         "ramp": RAMP,
-        "reactKnots": REACT_KNOTS,
+        "cdrKnots": C.CDR_SUITABILITY_KNOTS,
+        "cdrNegligible": C.CDR_NEGLIGIBLE_T_HA_YR,
+        "dissolvedFracAtRef": C.DISSOLVED_FRAC_AT_REF,
+        "dissolvedFracObserved": list(C.DISSOLVED_FRAC_OBSERVED_RANGE),
+        "termExponent": {"default": C.TERM_EXPONENT_DEFAULT,
+                         "range": list(C.TERM_EXPONENT_RANGE)},
+        # tCO2/ha/yr per unit dissolved fraction = rate x tCO2 per t feedstock.
+        # The shader multiplies its computed fraction by this to get CDR.
+        "cdrPerFrac": round(cdr_per_frac, 6),
         "l1Enc": {"lo": L1_ENC[0], "hi": L1_ENC[1]},
         "psd": {
             "refD80": C.PSD_REF_D80_UM, "refWidth": C.PSD_REF_WIDTH,

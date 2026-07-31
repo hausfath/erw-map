@@ -9,18 +9,23 @@ window.ERW = {
     "dlon": 0.09999800630262258,
     "dlat": 0.0990689892669193
   },
-  "weights": {
-    "reactivity": 0.25,
-    "eta_dic": 0.25,
-    "feedstock_cost": 0.25,
-    "drainage": 0.25
-  },
-  "floors": {
-    "reactivity": 0.0,
-    "feedstock_cost": 0.05,
-    "eta_dic": 0.0,
-    "drainage": 0.05
-  },
+  "terms": [
+    {
+      "key": "reactivity",
+      "label": "Dissolution rate",
+      "hint": "Palandri-Kharaka Ca+Mg release, relative to pH 6.5 / 15 C"
+    },
+    {
+      "key": "eta_dic",
+      "label": "Alkalinity retained as DIC",
+      "hint": "Carbonate-equilibrium efficiency; the term Cascade omits"
+    },
+    {
+      "key": "drainage",
+      "label": "Drainage / transport",
+      "hint": "q/(q+Dw) on WaterGAP recharge; low where water residence limits export"
+    }
+  ],
   "epsQuantize": 0.02,
   "aggP": 0.0,
   "criteria": [
@@ -72,28 +77,46 @@ window.ERW = {
       "#f7e94a"
     ]
   ],
-  "reactKnots": [
+  "cdrKnots": [
     [
-      -2.0,
+      0.02,
       0.0
     ],
     [
-      -1.0,
-      0.15
+      0.1,
+      0.2
     ],
     [
-      0.0,
-      0.5
-    ],
-    [
-      0.7,
-      0.85
+      0.5,
+      0.4
     ],
     [
       1.5,
+      0.6
+    ],
+    [
+      4.0,
+      0.8
+    ],
+    [
+      10.0,
       1.0
     ]
   ],
+  "cdrNegligible": 0.02,
+  "dissolvedFracAtRef": 0.25,
+  "dissolvedFracObserved": [
+    0.15,
+    0.56
+  ],
+  "termExponent": {
+    "default": 1.0,
+    "range": [
+      0.0,
+      1.0
+    ]
+  },
+  "cdrPerFrac": 5.79412,
   "l1Enc": {
     "lo": -3.0,
     "hi": 3.0
@@ -530,7 +553,7 @@ window.ERW = {
   },
   "stats": {
     "croplandGha": 1.215,
-    "cdrMedian": 0.62
+    "cdrMedian": 0.76
   },
   "provenance": {
     "soil": "SoilGrids v2.0 via ISRIC WCS (pH 0-15 cm, SOC 0-5 cm + quantiles)",

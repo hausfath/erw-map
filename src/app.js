@@ -12,11 +12,14 @@
        so this avoids a reprojection and the tile seams that come with it. It
        also refuses Mercator's area exaggeration, which matters when the thing
        being mapped is per-hectare.
-     - Weighted GEOMETRIC mean, not arithmetic. log S = sum(w_i log v_i), so the
-       weights are elasticities and a near-zero in a physically necessary factor
-       annihilates the score instead of being averaged away.
-     - Limiting-factor mode is the p -> -inf member of the same power mean, so
-       it shares one code path with the score.
+     - Suitability is a value function OF GROSS CDR, not a weighted mean of
+       proxies for it. The three physical terms enter as a product with unit
+       exponents, so zero removal gives zero suitability by construction. An
+       earlier design used a compensatory geometric mean with a uniform 0.02
+       quantisation floor, which gave a cell with no carbon removal a score of 27.
+     - The sliders are term EXPONENTS, not importance weights: you cannot prefer
+       dissolution rate over alkalinity retention, because both are required
+       multiplicatively for any carbon to be stored.
      - Colormap and legend are generated from ONE array in engine_constants.js,
        so they cannot drift.
    ============================================================ */
@@ -25,13 +28,12 @@
 
   const E = window.ERW;
   const G = E.grid;
-  const CRIT = E.criteria;
 
   const MODE_HINT = {
-    score: "Weighted geometric mean of the factors below, on published absolute " +
-           "breakpoints. Cells failing a protocol screen are drawn separately.",
-    limiting: "The single lowest-scoring factor in each cell — the p → −∞ member " +
-              "of the same power mean used for the score.",
+    score: "A value function of gross CO₂ removal, on absolute breakpoints in " +
+           "tCO₂/ha/yr. Zero removal is zero suitability by construction.",
+    limiting: "Which of the three physical terms costs the most at each cell — " +
+              "the largest negative contribution to the log of the product.",
     cascade: "Cascade Climate's published form, r ∝ s·[H⁺]·exp(−Ea/RT), on the " +
              "same inputs. Shown so the comparison is testable, not asserted.",
   };
@@ -40,7 +42,12 @@
   let gl, prog, quad, texA, texB, texC, texRamp, cpu = null;
   let mode = "score";
   let showElig = true;
-  const weights = Object.assign({}, E.weights);
+  // Term exponents, NOT importance weights. Default 1 means the composite is
+  // exactly the physical product, so gross CDR -- and hence suitability -- is
+  // zero wherever any required term is zero.
+  const termExp = {reactivity: 1, eta_dic: 1, drainage: 1};
+  const K_DISS = -Math.log(1 - E.dissolvedFracAtRef);
+  const CRIT = E.terms;
 
   // Data extent, from the generated grid constants.
   const DATA = {
@@ -115,19 +122,21 @@
   out vec4 fragColor;
 
   uniform sampler2D uA, uB, uC, uRamp;
-  uniform vec4 uWin;              // west, north, degPerPxX, degPerPxY  (unused here)
   uniform vec4 uGeo;              // lon0, lat0, lonSpan, latSpan of the visible box
   uniform vec4 uGrid;             // west, north, dlon, dlat of the data grid
   uniform vec2 uGridSize;
-  uniform vec3 uW;                // normalised weights
-  uniform int  uMode;             // 0 score, 1 limiting, 2 cascade
+  uniform vec3 uExp;              // term exponents; 1,1,1 == the physics
+  uniform int  uMode;             // 0 suitability, 1 limiting, 2 cascade
   uniform bool uElig;
-  uniform float uEps;
   uniform vec2 uL1Enc;            // lo, hi of the stored L1 range
   uniform float uSsaShift;        // log10(SSA(d80,width) / SSA(ref))
-  uniform float uKx[5], uKy[5];   // reactivity value-function knots
+  uniform float uKdiss;           // -ln(1 - dissolved fraction at reference)
+  uniform float uCdrPerFrac;      // tCO2/ha/yr per unit dissolved fraction
+  uniform float uNegligible;      // CDR below this is "no meaningful potential"
+  uniform float uCx[6], uCy[6];   // suitability knots, x in log10(tCO2/ha/yr)
 
   const vec4 OUT_OF_DOMAIN = vec4(0.0, 0.0, 0.0, 0.0);
+  const vec4 NEGLIGIBLE    = vec4(0.16, 0.17, 0.19, 1.0);
 
   vec3 factorColor(int i) {
     if (i == 0) return vec3(0.878, 0.439, 0.310);
@@ -136,7 +145,7 @@
   }
 
   void main() {
-    // Screen -> lon/lat -> data grid UV. Equirectangular, so this is linear.
+    // Screen -> lon/lat -> data grid. Equirectangular, so this is linear.
     float lon = uGeo.x + vUV.x * uGeo.z;
     float lat = uGeo.y - (1.0 - vUV.y) * uGeo.w;
     if (lon < -180.0 || lon > 180.0) { fragColor = OUT_OF_DOMAIN; return; }
@@ -149,62 +158,68 @@
     ivec2 px = ivec2(int(gx), int(gy));
 
     // NEAREST fetch. Bilinear across a bit-packed flag boundary would
-    // interpolate garbage bit patterns, and it would also invent detail the
-    // 0.1 degree grid does not have.
+    // interpolate garbage bit patterns, and would invent detail the grid lacks.
     vec4 a = vec4(texelFetch(uA, px, 0));
     vec4 b = vec4(texelFetch(uB, px, 0));
     vec4 cc = vec4(texelFetch(uC, px, 0));
 
     int flags = int(b.g * 255.0 + 0.5);
-    bool inDomain = (flags & 1) != 0;
-    if (!inDomain) { fragColor = OUT_OF_DOMAIN; return; }
+    if ((flags & 1) == 0) { fragColor = OUT_OF_DOMAIN; return; }
 
     if (uElig && (flags & 2) != 0) {          // fails the SOC screen outright
       fragColor = vec4(0.30, 0.16, 0.16, 1.0);
       return;
     }
 
-    // Dequantise. 0 is reserved for masked cells, so data starts at 5/255.
-    vec3 raw = (a.rgb * 255.0 - 5.0) / 250.0;
+    if (uMode == 2) {                          // Cascade baseline, own channel
+      vec3 cb = texture(uRamp, vec2(clamp(cc.r, 0.0, 1.0), 0.5)).rgb;
+      fragColor = vec4(cb, 1.0);
+      return;
+    }
 
-    // tex1.r stores NORMALISED L1, not a value function, so that a change of
-    // grind is one uniform here rather than a pipeline rebuild. The rate is
-    // linear in reactive surface area and L1 is a log10 ratio, so particle size
-    // enters as a uniform additive shift.
-    float l1 = mix(uL1Enc.x, uL1Enc.y, clamp(raw.r, 0.0, 1.0)) + uSsaShift;
+    // Dequantise the RAW physical terms. Value 0 is reserved for masked cells,
+    // so data occupies 5..255 -- and a decoded zero is a true zero, which
+    // matters because zero really does mean no carbon.
+    float l1  = mix(uL1Enc.x, uL1Enc.y, clamp((a.r * 255.0 - 5.0) / 250.0, 0.0, 1.0))
+                + uSsaShift;
+    float rel = pow(10.0, l1);                          // R / R_ref
+    float eDic = clamp((a.g * 255.0 - 5.0) / 250.0, 0.0, 1.0);
+    float eTr  = clamp((a.b * 255.0 - 5.0) / 250.0, 0.0, 1.0);
 
-    // Piecewise-linear value function on ABSOLUTE breakpoints. Absolute is what
-    // keeps the colour scale stable while the sliders move.
-    float vr = uKy[0];
-    for (int i = 0; i < 4; i++) {
-      if (l1 >= uKx[i] && l1 <= uKx[i + 1]) {
-        vr = mix(uKy[i], uKy[i + 1], (l1 - uKx[i]) / (uKx[i + 1] - uKx[i]));
+    // Terms in a PHYSICAL PRODUCT, with unit exponents by default. No carbon is
+    // stored unless all three are non-zero, so a compensatory mean would be
+    // wrong in kind: it let good alkalinity retention offset zero reactivity.
+    float lr = uExp.x * log(max(rel,  1e-12));
+    float ld = uExp.y * log(max(eDic, 1e-12));
+    float lt = uExp.z * log(max(eTr,  1e-12));
+
+    if (uMode == 1) {                          // which term costs the most here
+      int lo = (lr <= ld && lr <= lt) ? 0 : ((ld <= lt) ? 1 : 2);
+      fragColor = vec4(factorColor(lo), 1.0);
+      return;
+    }
+
+    // Gross CDR, then suitability as a value function OF THAT. Zero CDR gives
+    // zero suitability by construction rather than by tuning a floor.
+    float X = exp(lr + ld + lt);
+    float frac = 1.0 - exp(-uKdiss * X);       // saturates at 1, no flat top
+    float cdr = frac * uCdrPerFrac * pow(10.0, uSsaShift);
+
+    if (cdr < uNegligible) { fragColor = NEGLIGIBLE; return; }
+
+    float lc = log(cdr) / log(10.0);
+    float sc = uCy[0];
+    for (int i = 0; i < 5; i++) {
+      if (lc >= uCx[i] && lc <= uCx[i + 1]) {
+        sc = mix(uCy[i], uCy[i + 1], (lc - uCx[i]) / (uCx[i + 1] - uCx[i]));
       }
     }
-    if (l1 > uKx[4]) vr = uKy[4];
+    if (lc > uCx[5]) sc = uCy[5];
 
-    vec3 v = vec3(vr,
-                  raw.g * (1.0 - uEps) + uEps,
-                  raw.b * (1.0 - uEps) + uEps);
-    v = clamp(v, uEps, 1.0);
+    vec3 col = texture(uRamp, vec2(clamp(sc, 0.0, 1.0), 0.5)).rgb;
 
-    vec3 col;
-    if (uMode == 1) {
-      int lo = (v.x <= v.y && v.x <= v.z) ? 0 : ((v.y <= v.z) ? 1 : 2);
-      col = factorColor(lo);                  // argmin in LINEAR space
-    } else if (uMode == 2) {
-      // Cascade baseline, from its OWN channel (tex3.r). Not the CDR channel --
-      // an earlier build drew this mode from tex2.b and so showed the wrong layer.
-      col = texture(uRamp, vec2(clamp(cc.r, 0.0, 1.0), 0.5)).rgb;
-    } else {
-      // p -> 0: weighted geometric mean. Weights are elasticities.
-      float s = exp(dot(uW, log(v)));
-      col = texture(uRamp, vec2(clamp(s, 0.0, 1.0), 0.5)).rgb;
-    }
-
-    // Marginal eligibility: a diagonal hatch, never a colour blend. A blend
-    // would make a marginal cell read as a slightly-worse good cell, which
-    // invites prospecting a site that will fail its eligibility check.
+    // Marginal eligibility: a hatch, never a colour blend. A blend would make a
+    // marginal cell read as a slightly-worse good cell.
     if (uElig && (flags & 4) != 0) {
       float d = mod(gl_FragCoord.x + gl_FragCoord.y, 14.0);
       if (d < 2.0) col = mix(col, vec3(0.910, 0.702, 0.224), 0.45);
@@ -343,15 +358,16 @@
     gl.uniform4f(u("uGeo"), box.lon0, box.lat0, box.lonSpan, box.latSpan);
     gl.uniform4f(u("uGrid"), G.west, G.north, G.dlon, G.dlat);
     gl.uniform2f(u("uGridSize"), G.width, G.height);
-    const nw = normWeights();
-    gl.uniform3f(u("uW"), nw[0], nw[1], nw[2]);
+    gl.uniform3f(u("uExp"), termExp.reactivity, termExp.eta_dic, termExp.drainage);
     gl.uniform1i(u("uMode"), mode === "score" ? 0 : (mode === "limiting" ? 1 : 2));
     gl.uniform1i(u("uElig"), showElig ? 1 : 0);
-    gl.uniform1f(u("uEps"), E.epsQuantize);
     gl.uniform2f(u("uL1Enc"), E.l1Enc.lo, E.l1Enc.hi);
     gl.uniform1f(u("uSsaShift"), ssaShift());
-    gl.uniform1fv(u("uKx"), new Float32Array(E.reactKnots.map(k => k[0])));
-    gl.uniform1fv(u("uKy"), new Float32Array(E.reactKnots.map(k => k[1])));
+    gl.uniform1f(u("uKdiss"), K_DISS);
+    gl.uniform1f(u("uCdrPerFrac"), E.cdrPerFrac);
+    gl.uniform1f(u("uNegligible"), E.cdrNegligible);
+    gl.uniform1fv(u("uCx"), new Float32Array(E.cdrKnots.map(k => Math.log10(k[0]))));
+    gl.uniform1fv(u("uCy"), new Float32Array(E.cdrKnots.map(k => k[1])));
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texA);
     gl.uniform1i(u("uA"), 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texB);
@@ -420,11 +436,40 @@
     g.restore();
   }
 
-  /* ---------------- weights ---------------- */
-  function normWeights() {
-    const v = CRIT.map((c) => Math.max(0, weights[c.key] || 0));
-    const s = v.reduce((a, b) => a + b, 0) || 1;
-    return v.map((x) => x / s);
+  /* ---------------- physics, mirroring the shader ----------------
+     One definition each, used by the hover readout and the stability sample.
+     The shader has its own copy in GLSL; gate 8 in test_kinetics.py asserts the
+     generated constants both read from agree with Python. */
+  function grossCdr(rel, eDic, eTr) {
+    const lr = termExp.reactivity * Math.log(Math.max(rel, 1e-12));
+    const ld = termExp.eta_dic * Math.log(Math.max(eDic, 1e-12));
+    const lt = termExp.drainage * Math.log(Math.max(eTr, 1e-12));
+    const X = Math.exp(lr + ld + lt);
+    const frac = 1 - Math.exp(-K_DISS * X);
+    return {cdr: frac * E.cdrPerFrac * Math.pow(10, ssaShift()),
+            frac, contrib: [lr, ld, lt]};
+  }
+
+  function suitabilityOf(cdr) {
+    if (cdr < E.cdrNegligible) return 0;
+    const KN = E.cdrKnots, lc = Math.log10(cdr);
+    let v = KN[0][1];
+    for (let i = 0; i < KN.length - 1; i++) {
+      const x0 = Math.log10(KN[i][0]), x1 = Math.log10(KN[i + 1][0]);
+      if (lc >= x0 && lc <= x1) {
+        v = KN[i][1] + (KN[i + 1][1] - KN[i][1]) * (lc - x0) / (x1 - x0);
+      }
+    }
+    if (lc > Math.log10(KN[KN.length - 1][0])) v = KN[KN.length - 1][1];
+    return v;
+  }
+
+  /* Decode the raw physical terms at a cell index. */
+  function termsAt(i) {
+    const A = cpu.A;
+    const raw = (b) => clamp(0, (b - 5) / 250, 1);
+    const l1 = E.l1Enc.lo + raw(A[i]) * (E.l1Enc.hi - E.l1Enc.lo) + ssaShift();
+    return {rel: Math.pow(10, l1), l1, eDic: raw(A[i + 1]), eTr: raw(A[i + 2])};
   }
 
   function buildSliders() {
@@ -440,9 +485,9 @@
         `<div class="why">${c.hint}</div>`;
       host.appendChild(d);
       const inp = d.querySelector("input");
-      inp.value = Math.round((weights[c.key] || 0) * 100);
+      inp.value = Math.round(termExp[c.key] * 100);
       inp.addEventListener("input", () => {
-        weights[c.key] = +inp.value / 100;
+        termExp[c.key] = +inp.value / 100;
         refresh();
       });
     });
@@ -501,12 +546,14 @@
   }
 
   function syncSliders() {
-    CRIT.forEach((c, i) => {
+    CRIT.forEach((c) => {
       const inp = $("s-" + c.key);
-      if (inp) inp.value = Math.round((weights[c.key] || 0) * 100);
-      const nw = normWeights();
+      if (inp) inp.value = Math.round(termExp[c.key] * 100);
       const lab = $("v-" + c.key);
-      if (lab) lab.textContent = (nw[i] * 100).toFixed(0) + "%";
+      if (lab) {
+        const e = termExp[c.key];
+        lab.textContent = e.toFixed(2) + (Math.abs(e - 1) < 0.005 ? " (physics)" : "");
+      }
     });
   }
 
@@ -530,31 +577,15 @@
     const flags = B[i + 1];
     if (!(flags & 1)) { box.classList.add("hidden"); return; }
 
-    const eps = E.epsQuantize;
-    const raw = (b) => (b - 5) / 250;
-    const deq = (b) => clamp(eps, raw(b) * (1 - eps) + eps, 1);
-    // Mirror the shader exactly: L1 from tex1.r, plus the grind shift, then the
-    // same piecewise value function. The shared knots in engine_constants.js are
-    // what keep the two from drifting.
-    const l1 = E.l1Enc.lo + clamp(0, raw(A[i]), 1) * (E.l1Enc.hi - E.l1Enc.lo)
-               + ssaShift();
-    const KN = E.reactKnots;
-    let vr = KN[0][1];
-    for (let k = 0; k < KN.length - 1; k++) {
-      if (l1 >= KN[k][0] && l1 <= KN[k + 1][0]) {
-        vr = KN[k][1] + (KN[k + 1][1] - KN[k][1])
-             * (l1 - KN[k][0]) / (KN[k + 1][0] - KN[k][0]);
-      }
-    }
-    if (l1 > KN[KN.length - 1][0]) vr = KN[KN.length - 1][1];
-    const v = [clamp(eps, vr, 1), deq(A[i + 1]), deq(A[i + 2])];
-    const nw = normWeights();
-    const score = Math.exp(nw.reduce((a, wv, k) => a + wv * Math.log(v[k]), 0));
-    let lo = 0; for (let k = 1; k < 3; k++) if (v[k] < v[lo]) lo = k;
+    const t = termsAt(i);
+    const g = grossCdr(t.rel, t.eDic, t.eTr);
+    const score = suitabilityOf(g.cdr);
+    // Limiting term = the largest negative contribution to log X.
+    let lo = 0;
+    for (let k = 1; k < 3; k++) if (g.contrib[k] < g.contrib[lo]) lo = k;
 
     const cropPct = (B[i] / 255 * 100);
-    // CDR scales linearly with reactive surface area, so it moves with the grind.
-    const cdr = (B[i + 2] / 255 * 10) * Math.pow(10, ssaShift());
+    const cdr = g.cdr;
     const pe = E.phEncoding;
     const soilPh = pe.lo + (cpu.C[i + 1] / 255) * (pe.hi - pe.lo);
 
@@ -566,16 +597,19 @@
     box.innerHTML =
       `<div class="rt">${cell.lat.toFixed(1)}°, ${cell.lon.toFixed(1)}°</div>` +
       `<table>` +
-      CRIT.map((c, k) =>
-        `<tr><td class="k">${c.label}</td><td class="v">${v[k].toFixed(2)}</td></tr>`).join("") +
+      `<tr><td class="k">Dissolution rate, R/R_ref</td><td class="v">${t.rel < 0.01 ? t.rel.toExponential(1) : t.rel.toFixed(2)}×</td></tr>` +
+      `<tr><td class="k">Alkalinity retained</td><td class="v">${t.eDic.toFixed(3)}</td></tr>` +
+      `<tr><td class="k">Drainage / transport</td><td class="v">${t.eTr.toFixed(3)}</td></tr>` +
+      `<tr><td class="k">Dissolved this year</td><td class="v">${(g.frac * 100).toFixed(1)}%</td></tr>` +
+      `<tr><td class="k"><b>Gross CO₂</b></td><td class="v"><b>${cdr < 0.01 ? cdr.toExponential(1) : cdr.toFixed(2)}</b></td></tr>` +
       `<tr><td class="k"><b>Suitability</b></td><td class="v"><b>${(score * 100).toFixed(0)}</b></td></tr>` +
-      `<tr><td class="k">Limiting factor</td><td class="v">${CRIT[lo].label}</td></tr>` +
+      `<tr><td class="k">Limiting term</td><td class="v">${CRIT[lo].label}</td></tr>` +
       `<tr><td class="k">Soil pH (0–15 cm)</td><td class="v">${soilPh.toFixed(2)}</td></tr>` +
       `<tr><td class="k">Cropland</td><td class="v">${cropPct.toFixed(0)}%</td></tr>` +
-      `<tr><td class="k">L1 log₁₀(R/R_ref)</td><td class="v">${l1 >= 0 ? "+" : ""}${l1.toFixed(2)}</td></tr>` +
-      `<tr><td class="k">Indicative gross CO₂</td><td class="v">${cdr.toFixed(2)}</td></tr>` +
       `</table>` +
-      `<div class="flag">tCO₂ gross/ha/yr at ${E.feedstock.rateTHaYr} t/ha. Gross, not net; low confidence.</div>` +
+      `<div class="flag">Suitability is a value function OF gross CO₂ ` +
+      `(tCO₂ gross/ha/yr at ${E.feedstock.rateTHaYr} t/ha), so zero removal is ` +
+      `zero suitability. Gross, not net; low confidence.</div>` +
       flagHtml;
     box.classList.remove("hidden");
     const wrap = $("map-wrap").getBoundingClientRect();
@@ -601,6 +635,12 @@
       `<div class="ends"><span>${isCascade ? "low" : "0"}</span>` +
       `<span>${isCascade ? "relative reactivity" : "suitability"}</span>` +
       `<span>${isCascade ? "high" : "100"}</span></div>` +
+      (isCascade ? "" :
+        `<p class="hint">Anchored to gross CO₂: ` +
+        E.cdrKnots.map(([x, y]) => `${(y * 100).toFixed(0)}&nbsp;=&nbsp;${x}`).join(", ") +
+        ` tCO₂ gross/ha/yr at ${E.feedstock.rateTHaYr}&nbsp;t/ha.</p>` +
+        `<div class="lrow"><span class="sw" style="background:#292b30"></span>` +
+        `<span class="lbl">Negligible: &lt; ${E.cdrNegligible} tCO₂/ha/yr</span></div>`) +
       (isCascade
         ? `<p class="hint">Cascade's index spans ~4 orders of magnitude, so most
              cropland sits near the bottom of any linear ramp. That flatness is
@@ -640,14 +680,16 @@
     sample = out;
   }
 
-  function scoreOf(row, nw) {
-    const eps = E.epsQuantize;
-    let s = 0;
-    for (let k = 0; k < 3; k++) {
-      const v = clamp(eps, (row[k] - 5) / 250 * (1 - eps) + eps, 1);
-      s += nw[k] * Math.log(v);
-    }
-    return Math.exp(s);
+  function scoreOf(row, exps) {
+    const raw = (b) => clamp(0, (b - 5) / 250, 1);
+    const rel = Math.pow(10, E.l1Enc.lo + raw(row[0]) * (E.l1Enc.hi - E.l1Enc.lo)
+                             + ssaShift());
+    const X = Math.exp(exps[0] * Math.log(Math.max(rel, 1e-12))
+                     + exps[1] * Math.log(Math.max(raw(row[1]), 1e-12))
+                     + exps[2] * Math.log(Math.max(raw(row[2]), 1e-12)));
+    const cdr = (1 - Math.exp(-K_DISS * X)) * E.cdrPerFrac
+                * Math.pow(10, ssaShift());
+    return suitabilityOf(cdr);
   }
 
   function deciles(nw) {
@@ -664,9 +706,9 @@
   let baseDec = null;
   function updateStability() {
     if (!sample) return;
-    const neutral = CRIT.map(() => 1 / CRIT.length);
+    const neutral = CRIT.map(() => 1);
     if (!baseDec) baseDec = deciles(neutral);
-    const nw = normWeights();
+    const nw = CRIT.map((c) => termExp[c.key]);
     const dec = (v, edges) => { let d = 0; while (d < edges.length && v >= edges[d]) d++; return d; };
     let moved = 0, tot = 0;
     for (const r of sample) {
@@ -678,9 +720,11 @@
     const pct = tot ? moved / tot : 0;
     $("stability").textContent =
       pct < 0.001
-        ? "At the neutral default. Move a slider to see how much of the map is weight-contingent."
-        : `${(pct * 100).toFixed(1)}% of cropland area changes decile vs the neutral default.`;
-    $("weight-tag").textContent = pct < 0.001 ? "Neutral" : "Custom";
+        ? "At unit exponents, i.e. the physical product. Lower a term to see how "
+          + "much of the map depends on trusting it."
+        : `${(pct * 100).toFixed(1)}% of cropland area changes decile vs the `
+          + `unweighted physical product.`;
+    $("weight-tag").textContent = pct < 0.001 ? "Physics" : "Down-weighted";
   }
 
   /* ---------------- methods modal ---------------- */
@@ -722,7 +766,37 @@
       Lembrechts et al. (2022) monthly soil temperature at 30 arc-second, and a
       monthly soil-moisture climatology.</p>
 
-      <h3>Fixed since the first preview</h3>
+      <h3>Suitability is now anchored to gross CO₂</h3>
+      <p><b>The defect.</b> Suitability used to be a weighted geometric mean of
+      value-function transforms of the same three physical terms that make up CO₂
+      removal, with a uniform 0.02 quantisation floor applied as though it were a
+      physical floor. The consequence: a cell with <i>zero</i> reactivity — hence
+      zero carbon removed — scored <code>exp(ln 0.02 / 3) × 100 = 27</code>, not 0.
+      The floor existed to stop 8-bit quantisation swinging the score; it should
+      never have manufactured suitability where the physics says none. 3.5% of
+      cropland area was affected.</p>
+      <p><b>The fix.</b> Suitability is now a value function <i>of</i> gross CO₂
+      removal, on absolute breakpoints in tCO₂/ha/yr, so zero removal is zero
+      suitability by construction rather than by tuning a floor. That also removed
+      three sets of arbitrary per-term breakpoints and replaced them with one set
+      on a quantity that has units and can be argued about.</p>
+      <p><b>Why the sliders changed meaning.</b> They are now exponents on a
+      physical product, defaulting to 1. The old scheme was wrong in kind: it let
+      excellent alkalinity retention partly offset zero reactivity, when both are
+      required multiplicatively for any carbon to be stored. You cannot prefer
+      dissolution rate over alkalinity retention. Weights become meaningful again
+      once genuinely substitutable economic factors exist — delivered feedstock
+      cost, MRV cost — because those <i>are</i> tradeable.</p>
+      <p><b>A second defect found while fixing the first.</b> The dissolved
+      fraction was hard-clipped at 0.6, which pinned <b>18.9% of cropland area at
+      an identical CO₂ value</b> — a flat top across a fifth of the map. It is now
+      a first-order decay, <code>1 − exp(−k·X)</code>, bounded by 1 for the right
+      reason: you cannot dissolve more rock than you applied. The reference
+      dissolved fraction is anchored to the midpoint of observation (first-period
+      fraction weathered across the verified deliveries spans roughly 15–56%),
+      which also means our own 20% cap constant was falsified by the data.</p>
+
+      <h3>Fixed earlier in this preview</h3>
       <p><b>Drainage is now real recharge, and the Damköhler coefficient was
       wrong.</b> Transport limitation previously used a fixed runoff coefficient
       on precipitation, giving a median η of 0.32 almost everywhere. It now uses
@@ -744,8 +818,8 @@
       paddy prediction this project needs to test.</p>
       <p><b>The CO₂ gap narrowed without being tuned.</b> Verified deliveries
       imply roughly 1.9 tCO₂/ha at 20 t/ha. This build's median moved from 0.32 to
-      0.62 purely because the physics improved. The remaining ~3× gap is reported,
-      not fitted away: closing it honestly needs per-delivery particle-size
+      0.83 as the physics improved and the artificial clip came off. The remaining
+      ~2.3× gap is reported, not fitted away: closing it honestly needs per-delivery particle-size
       distributions we do not have.</p>
 
       <h3>Known problems, stated plainly</h3>
@@ -893,7 +967,7 @@
       showElig = e.target.checked; refresh();
     });
     $("btn-reset").onclick = () => {
-      Object.assign(weights, E.weights); refresh();
+      CRIT.forEach((c) => { termExp[c.key] = 1; }); refresh();
     };
     $("btn-psd-reset").onclick = () => {
       psd.d80 = E.psd.refD80; psd.width = E.psd.refWidth;
@@ -901,7 +975,7 @@
       refresh();
     };
     $("btn-random").onclick = () => {
-      CRIT.forEach((c) => { weights[c.key] = 0.1 + Math.random() * 0.9; });
+      CRIT.forEach((c) => { termExp[c.key] = 0.3 + Math.random() * 0.7; });
       refresh();
     };
     $("open-method").onclick = () => $("method-modal").classList.remove("hidden");

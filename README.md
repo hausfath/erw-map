@@ -148,7 +148,34 @@ the cropland mask and the area weighting. Global cropland reproduces Potapov et
 al. (2022) to within 0.1% (1.215 vs 1.216 Gha), which validates the area pipeline
 independently of any ERW science.
 
-### Fixed in this pass
+### Suitability is anchored to gross CO₂
+
+Suitability used to be a weighted geometric mean of value-function transforms of
+the same three physical terms that make up CO₂ removal, with a uniform 0.02
+quantisation floor treated as a physical floor. A cell with **zero** reactivity —
+zero carbon removed — scored `exp(ln 0.02 / 3) × 100 = 27`. That affected 3.5% of
+cropland area, and the two layers correlated at 0.943 in log space, so the
+composite was carrying almost no information the CO₂ layer did not already have.
+
+Suitability is now a value function **of** gross CO₂, on absolute breakpoints in
+tCO₂/ha/yr. Zero removal gives zero suitability by construction. Verified in the
+browser: all 17,818 negligible-CO₂ cells read exactly 0.
+
+The sliders changed meaning as a result. They are **exponents on a physical
+product**, defaulting to 1. The old scheme was wrong in kind — it let good
+alkalinity retention partly offset zero reactivity, when both are required
+multiplicatively. Weights become meaningful again once genuinely substitutable
+economic factors exist (delivered feedstock cost, MRV cost), because those *are*
+tradeable in a way the physics is not.
+
+Fixing that surfaced a second defect: the dissolved fraction was hard-clipped at
+0.6, pinning **18.9% of cropland area at one identical CO₂ value** — a flat top
+across a fifth of the map. It is now first-order decay, `1 − exp(−k·X)`, bounded
+by 1 because you cannot dissolve more rock than you applied. Anchoring the
+reference fraction to observation (15–56% first-period across the verified
+deliveries) also showed our own 20% annual-dissolution cap was falsified by data.
+
+### Fixed earlier in this pass
 
 | Was | Now |
 |---|---|
@@ -157,7 +184,7 @@ independently of any ERW science.
 | Drainage limited nearly all cropland | Drainage limits **19.5%**; reactivity limits **74.6%**, the physically expected answer for a weathering map |
 | No paddy mask, so the headline paddy prediction could not appear at all | **Soil pCO₂ interpolated continuously** from flooded fraction of cell-time: GRPI Landsat inundation months × SPAM irrigated-rice sub-cell area. 7.6% of cropland area has >5% flooded cell-time |
 | Surface area buried in a hardcoded `0.22` | **Two grind sliders** (d80, Rosin–Rammler width). Rate is linear in reactive area and L1 is a log ratio, so grind is a uniform shift — the value function moved into the shader to make it live |
-| CO₂ layer ~6× below verified deliveries | **~3× below**, and it moved without any tuning, purely from better physics |
+| CO₂ layer ~6× below verified deliveries | **~2.3× below** (median 0.83 vs field-implied ~1.9 tCO₂/ha/yr), and it moved without any tuning — better physics, then removing the clip |
 
 The λ readout is the useful diagnostic to watch: at the reference 267 µm grind,
 matching a BET-scale area of 1–5 m²/g would demand a roughness multiplier of

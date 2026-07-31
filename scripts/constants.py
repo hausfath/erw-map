@@ -338,6 +338,70 @@ CROPLAND_GAP_COMPONENTS_MHA = {
 APPLICATION_RATE_T_HA_YR = 20.0
 
 # ---------------------------------------------------------------------------
+# Annual dissolution fraction.
+#
+# First-order decay of the remaining mass:
+#     frac = 1 - exp(-k * X)
+# where X is the dimensionless rate relative to the reference condition,
+#     X = (R/R_ref) * eta_DIC * eta_transport
+# and k is set so that frac = DISSOLVED_FRAC_AT_REF when X = 1:
+#     k = -ln(1 - DISSOLVED_FRAC_AT_REF)
+#
+# This replaces a hard clip at 0.6, which pinned 18.9% of cropland area at an
+# identical value and gave the CDR layer a flat top across a fifth of the map.
+# A saturating exponential is bounded by 1 for the right reason -- you cannot
+# dissolve more rock than you applied -- and has no artificial ceiling.
+#
+# DISSOLVED_FRAC_AT_REF is anchored to the MIDPOINT OF OBSERVATION, not fitted:
+# first-period fraction weathered across the 2026 verified deliveries spans
+# roughly 15-56%, so 0.25 sits inside that range at the reference condition.
+# It is still not a calibration -- see docs/VALIDATION.md, which requires
+# per-delivery particle-size distributions before any real fit.
+# ---------------------------------------------------------------------------
+DISSOLVED_FRAC_AT_REF = 0.25
+DISSOLVED_FRAC_OBSERVED_RANGE = (0.15, 0.56)
+
+# ---------------------------------------------------------------------------
+# Suitability is a value function of GROSS CDR, on absolute breakpoints in
+# tCO2 gross/ha/yr at APPLICATION_RATE_T_HA_YR.
+#
+# This is the fix for a real defect: suitability was a weighted geometric mean of
+# value-function transforms of the same three physical terms that make up CDR,
+# with a uniform 0.02 quantisation floor applied as if it were a physical floor.
+# The consequence was that a cell with ZERO reactivity -- hence zero carbon
+# removal -- scored exp(ln(0.02)/3) x 100 = 27 rather than 0. The floor existed
+# to stop 8-bit quantisation from swinging the score; it should never have
+# manufactured suitability where the physics says none.
+#
+# Tying suitability to CDR also removes three sets of arbitrary value-function
+# breakpoints (one per physical term) and replaces them with one set on a
+# quantity that has units and can be argued about.
+#
+# Zero CDR now gives zero suitability BY CONSTRUCTION, not by tuning.
+# ---------------------------------------------------------------------------
+CDR_SUITABILITY_KNOTS = [
+    (0.02, 0.0),     # at or below this, negligible: rendered as its own state
+    (0.10, 0.20),
+    (0.50, 0.40),
+    (1.50, 0.60),
+    (4.00, 0.80),
+    (10.00, 1.0),
+]
+# Below this, a cell is drawn as "negligible potential" rather than given a
+# low-but-nonzero colour. A near-zero score and a genuine zero are different
+# claims and should not share a ramp.
+CDR_NEGLIGIBLE_T_HA_YR = 0.02
+
+# The three physical terms multiply into CDR with UNIT exponents by default,
+# because they are terms in a physical product, not competing preferences: you
+# cannot care more about dissolution rate than about whether the alkalinity
+# retains carbon, since both are required for any carbon to be stored. The
+# sliders therefore expose term SENSITIVITY (default 1 = the physics), not
+# importance weights that sum to one.
+TERM_EXPONENT_DEFAULT = 1.0
+TERM_EXPONENT_RANGE = (0.0, 1.0)
+
+# ---------------------------------------------------------------------------
 # Particle size. Exposed in the UI because specific surface area is the single
 # largest uncertainty in any absolute CDR figure here, and burying it in a
 # hardcoded constant hid the dominant term from the reader.
@@ -403,14 +467,20 @@ CRITERION_FLOORS = {
     "drainage":        0.05,
 }
 
-# Equal weights by default. Justified as declining to assert a preference
-# ordering -- NOT as "these factors are equally important", which is false.
-# Labelled in the UI as "Neutral (equal weights) - not a recommendation".
-WEIGHTS_DEFAULT = {
-    "reactivity":     0.25,
-    "eta_dic":        0.25,
-    "feedstock_cost": 0.25,
-    "drainage":       0.25,
+# SUPERSEDED by CDR_SUITABILITY_KNOTS and TERM_EXPONENT_DEFAULT above.
+#
+# These were equal weights over a compensatory geometric mean. The scheme was
+# wrong in kind for the physical terms: it let excellent alkalinity retention
+# partly offset zero reactivity, when in fact zero reactivity means zero carbon
+# regardless. Kept here only to document what changed.
+#
+# Weights DO become meaningful again once genuinely substitutable economic
+# factors exist -- delivered feedstock cost, MRV cost -- because those are
+# tradeable in a way the physics is not. At that point the structure is
+#     suitability = f(gross CDR) x (weighted compensatory economic term)
+# with the physical half still annihilating.
+WEIGHTS_DEFAULT_SUPERSEDED = {
+    "reactivity": 0.25, "eta_dic": 0.25, "feedstock_cost": 0.25, "drainage": 0.25,
 }
 
 # Cropland fraction is deliberately ABSENT from the weights. It is an extensive
@@ -517,7 +587,12 @@ GATES = {
     # absolute bound is pure forsterite, the most CO2-dense silicate in
     # CDRMAX_REFERENCE; anything above that is a bug.
     "max_tco2_per_t_any_feedstock": 1.30,
-    "max_annual_dissolved_fraction": 0.20,
+    # Observed first-period fraction weathered in the 2026 verified deliveries
+    # spans roughly 15-56%/yr, so an earlier value of 0.20 here was FALSIFIED BY
+    # THE DATA rather than being a conservative choice. Raised above the observed
+    # maximum. The bound is now a bug-catcher, not a model assumption: the
+    # dissolution function saturates smoothly toward 1 and cannot exceed it.
+    "max_annual_dissolved_fraction": 0.70,
     "max_cumulative_dissolved_fraction": 1.00,
     # Tier 2 external consistency. Consistency, NOT validation: the published
     # range spans an order of magnitude and several estimates descend from the
