@@ -147,6 +147,63 @@ PCO2_ATMOSPHERIC_UATM = 400.0
 PCO2_SOURCE = "Isometric EW-in-agriculture protocol v1.2 s10.4.5.7"
 
 # ---------------------------------------------------------------------------
+# Dietzen & Rosing 2023, Int. J. Greenhouse Gas Control 125, 103872 (CC-BY).
+# "Quantification of CO2 uptake by enhanced weathering of silicate minerals
+# applied to acidic soils."
+#
+# WHY THIS IS HERE, AND IT IS THE STRONGEST EXTERNAL CHECK IN THE PROJECT.
+# They define a correction factor X* -- "the proportion of the weathering
+# reactions that converted carbonic acid to bicarbonate rather than consuming
+# excess acidity" -- derived from a soil proton budget. We compute eta_DIC from
+# carbonate equilibrium following Bertagni & Porporato. Different starting
+# points, different literatures, and the SAME FUNCTION of (pH, pCO2): our
+# eta_dic reproduces every X* value they report to within 0.03, including three
+# pCO2-dependent thresholds spanning a 40x pCO2 range. Gate 2d asserts it.
+#
+# So the protocol-sanctioned strong-acid correction is ALREADY IN THIS MODEL. It
+# is not a missing term. What remains open is whether an equilibrium formulation
+# of it survives continuous fertiliser loading -- Holden et al. 2024 measured 2%
+# carbonic at a site where this formulation gives ~71%, which is a 35x gap that
+# no reformulation of X* explains. See to_do.md item 3.
+#
+# pH BASIS, WHICH THIS PAPER SETTLES. All their thresholds and X* are on
+# pH(H2O), stated explicitly with a physical rationale: pH(H2O) "is more
+# representative of the soil solution and therefore the conditions that the GRF
+# is dissolving in than pHCaCl2, which is typically lower as it includes protons
+# displaced from the soil exchange complex". They measured CaCl2 separately and
+# used it only to track change over time. 1N KCl is not used. Since both
+# Puro.earth's and Isometric's pH numbers trace to this paper, the whole family
+# of protocol thresholds is on the SoilGrids-native basis and NO OFFSET APPLIES
+# anywhere in this pipeline.
+# ---------------------------------------------------------------------------
+DIETZEN_ROSING_SOURCE = ("Dietzen & Rosing 2023, IJGGC 125, 103872, "
+                         "doi:10.1016/j.ijggc.2023.103872 (CC-BY)")
+DIETZEN_ROSING_PH_BASIS = "H2O"
+# (pH, pCO2 uatm, their reported X*). Their Table 1 thresholds are stated as the
+# pH at which X* > 0.98; the first two rows are their field site and their
+# stated lower bound for viability.
+DIETZEN_ROSING_XSTAR = (
+    (5.79, 1_000.0, 0.83),    # their Vojens field site
+    (5.20, 1_000.0, 0.25),    # "below this, credits may not be worth the MRV cost"
+    (6.29, 1_000.0, 0.98),    # Table 1, X* > 0.98
+    (5.99, 4_000.0, 0.98),    # Table 1, X* > 0.98
+    (5.49, 40_000.0, 0.98),   # Table 1, X* > 0.98
+)
+DIETZEN_ROSING_XSTAR_TOL = 0.05
+# Their three distinct pH thresholds, all pH(H2O). NOTE: the "5.2-7.2" range
+# quoted in some secondary summaries (and previously in our own docs) is not
+# verbatim in the paper -- the upper bound is 7.1, and 6.29 is a third, separate
+# threshold sitting between them.
+DIETZEN_ROSING_PH_THRESHOLDS = {
+    "not_worth_applying_below": 5.20,
+    "no_acid_correction_needed_above": 6.29,   # at 1,000 uatm; pCO2-dependent
+    "carbonate_precipitation_risk_above": 7.10,
+}
+# At their site, correcting cation-based uptake for strong acids cut the estimate
+# from 437 to 364 kg CO2/ha, i.e. the uncorrected figure was 20% high.
+DIETZEN_ROSING_SITE_OVERESTIMATE = 0.20
+
+# ---------------------------------------------------------------------------
 # Soil pH convention. RESOLVED for Isometric; no offset is applied.
 #
 # An earlier version carried PH_H2O_MINUS_CACL2 = 0.55 as a pending correction,

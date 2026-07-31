@@ -5,6 +5,55 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Two new results, July 2026
+
+Both came from data and papers already within reach, and both change what to work
+on next rather than changing the map.
+
+**η_DIC reproduces Dietzen & Rosing's X\*, derived from a different starting
+point.** They compute X\* from a soil proton budget; we compute η_DIC from
+carbonate equilibrium. Same function of pH and pCO₂, agreeing to within 0.03 at
+every value they report across a 40× pCO₂ range (gate 2d). Three consequences:
+
+- It is the strongest external check in the project — two independent derivations
+  from different literatures, not a transcription check.
+- **The protocol-sanctioned strong-acid correction is already in the model.** The
+  to-do item claiming it was a missing term was wrong in kind and has been
+  reframed. Gate 2d now exists partly to prevent someone adding a second
+  pH-and-pCO₂-based deduction on top and double-counting.
+- **The pH measurement-convention question is closed.** The paper states its
+  thresholds are on pH(H₂O) with a rationale — pH(H₂O) "is more representative of
+  the soil solution … than pHCaCl₂, which is typically lower as it includes protons
+  displaced from the soil exchange complex" — and both protocols' pH numbers trace
+  to it. So no offset applies anywhere. Also corrected: the "5.2–7.2" range we
+  quoted is not verbatim; their three thresholds are 5.20, 6.29 (pCO₂-dependent)
+  and 7.10.
+
+What survives is narrower and harder: Holden et al. 2024 measured 2% carbonic-acid
+weathering at a real site where this formulation gives ~71%. An equilibrium factor
+of pH and pCO₂ cannot capture continuous fertiliser loading, so the open problem is
+a flux formulation, not a missing factor.
+
+**Surface repartitioning cannot rescue the rate law (gate 11b).** The fixture
+measures Si, Ca, Mg and Fe; three minerals leave two free surface fractions; so
+requiring one partition to reproduce four elements is over-identified and is a test
+rather than a fit. Si and Fe were added to `ELEMENT_PER_FORMULA` to enable it —
+they had been sitting unused in the fixture.
+
+- Fitting to Ca+Mg alone drives pyroxene to **exactly zero** and held-out **Fe then
+  fails by 17.8 log units**, because pyroxene is the only Fe carrier. An element
+  the fit never saw destroys it.
+- Fitting all four with both parameters tuned on the test data still leaves the
+  worst element at **0.88** against a 0.5-log tolerance.
+- Constrained to the pre-registered factor-of-3 plausibility bound, Mg degrades to
+  1.15.
+
+So the residual is not a mixing problem, and strand A's per-temperature refit
+should not be run — it is aliased with the activation energy and the pooled version
+has now failed. This redirects the kinetics work onto the rate constants and the
+missing alkaline-branch mechanism. A negative result, recorded because it closes a
+line of enquiry that looked like the leading candidate.
+
 ## Post-review fixes, July 2026
 
 Implemented after the six-reviewer audit. The **flux-reconciliation cluster is

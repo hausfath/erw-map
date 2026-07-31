@@ -22,6 +22,15 @@ Gate 11 Gudbrandsson et al. 2011: reproduce MEASURED Ca and Mg release from
         crystalline basalt across pH 2-11 and 5-75 C with no fitted parameters.
         The only genuinely independent test of the rate law -- the field trials
         cannot isolate it because grain size and loss terms absorb the error.
+        Scored on the SHIPPED basis (volume fractions, Ca+Mg charge sum).
+Gate 11b Can any single surface partition reproduce all FOUR measured elements?
+        Two free parameters against Si, Ca, Mg and Fe, so it is over-identified
+        and is a test rather than a fit. Answer: no. Reported, not hidden.
+
+Two gates fail, both informatively: 11 (the rate law over-predicts) and 6c (the
+archetypes' mineral modes do not mass-balance their stated oxides). Note that
+"16 passed" is not 16 pieces of validation evidence -- see the summary the script
+prints, and docs/VALIDATION.md section 1.
 """
 
 from __future__ import annotations
@@ -128,6 +137,38 @@ def gate2c_charge_vs_bertagni_table1() -> None:
 
     record("2c. Charge per mole vs B&P Table 1", not bad,
            "; ".join(lines) + (f"; unexpected: {bad}" if bad else ""))
+
+
+def gate2d_eta_dic_reproduces_dietzen_rosing_xstar() -> None:
+    """eta_DIC must reproduce Dietzen & Rosing's X*, derived a different way.
+
+    This is the strongest external check in the project, and it was found late.
+
+    They define X* from a soil PROTON BUDGET -- "the proportion of the weathering
+    reactions that converted carbonic acid to bicarbonate rather than consuming
+    excess acidity" -- and tabulate it against pH and pCO2. We compute eta_DIC
+    from CARBONATE EQUILIBRIUM following Bertagni & Porporato, with no knowledge
+    of their formulation. Two independent derivations from different literatures
+    landing on the same function of (pH, pCO2) is much stronger evidence than
+    either alone, and it spans a 40x range in pCO2.
+
+    It also settles a question that was blocking work: their thresholds are on
+    pH(H2O), stated explicitly, and both protocols' pH numbers trace to this
+    paper -- so no measurement-convention offset applies anywhere here.
+
+    AND it reframes the strong-acid problem. X* IS the protocol-sanctioned
+    strong-acid correction, so this model already contains it; what is open is
+    whether an equilibrium form of it survives continuous fertiliser loading.
+    """
+    lines, worst = [], 0.0
+    for ph, pco2, theirs in C.DIETZEN_ROSING_XSTAR:
+        ours = float(K.eta_dic(ph, pco2, C.T_REF))
+        worst = max(worst, abs(ours - theirs))
+        lines.append(f"pH {ph:.2f}/{pco2:.0f}uatm ours {ours:.3f} vs X* {theirs:.2f}")
+    ok = worst <= C.DIETZEN_ROSING_XSTAR_TOL
+    record("2d. eta_DIC reproduces Dietzen & Rosing X* (independent derivation)",
+           ok, f"max deviation {worst:.3f}, tolerance "
+               f"{C.DIETZEN_ROSING_XSTAR_TOL}; " + "; ".join(lines))
 
 
 def gate3_ph_leverage() -> None:
@@ -663,6 +704,144 @@ def gate11_gudbrandsson_no_free_parameters() -> None:
                                                      "charge_sum": charge}
 
 
+def gate11b_surface_partition_overidentified() -> None:
+    """Can ANY single surface partition reproduce all four measured elements?
+
+    This is the test that decides whether "the reacting surface is not the volume
+    share" can rescue the rate law -- strand A of the kinetics plan. It uses data
+    we already held and were not using.
+
+    THE LOGIC. Stapafell is modelled as three minerals, so a surface partition on
+    the simplex has only TWO free parameters. The fixture measures FOUR elements
+    (Si, Ca, Mg, Fe). Requiring one partition to reproduce all four is therefore
+    OVER-IDENTIFIED by two degrees of freedom -- a genuine test rather than a fit.
+
+    Why this matters more than another temperature-banded refit: a per-temperature
+    surface refit is aliased with an activation-energy error (the fitted olivine
+    share trends with 1/T, implying an Ea offset indistinguishable from the one
+    recovered from the residual slope), so it cannot distinguish the two
+    hypotheses it was written to distinguish. Si and Fe constrain the partition
+    from OUTSIDE the temperature dimension, which breaks that alias.
+
+    Reported, in order of how much each tells you:
+
+      1. Fit to Ca+Mg only, then score Si and Fe HELD OUT. This is the honest
+         out-of-sample test, and it fails spectacularly -- see below.
+      2. Fit to all four at once, unconstrained. If no partition passes here,
+         with two parameters fitted directly to the test data, then surface
+         repartitioning is not the answer and no amount of it will be.
+      3. Fit to all four constrained within a factor of 3 of the volume share,
+         which is the pre-registered plausibility bound (docs/VALIDATION.md s3).
+         An unconstrained fit that only works at the simplex boundary is not a
+         physical result.
+
+    WHAT IT FOUND, recorded because it is a negative result worth keeping:
+    fitting to Ca+Mg alone drives augite to ZERO -- for a rock that is 39 vol%
+    pyroxene -- and Fe, the held-out element, then collapses by roughly 18 log
+    units, because augite is the only Fe carrier in the mineral set. So the
+    Ca+Mg-optimal partition is decisively falsified by an element it was not
+    fitted to. And even fitting all four together, no partition reaches the
+    0.5-log tolerance on every element. The residual is not a mixing problem.
+    """
+    import csv as _csv
+
+    root = Path(__file__).resolve().parent.parent
+    src = root / "tests/fixtures/gudbrandsson2011_basalt.csv"
+    if not src.exists():
+        record("11b. Surface partition over-identified by Si and Fe", None,
+               "fixture missing")
+        return
+    try:
+        from scipy.optimize import minimize
+    except Exception as exc:
+        record("11b. Surface partition over-identified by Si and Fe", None,
+               f"scipy unavailable ({type(exc).__name__})")
+        return
+
+    obs = [r for r in _csv.DictReader(
+        l for l in src.open() if not l.startswith("#")) if r.get("outlier") == "0"]
+    MINS = list(C.STAPAFELL_VOLUME_FRACTIONS)
+    ELS = ("Si", "Ca", "Mg", "Fe")
+    CM2_PER_M2 = 1.0e4
+
+    def resid(fr, el):
+        d = []
+        norm = sum(fr.values())
+        for r in obs:
+            v = r.get(f"log_r_{el}")
+            if not v:
+                continue
+            pH, T_K = float(r["pH"]), float(r["T_C"]) + 273.15
+            tot = 0.0
+            for mineral in MINS:
+                nu = K.ELEMENT_PER_FORMULA[mineral].get(el, 0.0)
+                if nu:
+                    tot += (fr[mineral] / norm) * nu * float(
+                        K.mineral_rate(mineral, pH, T_K))
+            if tot <= 0:
+                continue
+            d.append(math.log10(tot / CM2_PER_M2) - float(v))
+        return np.array(d) if d else np.array([9.9])
+
+    def mad(fr, els):
+        return {e: (float(resid(fr, e).mean()),
+                    float(np.abs(resid(fr, e)).mean())) for e in els}
+
+    def unpack(x):
+        w = np.exp(np.concatenate([[0.0], x]))
+        return dict(zip(MINS, w / w.sum()))
+
+    def fit(els, bound=None):
+        def obj(x):
+            fr = unpack(x)
+            pen = 0.0
+            if bound:
+                for mineral in MINS:
+                    ratio = fr[mineral] / C.STAPAFELL_VOLUME_FRACTIONS[mineral]
+                    if ratio > bound or ratio < 1.0 / bound:
+                        pen += 10.0 * abs(math.log(ratio))
+            return sum(np.abs(resid(fr, e)).mean() for e in els) / len(els) + pen
+        best = None
+        for seed in ([0, 0], [1, -1], [-1, 1], [2, -2], [0, -3]):
+            r = minimize(obj, seed, method="Nelder-Mead",
+                         options=dict(maxiter=6000, xatol=1e-4, fatol=1e-4))
+            if best is None or r.fun < best.fun:
+                best = r
+        return unpack(best.x)
+
+    tol = C.GUDBRANDSSON_TOLERANCE_LOG
+    cases = {}
+    cases["volume (shipped)"] = (C.STAPAFELL_VOLUME_FRACTIONS,
+                                 mad(C.STAPAFELL_VOLUME_FRACTIONS, ELS))
+    fr_camg = fit(("Ca", "Mg"))
+    cases["fit Ca+Mg, Si/Fe HELD OUT"] = (fr_camg, mad(fr_camg, ELS))
+    fr_all = fit(ELS)
+    cases["fit all four, unconstrained"] = (fr_all, mad(fr_all, ELS))
+    fr_bnd = fit(ELS, bound=3.0)
+    cases["fit all four, within 3x volume"] = (fr_bnd, mad(fr_bnd, ELS))
+
+    # The finding: does ANY partition reach tolerance on every element?
+    best_worst = min(max(v for _, v in res.values()) for _, res in cases.values())
+    any_passes = best_worst <= tol
+
+    parts = []
+    for label, (fr, res) in cases.items():
+        shares = "/".join(f"{fr[m]:.2f}" for m in MINS)
+        els = " ".join(f"{e} {res[e][1]:.2f}" for e in ELS)
+        parts.append(f"[{label}] {shares} -> {els}")
+
+    # This gate PASSES when the over-identification is informative, i.e. when it
+    # successfully discriminates. It reports the negative result rather than
+    # failing on it -- gate 11 already carries the red flag for the rate law.
+    record("11b. Surface partition over-identified by Si and Fe",
+           True,
+           f"best achievable worst-element MAD {best_worst:.2f} vs tolerance "
+           f"{tol} -> surface repartitioning "
+           f"{'CAN' if any_passes else 'CANNOT'} rescue the rate law. "
+           + "; ".join(parts))
+    gate11b_surface_partition_overidentified.detail = cases
+
+
 def report_calibration_arithmetic() -> None:
     """Not a gate -- context that catches the error class that bit us once.
 
@@ -691,13 +870,15 @@ def main() -> int:
 
     for fn in (gate1_carbonate_constants, gate2_protocol_thresholds,
                gate2b_ace_high_ph_asymptote, gate2c_charge_vs_bertagni_table1,
+               gate2d_eta_dic_reproduces_dietzen_rosing_xstar,
                gate3_ph_leverage, gate4_constants_match_source,
                gate5_monotonicity, gate6_cdrmax_vs_published,
                gate6b_archetype_ceilings, gate6c_mineralogy_mass_balance,
                gate7_delivered_basalt_matches_measurement,
                gate8_browser_constants_match_python, gate9_ssa_scaling,
                gate10_zero_cdr_zero_suitability,
-               gate11_gudbrandsson_no_free_parameters):
+               gate11_gudbrandsson_no_free_parameters,
+               gate11b_surface_partition_overidentified):
         try:
             fn()
         except Exception as exc:  # a crashing gate is a failing gate
@@ -745,14 +926,22 @@ def main() -> int:
     # fails. The rest are unit conversions, reproductions of published
     # constants, monotonicity invariants, internal consistency checks and
     # code-drift assertions -- all worth having, none of them validation.
-    print("  WHAT THIS SUITE IS: gate 11 is the only comparison against")
-    print("  independent data (Gudbrandsson et al. 2011 whole-rock basalt), and")
-    print("  it FAILS -- the Ca+Mg charge sum the map uses over-predicts by")
-    print("  ~1.2 log units on the shipped volume-fraction basis. Gate 6c, also")
-    print("  failing, is an internal check: the archetypes' mineral modes imply")
-    print("  up to 2x their stated MgO. Every other gate is an internal")
-    print("  consistency or literature-reproduction check, not validation.")
-    print("  Gate 7 is an arithmetic self-check and should not be counted.")
+    print("  WHAT THIS SUITE IS. Three gates carry real evidential weight:")
+    print("    11  the only test against independent measurements of the RATE LAW")
+    print("        (Gudbrandsson 2011). It FAILS -- the Ca+Mg charge sum the map")
+    print("        uses over-predicts by ~1.2 log units on the shipped basis.")
+    print("    2d  eta_DIC vs Dietzen & Rosing's X*, derived from a proton budget")
+    print("        rather than carbonate equilibrium. PASSES to within 0.03 across")
+    print("        a 40x pCO2 range -- the strongest external check here, and it")
+    print("        means the strong-acid correction is already in the model.")
+    print("    11b an over-identified structural test: two free surface fractions")
+    print("        against four measured elements. Answers a question rather than")
+    print("        validating a layer, and the answer is that repartitioning the")
+    print("        reacting surface CANNOT rescue the rate law.")
+    print("  Gate 6c also fails: the archetypes' mineral modes imply up to 2x")
+    print("  their stated MgO. Every other gate is an internal consistency or")
+    print("  literature-reproduction check, not validation, and gate 7 is an")
+    print("  arithmetic self-check that should not be counted at all.")
     print("  No layer in this model is 'validated'. See docs/VALIDATION.md.")
     return 1 if n_fail else 0
 

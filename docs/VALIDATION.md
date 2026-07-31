@@ -14,12 +14,14 @@ internal consistency. Read the next section before quoting any gate count.
 
 ## 1. What the gate suite is, and is not
 
-`python3 scripts/test_kinetics.py` runs 16 gates. As of July 2026: **14 pass, 2
+`python3 scripts/test_kinetics.py` runs 18 gates. As of July 2026: **16 pass, 2
 fail.** The count is close to meaningless without the breakdown:
 
 | Category | Gates | What a pass means |
 |---|---|---|
 | **Independent test** | 11 | The rate law reproduces measurements it was not fitted to. **Currently FAILS.** |
+| **Independent cross-derivation** | 2d | eta_DIC reproduces Dietzen & Rosing's X*, derived from a proton budget rather than carbonate equilibrium, to within 0.03 across a 40x pCO2 range. **The strongest external check here.** |
+| **Over-identified structural test** | 11b | Two free surface fractions against four measured elements. Answers "can repartitioning the reacting surface fix the rate law?" — **no.** |
 | Internal consistency | 6c, 8, 10 | Two parts of our own code agree with each other |
 | Literature reproduction | 1, 2, 2b, 2c, 4, 4b, 6 | We transcribed a published constant correctly |
 | Invariants | 5, 9, 10 | The functions behave monotonically where physics requires |
@@ -43,6 +45,8 @@ changes only this file and says why.
 | η_DIC-derived pH thresholds vs protocols | 0.25 pH units | gate 2 |
 | Per-mineral CDRmax vs Puro Table 1.1 | 6% | gate 6 |
 | Archetype mineralogy vs stated oxides | ±15% | gate 6c |
+| eta_DIC vs Dietzen & Rosing X* | 0.05 absolute | gate 2d |
+| Surface partition, all four elements | 0.5 log units (same as gate 11) | gate 11b |
 | Cropland area vs Potapov et al. | 2% | gate 1, FATAL |
 | Stoichiometric ceiling | hard bound, no tolerance | gate 3 |
 
@@ -98,11 +102,18 @@ review, which found the first one could not discriminate.
    - **Held-out split:** leave-one-temperature-band-out is the only honest split
      available at n = 25. Fit on 5/25/50 °C, predict 75 °C, and vice versa.
      Report the held-out MAD.
-   - **Out-of-sample element:** the fixture carries **Si and Fe**, which gate 11
-     does not use. A single surface partition must reproduce all four elements at
-     a given temperature — three fractions against four elements is
-     over-identified, which makes it a test rather than a fit. Do this before
-     touching any activation energy.
+   - **Out-of-sample element: DONE, and it returned a negative result.**
+     Implemented as **gate 11b** (July 2026). The fixture carries **Si and Fe**,
+     which gate 11 did not use; three minerals give two free surface fractions, so
+     requiring one partition to reproduce four elements is over-identified by two
+     degrees of freedom. Result: **no partition reaches the 0.5-log tolerance on
+     all four elements**, best achievable worst element 0.88, even with both
+     parameters fitted directly to the test data. And the Ca+Mg-optimal partition
+     drives pyroxene to exactly zero and is then falsified by held-out Fe at
+     **17.76 log units**. So surface repartitioning is falsified as a sufficient
+     fix, the residual is not a mixing problem, and **strand A's per-temperature
+     refit should not be run** — the pooled version of the same idea has now been
+     tested and failed.
    - **Boundary solutions are a failure, not a pass.** Constrain surface share to
      within a factor of 3 of volume share (per Gudbrandsson's own 83/14/2.8
      against volume 44/39/17) and treat a solution on the simplex boundary as a

@@ -133,21 +133,39 @@ DIVALENT_PER_FORMULA = {
 # Moles of each element released per mole of mineral dissolved. Separate from
 # DIVALENT_PER_FORMULA because a validation against measured ELEMENT release needs
 # element stoichiometry, not the CDR-relevant charge sum.
+#
+# Si AND Fe ARE CARRIED HERE FOR A SPECIFIC REASON, not for completeness. The
+# Gudbrandsson fixture measures Si, Ca, Mg and Fe, and gate 11 used only Ca and
+# Mg -- so Si and Fe were free out-of-sample data going unused. With three
+# minerals there are only two free surface fractions, so requiring one partition
+# to reproduce FOUR elements is OVER-IDENTIFIED: it is a test rather than a fit,
+# and it is the only way to constrain the surface partition from outside the
+# temperature dimension (where it is aliased with activation energy). See
+# gate 11b in test_kinetics.py and docs/VALIDATION.md section 3.
+#
+# Fe is included as an ELEMENT here while being excluded from
+# DIVALENT_PER_FORMULA. That is deliberate and not a contradiction: Fe release is
+# measurable and constrains the mineralogy, but it carries no durable alkalinity
+# in an oxic soil, so it earns no CDR credit.
 ELEMENT_PER_FORMULA = {
-    "anorthite":    {"Ca": 1.0, "Mg": 0.0},   # CaAl2Si2O8
-    "bytownite":    {"Ca": 0.8, "Mg": 0.0},
-    "labradorite":  {"Ca": 0.6, "Mg": 0.0},   # ~An60, remainder Na
-    "andesine":     {"Ca": 0.4, "Mg": 0.0},
-    "oligoclase":   {"Ca": 0.2, "Mg": 0.0},
-    "albite":       {"Ca": 0.0, "Mg": 0.0},
-    "forsterite":   {"Ca": 0.0, "Mg": 2.0},   # Mg2SiO4
-    "fayalite":     {"Ca": 0.0, "Mg": 0.0},
-    "diopside":     {"Ca": 1.0, "Mg": 1.0},   # CaMgSi2O6
-    "augite":       {"Ca": 0.7, "Mg": 0.9},   # Ca0.7Mg0.9Fe0.4Si2O6
-    "enstatite":    {"Ca": 0.0, "Mg": 1.0},   # MgSiO3
-    "bronzite":     {"Ca": 0.0, "Mg": 0.8},   # ~Mg0.8Fe0.2SiO3
-    "wollastonite": {"Ca": 1.0, "Mg": 0.0},   # CaSiO3
+    "anorthite":    {"Ca": 1.0, "Mg": 0.0, "Si": 2.0, "Fe": 0.0},  # CaAl2Si2O8
+    "bytownite":    {"Ca": 0.8, "Mg": 0.0, "Si": 2.2, "Fe": 0.0},  # ~An80
+    "labradorite":  {"Ca": 0.6, "Mg": 0.0, "Si": 2.4, "Fe": 0.0},  # ~An60, remainder Na
+    "andesine":     {"Ca": 0.4, "Mg": 0.0, "Si": 2.6, "Fe": 0.0},  # ~An40
+    "oligoclase":   {"Ca": 0.2, "Mg": 0.0, "Si": 2.8, "Fe": 0.0},  # ~An20
+    "albite":       {"Ca": 0.0, "Mg": 0.0, "Si": 3.0, "Fe": 0.0},  # NaAlSi3O8
+    "forsterite":   {"Ca": 0.0, "Mg": 2.0, "Si": 1.0, "Fe": 0.0},  # Mg2SiO4
+    "fayalite":     {"Ca": 0.0, "Mg": 0.0, "Si": 1.0, "Fe": 2.0},  # Fe2SiO4
+    "diopside":     {"Ca": 1.0, "Mg": 1.0, "Si": 2.0, "Fe": 0.0},  # CaMgSi2O6
+    "augite":       {"Ca": 0.7, "Mg": 0.9, "Si": 2.0, "Fe": 0.4},  # Ca0.7Mg0.9Fe0.4Si2O6
+    "enstatite":    {"Ca": 0.0, "Mg": 1.0, "Si": 1.0, "Fe": 0.0},  # MgSiO3
+    "bronzite":     {"Ca": 0.0, "Mg": 0.8, "Si": 1.0, "Fe": 0.2},  # ~Mg0.8Fe0.2SiO3
+    "wollastonite": {"Ca": 1.0, "Mg": 0.0, "Si": 1.0, "Fe": 0.0},  # CaSiO3
 }
+
+# Alkaline-earth elements only, i.e. the ones DIVALENT_PER_FORMULA counts. Si and
+# Fe are in ELEMENT_PER_FORMULA for validation and must not enter the charge sum.
+CDR_ELEMENTS = ("Ca", "Mg")
 
 
 # The two tables above must agree: DIVALENT_PER_FORMULA is the CDR-relevant
@@ -159,9 +177,15 @@ ELEMENT_PER_FORMULA = {
 # their stated formulae. Note the direction of the augite fix -- it RAISES
 # modelled Mg release, so it makes gate 11's Mg over-prediction slightly worse
 # rather than better.
-_mismatch = {m: (d, sum(ELEMENT_PER_FORMULA[m].values()))
-             for m, d in DIVALENT_PER_FORMULA.items()
-             if abs(d - sum(ELEMENT_PER_FORMULA[m].values())) > 1e-9}
+def _cdr_sum(m):
+    """Ca + Mg only. Si and Fe live in ELEMENT_PER_FORMULA for validation and
+    must never enter the charge sum -- Fe especially, since it carries no
+    durable alkalinity in an oxic soil."""
+    return sum(ELEMENT_PER_FORMULA[m].get(e, 0.0) for e in CDR_ELEMENTS)
+
+
+_mismatch = {m: (d, _cdr_sum(m)) for m, d in DIVALENT_PER_FORMULA.items()
+             if abs(d - _cdr_sum(m)) > 1e-9}
 if _mismatch:
     raise AssertionError(
         "DIVALENT_PER_FORMULA and ELEMENT_PER_FORMULA disagree on "

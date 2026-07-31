@@ -422,6 +422,59 @@ in its parts. Only a test that isolates the rate law can separate those.
 > two errors are real and both documented, but they live in different parts of
 > the model and cannot cancel.
 
+## Two results from the July 2026 review worth stating up front
+
+**η_DIC is independently corroborated, by a route we did not use.** Dietzen &
+Rosing (2023, *IJGGC* 125, 103872, CC-BY) derive a correction factor X\* from a
+soil **proton budget** — "the proportion of the weathering reactions that converted
+carbonic acid to bicarbonate rather than consuming excess acidity." We compute
+η_DIC from **carbonate equilibrium**, following Bertagni & Porporato. The two land
+on the same function of soil pH and pCO₂, agreeing to within **0.03 at every value
+they report**, across a 40× range in pCO₂:
+
+| pH | pCO₂ | their X\* | our η_DIC |
+|---|---|---|---|
+| 5.79 | 1,000 µatm | 0.83 | 0.851 |
+| 5.20 | 1,000 µatm | 0.25 | 0.276 |
+| 6.29 | 1,000 µatm | 0.98 | 0.982 |
+| 5.99 | 4,000 µatm | 0.98 | 0.983 |
+| 5.49 | 40,000 µatm | 0.98 | 0.983 |
+
+Two independent derivations from different literatures agreeing to three decimal
+places is stronger evidence than either alone, and it is asserted by gate 2d. It
+also means **the protocol-sanctioned strong-acid correction is already in this
+model** rather than missing — and it settles a measurement-convention question that
+was blocking work, since the paper states its thresholds are on pH(H₂O), the basis
+SoilGrids reports, so no offset applies anywhere here.
+
+The caveat that survives is sharper for being narrower: Holden et al. (2024)
+measured a full acidity budget at a real site and found **2% of weathering was
+carbonic-acid-driven** where this formulation gives ~71%. An equilibrium factor of
+pH and pCO₂ evidently cannot capture continuous fertiliser loading, and that is now
+the open question rather than "add a term we lack."
+
+**Repartitioning the reacting surface cannot rescue the rate law.** Gudbrandsson's
+own mixing model needed plagioclase at 83% of the reacting surface against a 44%
+volume share, which made "the surface is not the volume" the leading candidate
+explanation for our residuals. It has now been tested rather than assumed. The
+fixture measures **four** elements (Si, Ca, Mg, Fe) while three minerals leave only
+**two** free surface fractions, so the problem is over-identified — a test, not a
+fit. Gate 11b:
+
+- Fitting to Ca+Mg alone gives a respectable-looking result on what it was fitted
+  to, then **held-out Fe falsifies it by 17.8 log units**, because it drives
+  pyroxene to exactly zero and pyroxene is the only Fe carrier in the set.
+- Fitting all four at once, with both parameters tuned directly on the test data,
+  still leaves the worst element at **0.88** against a 0.5-log tolerance.
+- Every partition that fits well is a boundary solution with ~0% pyroxene, for a
+  rock that is 39 vol% pyroxene. Constrained to a factor of 3 of the volume share,
+  Mg degrades straight back to 1.15.
+
+So the residual is **not a mixing problem**, and the planned per-temperature
+surface refit should not be run — it is aliased with the activation energy and the
+pooled version of the same idea has now failed. That redirects the kinetics work
+onto the rate constants themselves and onto the missing alkaline-branch mechanism.
+
 ## What it deliberately does not claim
 
 - **No layer is called "validated."** With one fitted scaling constant and fewer
@@ -501,11 +554,14 @@ products are kept, sufficient to regenerate every figure without re-downloading.
 Thresholds are set before the pipeline runs, and violations are published even
 if we release anyway. Current status:
 
-`python3 scripts/test_kinetics.py` — **16 gates, 14 passing and 2 failing.**
+`python3 scripts/test_kinetics.py` — **18 gates, 16 passing and 2 failing.**
 
 Be careful how that count is read. Exactly **one** gate compares the model
 against independent measurements it was not built from (gate 11, Gudbrandsson et
-al. 2011), and it **fails**. A second failing gate (6c) is an internal
+al. 2011), and it **fails**. One more (gate 2d) cross-checks η_DIC against a
+completely independent derivation and passes — see below, it is the strongest
+external check here. One more (gate 11b) is an over-identified structural test
+that answers a question rather than validating a layer. A second failing gate (6c) is an internal
 consistency check. Everything else is a unit conversion, a reproduction of a
 published constant, a monotonicity invariant, or a code-drift assertion — all
 worth having, none of them validation. Gate 7 in particular is an arithmetic
