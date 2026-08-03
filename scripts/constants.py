@@ -514,7 +514,27 @@ CROPLAND_GAP_COMPONENTS_MHA = {
 # Flagged as a known v0 limitation, and a candidate ensemble member.
 
 # Nominal application rate for the indicative-CDR layer. Stated on the map.
-APPLICATION_RATE_T_HA_YR = 20.0
+#
+# 30 t/ha as of 2026-08, raised from 20 because 20 sat below what commercial
+# projects actually spread. Two things to know about the consequence, because
+# neither is intuitive:
+#
+#  1. THE FLUX CEILING DOES NOT SCALE WITH THIS. It is set by drainage and
+#     carbonate chemistry, not by how much rock is on the field, so on the ~97% of
+#     cropland where the cap already binds, adding 50% more rock adds no carbon at
+#     all. Raising the rate mostly raises the fraction of the map that is
+#     transport-limited rather than raising the tonnage. That is the physics, not
+#     a modelling artefact -- and it is the first place the ceiling changes what a
+#     deployment decision looks like.
+#  2. The dissolved FRACTION is held at DISSOLVED_FRAC_AT_REF regardless of rate,
+#     so this scales the uncapped carbon linearly. Field data says the per-tonne
+#     efficiency is SUBLINEAR in rate (the delivery set implies an exponent near
+#     -0.58), so a linear model over-credits a rate increase by roughly 25% at
+#     this step. Recorded in to_do.md item 4; not corrected here because the
+#     exponent is confounded with grind in the only data that constrains it.
+APPLICATION_RATE_T_HA_YR = 30.0
+APPLICATION_RATE_PREVIOUS_T_HA_YR = 20.0   # for the changelog and the rate note
+APPLICATION_RATE_SUBLINEAR_EXPONENT = -0.58  # observed, NOT applied; see above
 
 # ---------------------------------------------------------------------------
 # Annual dissolution fraction.

@@ -5,6 +5,56 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Application rate 20 -> 30 t/ha, and the grind slider tells the truth at its own reference
+
+**Application rate raised to 30 t/ha**, because 20 sat below what commercial projects
+actually spread. The consequence is the most useful thing the flux ceiling has produced
+so far, and it is not what a linear model would predict.
+
+| | 20 t/ha | 30 t/ha |
+|---|---|---|
+| uncapped median CDR | 0.792 | 1.189 tCO2/ha/yr (+50%, linear in rate) |
+| **capped median CDR** | **0.220** | **0.220 (unchanged)** |
+| global gross, capped | 0.354 | **0.360 GtCO2/yr (+1.8%)** |
+| global gross, uncapped | 1.472 | 2.209 GtCO2/yr (+50%) |
+| cropland area where the cap binds | 96.5% | 98.9% |
+| realised carbon per tonne of rock, median cell | 3.8% of stoichiometric | **2.5%** |
+| rock spread | 24.2 Gt/yr | 36.3 Gt/yr |
+
+**50% more rock bought 1.8% more carbon.** The ceiling is set by drainage and carbonate
+chemistry, not by how much rock is on the field, so past the point where drainage
+saturates, extra feedstock raises the share of the map that is transport-limited rather
+than the tonnage -- and it lowers the realised efficiency per tonne. Item 9's supply
+constraint got 1.5x harder for almost nothing, which makes it the binding practical
+limit well before geology is.
+
+Two honest caveats. The dissolved fraction is held at DISSOLVED_FRAC_AT_REF regardless
+of rate, so the uncapped layer scales linearly while the delivery set implies per-tonne
+efficiency is sublinear (exponent near -0.58, so a 20 -> 30 step is over-credited by
+~27% before the cap). The cap absorbs nearly all of that, which is luck rather than
+design. And the ceiling bounds EXPORT, so it does not follow that the extra rock is
+wasted -- it may weather and sit in the soil, which is the retention question, not this
+one.
+
+**The trial comparison is no longer at matched rate.** The trials span roughly 20 to
+200 t/ha rather than sharing one rate, and per-trial rates in this repo are being
+corrected. A "0.05-0.15 tCO2/ha/yr" band written earlier was produced by normalising
+several trials to 20 t/ha linearly, which is exactly the unsafe operation, and should
+not be read as a measured range. What survives: the capped median is 0.220 at both 20
+and 30 t/ha, so conclusions resting on the ceiling are rate-insensitive, while any
+conclusion comparing absolute tonnages to trials needs matched rates.
+
+**The grind slider no longer contradicts itself.** It reported "1.01x faster weathering
+than the reference grind" while its own badge said "Reference", and that +1% propagated
+into every displayed CDR, because the shift multiplies the reactivity the shader reads.
+Cause: the 24x13 shift table is interpolated bilinearly in the browser, and plain
+linspace axes put the reference between nodes on both -- 150 um fell between 126.1 and
+154.8, width 1.5 between 1.45 and 1.60. Both axes are now built to pass exactly through
+the reference, so the shift is exactly 0 there by construction, asserted by gate 8
+rather than hoped for. Worst-case interpolation error elsewhere moved 0.8% -> 0.9%,
+which is a fair trade for exactness at the default every user loads into. The readout
+at the reference now says so in words instead of printing a tautological 1.00x.
+
 ## Flux reconciliation, August 2026
 
 The largest open problem in the model is closed. It was real, it was mis-sized by
@@ -87,7 +137,9 @@ achieve 0.11–0.75 mmol/L, 5–10× *below* this ceiling, because cations are r
 secondary phases rather than exported — 10–50× more retained than exported (Hammes
 et al. 2025), retarded fractions of 93–98% (te Pas et al. 2025). The capped map still
 sits ~2–4× above the trials that measured drainage chemistry directly, against
-Dupla et al. 2025's 0.100 ± 0.030 tCO₂/ha/yr at the same 20 t/ha. Cation retention is
+Dupla et al. 2025's 0.100 ± 0.030 tCO₂/ha/yr (that trial applied 20 t/ha, which was
+also the map's rate at the time of this entry; the map moved to 30 t/ha shortly after,
+and per-trial rates in this repo are being corrected). Cation retention is
 now the largest missing term and is entered in `to_do.md` as item R with explicit
 entry criteria, because it is blocked on data rather than on effort — and because the
 one retention proxy that is readily griddable, CEC, is the wrong pool: SMEW

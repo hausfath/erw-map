@@ -664,11 +664,16 @@
     if (d) d.textContent = psd.d50.toFixed(0) + " \u00b5m";
     if (w) w.textContent = psd.width.toFixed(2);
     const rel = Math.pow(10, ssaShift());
-    $("psd-readout").textContent =
-      (rel >= 1 ? rel.toFixed(2) + "\u00d7 faster" : (1 / rel).toFixed(2) + "\u00d7 slower")
-      + " weathering than the reference grind";
     const atRef = Math.abs(psd.d50 - P.refD50) < 2.5
                   && Math.abs(psd.width - P.refWidth) < 0.01;
+    // At the reference itself, "1.00x faster weathering than the reference grind"
+    // is a tautology dressed as a measurement. Both axes of the shift table now
+    // pass exactly through the reference, so rel is exactly 1 here rather than the
+    // 1.01 an interpolated grid used to give -- say so plainly instead.
+    $("psd-readout").textContent = atRef
+      ? "The reference grind, against which the other settings are compared"
+      : (rel >= 1 ? rel.toFixed(2) + "\u00d7 faster" : (1 / rel).toFixed(2) + "\u00d7 slower")
+        + " weathering than the reference grind";
     $("psd-tag").textContent = atRef ? "Reference" : "Custom";
   }
 
@@ -1078,9 +1083,14 @@
       carbonate precipitating — around ${FC.medianTco2HaYr ? FC.medianTco2HaYr.toFixed(2) : "0.22"}
       tCO₂/ha/yr at the median cell. The cap binds on
       <b>${FC.bindsAreaFrac ? (FC.bindsAreaFrac * 100).toFixed(0) : "97"}% of
-      cropland</b>, and where it binds the dissolution rate, mineral mix and grind
-      no longer change the answer, which is why the limiting-factor layer is
-      dominated by one class. The cap is applied to the CO₂ and <i>not</i> to
+      cropland</b>, and where it binds the dissolution rate, mineral mix, grind
+      <i>and application rate</i> no longer change the answer, which is why the
+      limiting-factor layer is dominated by one class. That last one matters for
+      deployment: spreading more rock than the drainage can carry the carbon from
+      raises the share of the map that is transport-limited rather than raising the
+      tonnage. At ${E.feedstock.rateTHaYr}&nbsp;t/ha the median cell realises just
+      ${FC.realisedShareOfStoich ? (FC.realisedShareOfStoich * 100).toFixed(1) : "—"}%
+      of the feedstock's stoichiometric CO₂ potential as exported carbon. The cap is applied to the CO₂ and <i>not</i> to
       &ldquo;weathered in year 1&rdquo;: rock can dissolve without the carbon
       leaving, and the gap between those two layers is the retention problem
       above. Because the ceiling falls slightly with temperature while dissolution

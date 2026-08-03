@@ -509,10 +509,22 @@ def gate8_browser_constants_match_python() -> None:
     if worst > 0.01:                    # 0.01 log10 = 2.3% in rate
         problems.append(f"shift table off by {worst:.4f} log units at {at}")
 
+    # THE REFERENCE GRIND MUST INTERPOLATE TO EXACTLY ZERO. Not "small": zero.
+    # Both axes are built to pass through it (build_v0._grid_through) precisely so
+    # the slider cannot say "1.01x faster weathering than the reference grind" while
+    # its own badge says "Reference". That +1% also propagated into every displayed
+    # CDR, since the shift multiplies the reactivity the shader reads.
+    at_ref = lookup(C.PSD_REF_D50_UM, C.PSD_REF_WIDTH)
+    if abs(at_ref) > 1e-12:
+        problems.append(f"shift at the reference grind is {at_ref:+.6f}, not 0 "
+                        f"(factor {10 ** at_ref:.4f}x) -- the reference is not a "
+                        f"node on both axes")
+
     record("8. Browser constants match Python", not problems,
            f"CDR knots, L1 encoding, dissolution constant and cdrPerFrac all "
-           f"identical; shift-table interpolation error "
-           f"max {worst:.4f} log units ({10 ** worst - 1:+.1%} in rate) at {at}"
+           f"identical; shift is EXACTLY {at_ref:+.0f} at the reference grind; "
+           f"worst interpolation error elsewhere {worst:.4f} log units "
+           f"({10 ** worst - 1:+.1%} in rate) at {at}"
            + ("; " + "; ".join(problems) if problems else ""))
 
 

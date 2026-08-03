@@ -167,6 +167,33 @@ monotonic in temperature and the warmest/coolest ratio of the median goes from
 the map's warm-climate gradient rather than merely rescaling the level, and that is
 the most consequential thing about this term.
 
+**It also decouples carbon from application rate, which is the first place this
+term changes a deployment decision.** The ceiling depends on drainage and carbonate
+chemistry, not on how much rock is on the field. So when the application rate went
+from 20 to 30 t/ha in August 2026:
+
+| | 20 t/ha | 30 t/ha |
+|---|---|---|
+| uncapped median CDR | 0.792 | 1.189 (+50%, linear in rate) |
+| **capped median CDR** | **0.220** | **0.220 (unchanged)** |
+| global gross, capped | 0.354 | **0.360 GtCO₂/yr (+1.8%)** |
+| cropland area where the cap binds | 96.5% | 98.9% |
+| realised carbon per tonne of rock, median cell | 3.8% of stoichiometric | **2.5%** |
+
+**50% more rock bought 1.8% more carbon.** Adding feedstock past the point where
+drainage saturates raises the fraction of the map that is transport-limited instead
+of raising the tonnage, and it lowers the realised efficiency per tonne. That is a
+physical result, not a modelling artefact, and it is the kind of thing an uncapped
+rate law cannot say.
+
+Two caveats on it. The dissolved *fraction* is held at `DISSOLVED_FRAC_AT_REF`
+regardless of rate, so the uncapped layer scales linearly with rate while the
+delivery set implies per-tonne efficiency is sublinear (exponent near −0.58, so the
+uncapped layer over-credits a 20 → 30 step by ~27%). The cap absorbs nearly all of
+that, which is luck rather than design. And the flux ceiling is an upper bound on
+*export*, so it does not follow that the extra rock is wasted — it may weather and
+sit in the soil, which is the retention question in §6 item 1, not this one.
+
 **What it is not.** It is not why the map's level was high. Field trials achieve
 0.11–0.75 mmol/L, i.e. 5–10× *below* this ceiling, because cations are retained
 rather than exported (§6 item 1). The ceiling is a rail that makes an impossible
@@ -185,7 +212,7 @@ carry), **13/13b/13c** in `test_kinetics.py`.
 
 | Parameter | Value | Basis |
 |---|---|---|
-| Application rate | 20 t/ha/yr | stated assumption |
+| Application rate | **30 t/ha/yr** | stated assumption; raised from 20 in Aug 2026 to sit nearer commercial practice |
 | Feedstock | `delivered_basalt`, 0.289 tCO₂/t | mean implied CO₂ potential of n = 3 verified deliveries, one operator |
 | Reference grind | d50 150 µm, Rosin–Rammler width 1.5 | mid-range of observed 67–600 µm p50; **width is assumed** and is narrow for a commercial crush |
 | Year-1 dissolved fraction at reference | 0.25 | anchored to field-reported first-period weathering (15–56%) |
@@ -309,8 +336,11 @@ likely effect on the map.
    pore-scale saturation, both of which bias the acid end high.
 7. **The liming feedback.** ERW raises soil pH, and the map applies a static pH to
    a process whose purpose is to change it.
-8. **Supply capacity.** Every quarry is an unlimited point source. At 20 t/ha over
-   1,215 Mha the implied demand exceeds current world crushed-stone production.
+8. **Supply capacity.** Every quarry is an unlimited point source. At 30 t/ha over
+   1,215 Mha the implied demand is **36.3 Gt of rock a year**, which is of the same
+   order as total world aggregate production and therefore not a spreadable quantity.
+   The 20 → 30 t/ha change made this constraint 1.5× harder while adding almost no
+   carbon (see §2b), so it is now the binding practical limit long before geology is.
 9. **Road routing and seasonal access.** Haul is great-circle × a constant
    tortuosity, so a monsoon-season Gangetic haul and a Midwest haul are treated
    identically.

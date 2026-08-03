@@ -232,7 +232,7 @@ observationally. That ratio is the argument to put to operators.
 
 - **The global gross total now sits BELOW its own pre-registered Tier 2 band, and
   the band has deliberately not been widened.** With the drainage-concentration
-  ceiling imposed, global gross removal is **0.354 GtCO₂/yr** (1.472 uncapped)
+  ceiling imposed, global gross removal is **0.360 GtCO₂/yr** (2.209 uncapped)
   against a pre-registered 0.5–4.0. Reported by gate 2b in the build, not enforced.
   Widening the band to fit would defeat the purpose of pre-registering it. The
   substantive point is in §2's own wording — the published range is "Consistency,
@@ -242,8 +242,25 @@ observationally. That ratio is the argument to put to operators.
   Illinois tile drainage, essentially the figure this model produced before the
   ceiling. Falling below a band derived from that lineage is what imposing the bound
   is supposed to do, but it does mean the map no longer has an external consistency
-  check on its absolute level, and the honest reading is that the trials
-  (0.05–0.15 tCO₂/ha/yr at 20 t/ha) are now the only anchor.
+  check on its absolute level, and the honest reading is that the field trials are
+  now the only anchor.
+- **The trial comparison is not like-for-like on application rate, and the obvious
+  fix is invalid.** The map applies **30 t/ha**. The trials do not share a single
+  rate: they span roughly 20 to 200 t/ha, and only some are at or near the map's
+  rate. **Application rates per trial are being corrected by ZH — do not rely on the
+  per-trial rates quoted elsewhere in this repo until that is done.** The figures I
+  previously wrote as a "0.05–0.15 tCO₂/ha/yr" band were produced by normalising
+  several trials to 20 t/ha linearly, which is precisely the operation this bullet
+  warns against, so that band should not be treated as a measured range.
+
+  What survives the correction, and why it is worth stating separately: measured
+  per-tonne efficiency is **sublinear** in application rate, so rescaling any trial
+  to the map's rate by a simple ratio manufactures agreement that does not exist. In
+  either direction. The one comparison that is rate-insensitive here is the flux
+  ceiling itself — the map's capped median is **0.220 tCO₂/ha/yr at both 20 and
+  30 t/ha**, because the ceiling does not scale with how much rock is applied. So
+  conclusions that rest on the ceiling are unaffected by the rate change; conclusions
+  that rest on comparing absolute tonnages to trials are not, and need matched rates.
 - **The drainage-concentration ceiling is unvalidated on paddy cells.** The
   protocol's mandated 50,000 µatm lifts it to 13–18 mmol/L at the shipped Ω,
   above all five anchors, and the literature contains no measured floodwater

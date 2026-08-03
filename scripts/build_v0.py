@@ -786,6 +786,38 @@ RAMP_FRAC = [
 ]
 
 
+def _grid_through(lo, hi, ref, n, nd):
+    """n points spanning [lo, hi] with `ref` guaranteed to be an EXACT node.
+
+    The browser interpolates the particle-size shift table bilinearly, so a
+    reference grind that is not a node interpolates to a NON-ZERO shift. The
+    slider therefore read "1.01x faster weathering than the reference grind"
+    while its own badge said "Reference", and that +1% propagated into every
+    displayed CDR. Plain np.linspace put the reference between nodes in both
+    axes: 150 um fell between 126.1 and 154.8, and width 1.5 between 1.45 and
+    1.60.
+
+    Splitting the range at the reference makes the shift exactly 0 there by
+    construction, and as a side benefit it puts more nodes at the fine end,
+    where SSA varies fastest and the interpolation error was largest.
+
+    Rounded here to the emitted precision so the table can be computed at the
+    SAME coordinates the browser reads -- previously the grid was rounded after
+    the table was computed at full precision, a second small inconsistency.
+    """
+    lo_n = max(2, 1 + int(round((n - 1) * (ref - lo) / (hi - lo))))
+    a = np.linspace(lo, ref, lo_n)
+    b = np.linspace(ref, hi, n - lo_n + 1)
+    return [round(float(x), nd) for x in np.concatenate([a, b[1:]])]
+
+
+# Particle-size shift-table axes. Built to pass exactly through the reference
+# grind so the slider reports 1.00x there rather than 1.01x. Module level because
+# test_kinetics.py gate 8 imports them to check the browser's interpolation.
+_D50_GRID = _grid_through(*C.PSD_D50_SLIDER_RANGE, C.PSD_REF_D50_UM, 24, 1)
+_WIDTH_GRID = _grid_through(*C.PSD_WIDTH_SLIDER_RANGE, C.PSD_REF_WIDTH, 13, 3)
+
+
 def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
             clim_source="unknown", monthly=False, n_quarries=0,
             soc_excluded=0.0, soc_marginal=0.0,
@@ -847,6 +879,14 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
                                  else round(float(warm_cool[0]), 2)),
             "warmCoolCeiling": (None if warm_cool[1] is None
                                 else round(float(warm_cool[1]), 2)),
+            # Realised carbon per tonne of rock at the median cell, as a share of
+            # the feedstock's stoichiometric potential. Computed, not asserted:
+            # it is the cleanest single number for "how much of the rock's carbon
+            # actually leaves", and it FALLS as the application rate rises because
+            # the ceiling does not scale with how much rock is on the field.
+            "realisedShareOfStoich": round(
+                float(ceiling_med) / C.APPLICATION_RATE_T_HA_YR
+                / (cdr_per_frac / C.APPLICATION_RATE_T_HA_YR), 4),
         },
         "damkohler": {"dw": C.DAMKOHLER_DW_M_YR,
                       "dwRange": list(C.DAMKOHLER_DW_RANGE),
@@ -868,13 +908,13 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
             "deliveryP50": {k: v for k, v in C.DELIVERY_P50_UM.items() if v},
             "refWidthAssumed": C.PSD_REF_WIDTH_IS_ASSUMED,
             # Precomputed shift table so the browser needs no gamma function:
-            # log10(SSA(d50, n) / SSA(ref)) on a grid the UI interpolates.
-            "d50Grid": [round(x, 1) for x in np.linspace(*C.PSD_D50_SLIDER_RANGE, 24).tolist()],
-            "widthGrid": [round(x, 3) for x in np.linspace(*C.PSD_WIDTH_SLIDER_RANGE, 13).tolist()],
+            # log10(SSA(d50, n) / SSA(ref)) on a grid the UI interpolates. Both
+            # axes pass exactly through the reference grind -- see _grid_through.
+            "d50Grid": _D50_GRID,
+            "widthGrid": _WIDTH_GRID,
             "shiftTable": [
-                [round(float(K.ssa_log_shift(d, n)), 4)
-                 for d in np.linspace(*C.PSD_D50_SLIDER_RANGE, 24)]
-                for n in np.linspace(*C.PSD_WIDTH_SLIDER_RANGE, 13)
+                [round(float(K.ssa_log_shift(d, n)), 4) for d in _D50_GRID]
+                for n in _WIDTH_GRID
             ],
         },
         "kinetics": {"overpredicts": C.KINETICS_OVERPREDICTS,
