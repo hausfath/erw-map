@@ -5,6 +5,109 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Flux reconciliation, August 2026
+
+The largest open problem in the model is closed. It was real, it was mis-sized by
+~50–100×, and the interesting part turned out not to be the level.
+
+**What the model was missing.** The carbon reported has to leave the field dissolved
+in the water that leaves the field. Nothing enforced that. Recasting Maher &
+Chamberlain's `q/(q+D_w)` as a multiplier on a kinetic rate keeps the shape of their
+curve and drops the finite concentration limit `C_eq`, which is why the CO₂ layer
+first needed a hard clip at 0.6 and then a saturating exponential — both patching a
+missing physical bound at the wrong level.
+
+**What shipped.** `cdr = min(cdr, q · [HCO₃⁻]_max · 44)`, with `[HCO₃⁻]_max` set by
+calcite saturation at each cell's own soil pCO₂ and temperature, solving charge
+balance `2[Ca]+2[Mg] = [HCO₃⁻]` simultaneously with fixed pCO₂. Enforced by gate 12
+in the build and gates 13/13b/13c in the kinetics suite, and applied in the shader
+too, because the grind slider recomputes CDR live and would otherwise walk the
+displayed carbon straight back through the bound.
+
+**The audit's own ceiling was wrong, in the other direction.** It computed
+`q · [HCO₃⁻](pH, pCO₂)` holding each cell's *pre-treatment* pH fixed. But pH is
+endogenous — adding base cations at fixed pCO₂ raises alkalinity and pH together, and
+raising pH is what a silicate amendment is for. That gave 0.42 mmol/L at the median,
+which is ~8–15× too strict and is, to two significant figures, the observed mean
+alkalinity of streams draining **unamended** volcanic rock. A good baseline; the
+wrong ceiling. The corrected bound is **3.0–6.5 mmol/L**, agreed by five independent
+anchors — Zhang et al. 2022's riverine transport potential back-converted (4.3–13.0),
+Hamilton et al. 2007's measured Midwest agricultural tile drainage (1–7), Meybeck's
+pristine-river 99th percentile (5.95) and carbonate-terrain streams (3.15), and a
+soil-pH backstop at ~10. So the model was **4–9× over, not 563×**.
+
+**The finding is a climate-gradient error, not a level error.** `C_eq` falls with
+warming (3.56 / 3.03 / 2.58 mmol/L at 5 / 15 / 25 °C) while the rate law rises
+steeply, so exceedance is monotonic in temperature: 1.8× in the coldest cropland to
+8.6× in the hottest. The warmest-to-coolest ratio of the median CDR goes from
+**4.37× uncapped to 0.91× at the ceiling**. The map's warm-climate advantage — its
+most visually prominent and most quotable feature — was an artefact of an unbounded
+rate law. Median CDR 0.792 → 0.220 tCO₂/ha/yr, and the cap binds on 96.5% of
+cropland area.
+
+**Two Maher & Chamberlain questions closed from the primary source, and both
+deliberately not acted on in `eta_transport`.** τ = e² is real and is *not* already
+folded into the Fig. 2 contours: those labels reproduce to two significant figures
+from the paper's own printed parameters using bare `D_w = L_φ/T_eq`, while Fig. 2B's
+plotted flux plateaus match `C_eq·τ·D_w` and are 0.8 of a decade off without τ. And
+ERW belongs at the high D_w limb (~0.3), because the published 0.003–0.3 range is
+generated at fixed path length by varying soil age, and 0.03 is the caption's
+"T_s of 100,000 years" — a hundred-millennium regolith standing in for a mineral one
+year old. **Neither is applied to `eta_transport`.** In M&C that factor multiplies
+the kinetic-limit flux `τ·L_φ·R_n`, which carries `C_eq` with it; ours multiplies a
+dimensionless relative reactivity, which does not. Swapping τ in alone drops the
+median 21.9× and undershoots the physical ceiling by ~5×, double-penalising a rate
+already anchored to field data. Recorded as `DAMKOHLER_TAU_APPLIED_IN_ETA = False`.
+
+**The corollary is now demonstrable in the app.** With τ, `τD_w` is at or above the
+p90 of cropland drainage on either limb, so all cropland sits where the flux is
+`C_eq·q` and the rate law drops out — Maher 2010 p.104: beyond L_eq the flux
+"conveys no information on the actual weathering kinetics or available surface area",
+and Godsey et al. 2009 measure near-chemostatic C–Q slopes of −0.05 to −0.15 across
+59 catchments. Dragging the grind slider from 700 to 40 µm now moves *fraction
+weathered* from 3.9% to 46% while the exported carbon stays pinned at the ceiling,
+and the limiting-factor label reverts to "Dissolution rate" only once the grind is
+coarse enough for the rate to genuinely bind.
+
+**The cap bounds the carbon, not the rock, and that separation is the physics.**
+`frac` — the one layer field trials can measure — is left unbounded. Rock can
+dissolve without the carbon leaving; the gap between the two layers is the retention
+problem, and it is now visible instead of being an inconsistency.
+
+**The 28.5 mmol/L was never specific to this map.** Beerling et al. 2024's CDR_pot
+of 10.5 tCO₂/ha over four years implies 29.8 mmol/L at Illinois tile drainage of
+200 mm/yr, and that paper reports no drainage chemistry at all. Kelland et al. 2020
+closes the loop inside one experiment: measured cation release requires 21.1 mmol/L
+against measured leachate alkalinity of 1.10 ± 0.147, statistically indistinguishable
+from control. A 19× shortfall measured on both sides. The instinct to treat this as
+existential for ERW generally rather than as a local bug was correct.
+
+**What it did not fix, now recorded as a new to-do item.** The level. Field trials
+achieve 0.11–0.75 mmol/L, 5–10× *below* this ceiling, because cations are retained in
+secondary phases rather than exported — 10–50× more retained than exported (Hammes
+et al. 2025), retarded fractions of 93–98% (te Pas et al. 2025). The capped map still
+sits ~2–4× above the trials that measured drainage chemistry directly, against
+Dupla et al. 2025's 0.100 ± 0.030 tCO₂/ha/yr at the same 20 t/ha. Cation retention is
+now the largest missing term and is entered in `to_do.md` as item R with explicit
+entry criteria, because it is blocked on data rather than on effort — and because the
+one retention proxy that is readily griddable, CEC, is the wrong pool: SMEW
+attributes the gap primarily to CEC adsorption while both measurement studies find
+the exchangeable pool is the *minority* sink.
+
+**Reported, not fudged.** On saturated paddy cells the protocol-mandated 50,000 µatm
+lifts the ceiling to 13–18 mmol/L, above every anchor, and the literature contains no
+measured floodwater alkalinity or paddy lateral DIC export flux to check it against.
+Gate 13c records this rather than widening a tolerance to make it pass.
+
+**Also fixed in passing.** A pre-existing bug where a **pinned hover readout went
+stale** when a slider changed the numbers. It predates this work but the ceiling would
+have made it invisible, because "the number did not change" is frequently now the
+correct answer.
+
+Full analysis, including the five anchors and the three-way cross-check, in
+`FLUX_RECONCILIATION_2026-08.md`; the four analysis scripts are in
+`scripts/analysis/`.
+
 ## Two new results, July 2026
 
 Both came from data and papers already within reach, and both change what to work

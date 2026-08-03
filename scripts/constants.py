@@ -136,6 +136,9 @@ PB82_K1 = (-356.3094, -0.06091964, 21834.37, 126.8339, -1_684_915.0)
 PB82_K2 = (-107.8871, -0.03252849, 5151.79, 38.92561, -563_713.9)
 PB82_KH = (108.3865, 0.01985076, -6919.53, -40.45154, 669_365.0)
 PB82_KW = (-283.971, -0.05069842, 13323.0, 102.24447, -1_119_669.0)
+# Calcite solubility product, same paper and same functional form with e = 0.
+# Needed for the drainage-concentration ceiling below, not for eta_DIC.
+PB82_KCAL = (-171.9065, -0.077993, 2839.319, 71.595, 0.0)
 
 # Soil pCO2, microatmospheres. These are MANDATED values, not our estimates:
 # Isometric "Enhanced Weathering in Agriculture" protocol v1.2, section
@@ -304,6 +307,8 @@ Z_90_TWO_SIDED = 3.289707253902945
 # ---------------------------------------------------------------------------
 MOL_CO2_PER_KMOL_CHARGE_T = 0.044        # t CO2 per kmol charge
 M_CAO, M_MGO = 56.077, 40.304            # g mol-1
+M_CO2_G_MOL = 44.009                     # g mol-1, unrounded; the flux ceiling
+                                         # is a bound so it uses the exact mass
 
 # Published maximum CO2 uptake per tonne of pure mineral, t CO2 / t.
 # Puro.earth ERW Methodology Draft Edition 2025 v.1, Table 1.1 p.20.
@@ -768,6 +773,109 @@ DW_ERW_ENHANCED_RATIONALE = (
     "saprolite, shortening equilibration time and raising effective D_w above "
     "the natural-catchment fit. Not empirically constrained for ERW."
 )
+
+# The tau question, RESOLVED from the primary source, August 2026. Recorded here
+# because it changes what D_w means rather than what it is.
+#
+# M&C Eq. 3 as printed is C = C_eq * (tau*D_w/q) / (1 + tau*D_w/q) with
+# tau = e^2, so the dimensionless factor on the FLUX is q/(q + tau*D_w). tau is
+# NOT already folded into the Fig. 2 contour labels: those labels reproduce to
+# two significant figures from the paper's own printed R_n,max = 1085 umol/L/yr,
+# C_eq = 375 umol/L and L_phi = 0.1 m using bare D_w = L_phi/T_eq, while Fig. 2B's
+# plotted flux plateaus match C_eq*tau*D_w and are 0.8 of a decade off without
+# tau. So applying tau on top of a Fig-2-derived D_w is correct.
+#
+# Consequence: tau*D_w = 2.217 m/yr at D_w = 0.3, or 0.222 at D_w = 0.03. Either
+# way that is at or above the p90 of cropland drainage (229 mm/yr), so ALL
+# cropland sits on the low-q limb where C -> C_eq and the flux is C_eq*q. On that
+# limb the rate law, mineralogy, grind and temperature drop out of the flux
+# entirely -- Maher 2010 p. 104 states it directly: beyond L_eq the flux c_eq*q
+# "conveys no information on the actual weathering kinetics or available surface
+# area."
+#
+# WE DELIBERATELY DO NOT APPLY tau INSIDE eta_transport. In M&C the q/(q+tau*D_w)
+# factor multiplies the kinetic-limit FLUX tau*L_phi*R_n, which carries C_eq with
+# it; our eta multiplies a dimensionless relative reactivity, which does not. So
+# swapping tau in on its own drops the median 21.9x and undershoots the physical
+# ceiling by ~5x, double-penalising a rate that is ALREADY anchored to field
+# data. The ceiling below is the correct expression of the same physics.
+DAMKOHLER_TAU = 2.718281828459045 ** 2      # e^2, M&C 2014 Eq. 3 and Table S1
+DAMKOHLER_TAU_APPLIED_IN_ETA = False
+DAMKOHLER_TAU_SOURCE = (
+    "Maher & Chamberlain 2014 Eq. 3 + Table S1 ('tau -- Scaling parameter "
+    "(e^n) -- e^n, n = 2'); SI p.1 'allows for the concentration to reach "
+    "99.9% of ceq when the travel time equals the equilibrium time'"
+)
+
+# ---------------------------------------------------------------------------
+# DRAINAGE-CONCENTRATION CEILING on the carbon flux
+#
+# The carbon reported has to leave the field dissolved in the water that leaves
+# the field. That bounds it at  q * [HCO3-]_max * 44,  independently of how fast
+# the rock dissolves. Without this bound the model implied 28.5 mmol/L HCO3- in
+# drainage at the median cropland cell.
+#
+# WHAT SETS [HCO3-]_max. Not the cell's pre-treatment pH: pH is endogenous, and
+# adding base cations at fixed pCO2 raises alkalinity and pH together (that is
+# the same carbonate equation eta_dic uses, read the other way). Holding pH fixed
+# gives 0.42 mmol/L at the median, which is ~8-15x too strict -- and is, to two
+# significant figures, the observed mean alkalinity of streams draining
+# UNAMENDED volcanic rock (0.42 mmol/L, Meybeck, EOLSS "Chemical Characteristics
+# of Rivers" Table 1A). A good baseline; the wrong ceiling.
+#
+# The bound is where the rising pH meets CARBONATE SATURATION. Solving charge
+# balance 2[Ca]+2[Mg] = [HCO3-] simultaneously with fixed pCO2 and calcite
+# saturation state Omega gives the closed form in kinetics.alkalinity_ceiling.
+#
+# Omega = 1 is the strict thermodynamic reading. Omega = 10 is the shipped
+# default because carbonate precipitation is kinetically inhibited by DOC and
+# phosphate: Zhang et al. 2022 state precipitation in river water "is generally
+# observed to be negligible at Omega < 10" and run their own model over
+# Omega = 5-25, and soils carry far more DOC than rivers. Both are reported.
+#
+# FIVE INDEPENDENT ANCHORS on the resulting 3.0-6.5 mmol/L, none sharing
+# assumptions with the closed form:
+#   Zhang et al. 2022 riverine carbon transport potential, back-converted
+#     (7.1-21.3 GtCO2/yr over 37,288 km3/yr global discharge)   4.3-13.0 mmol/L
+#   Hamilton et al. 2007 Midwest agricultural TILE DRAINAGE and
+#     limed-row-crop porewater (the closest analogue there is)     1-7 mmol/L
+#   Meybeck pristine-river 99th percentile (363 mg/L)                5.95
+#   Meybeck carbonate-terrain streams, the natural high case         3.15
+#   soil-pH backstop: holding 10 mmol/L needs pH 8.16 at 4,000 uatm,
+#     above essentially all non-calcareous cropland              ceiling ~10
+#
+# WHAT THIS IS NOT. It is not the reason the map's level is high. Field trials
+# achieve 0.11-0.75 mmol/L, i.e. 5-10x BELOW this ceiling, because cations are
+# retained in secondary phases rather than exported (10-50x more retained than
+# exported, Hammes et al. 2025). The ceiling is a rail that makes an impossible
+# claim impossible; the level problem is the lab-to-field rate discrepancy and
+# belongs to the kinetics item. See to_do.md items 0 and 2.
+# ---------------------------------------------------------------------------
+FLUX_CEILING_ON = True
+FLUX_CEILING_OMEGA = 10.0                  # shipped default, kinetically inhibited
+FLUX_CEILING_OMEGA_STRICT = 1.0            # thermodynamic reading, reported alongside
+FLUX_CEILING_OMEGA_RANGE = (1.0, 10.0)
+# Share of the divalent-cation charge carried by Ca rather than Mg. Only Ca
+# constrains calcite; magnesite is kinetically inhibited at surface temperature,
+# so a lower f_Ca RAISES the ceiling. Basalt releases Ca and Mg in roughly equal
+# charge, so 0.5. Sensitivity at 10,000 uatm, Omega = 1: f_Ca 0.9 -> 3.38,
+# 0.5 -> 4.11, 0.2 -> 5.57, 0.05 -> 8.85 mmol/L.
+FLUX_CEILING_F_CA = 0.5
+FLUX_CEILING_F_CA_RANGE = (0.2, 0.9)
+FLUX_CEILING_SOURCE = (
+    "calcite saturation at the cell's own soil pCO2 and temperature, with "
+    "charge balance 2[Ca]+2[Mg] = [HCO3-]; Plummer & Busenberg 1982 constants. "
+    "Omega < 10 inhibition after Zhang et al. 2022, Limnol. Oceanogr. 67, "
+    "doi:10.1002/lno.12244"
+)
+# Anchors above, as data so the app and the docs cannot drift from this file.
+FLUX_CEILING_ANCHORS_MMOL_L = {
+    "Zhang 2022 riverine CTP, back-converted": (4.3, 13.0),
+    "Hamilton 2007 Midwest tile drainage / porewater": (1.0, 7.0),
+    "Meybeck pristine rivers, 99th percentile": (5.95, 5.95),
+    "Meybeck carbonate-terrain streams": (3.15, 3.15),
+    "field trials, ACHIEVED under ERW (not a ceiling)": (0.11, 0.75),
+}
 
 # ---------------------------------------------------------------------------
 # Feedstock delivered cost.

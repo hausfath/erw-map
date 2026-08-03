@@ -128,6 +128,57 @@ window.ERW = {
     "lo": -3.0,
     "hi": 3.0
   },
+  "fluxCeiling": {
+    "on": true,
+    "enc": {
+      "lo": -4.0,
+      "hi": 0.3
+    },
+    "omega": 10.0,
+    "omegaStrict": 1.0,
+    "omegaRange": [
+      1.0,
+      10.0
+    ],
+    "fCa": 0.5,
+    "source": "calcite saturation at the cell's own soil pCO2 and temperature, with charge balance 2[Ca]+2[Mg] = [HCO3-]; Plummer & Busenberg 1982 constants. Omega < 10 inhibition after Zhang et al. 2022, Limnol. Oceanogr. 67, doi:10.1002/lno.12244",
+    "anchors": {
+      "Zhang 2022 riverine CTP, back-converted": [
+        4.3,
+        13.0
+      ],
+      "Hamilton 2007 Midwest tile drainage / porewater": [
+        1.0,
+        7.0
+      ],
+      "Meybeck pristine rivers, 99th percentile": [
+        5.95,
+        5.95
+      ],
+      "Meybeck carbonate-terrain streams": [
+        3.15,
+        3.15
+      ],
+      "field trials, ACHIEVED under ERW (not a ceiling)": [
+        0.11,
+        0.75
+      ]
+    },
+    "bindsAreaFrac": 0.9647,
+    "medianTco2HaYr": 0.2202,
+    "warmCoolUncapped": 4.37,
+    "warmCoolCeiling": 0.91
+  },
+  "damkohler": {
+    "dw": 0.03,
+    "dwRange": [
+      0.001,
+      0.3
+    ],
+    "tau": 7.3891,
+    "tauInEta": false,
+    "source": "Maher & Chamberlain 2014, Science 343, 1502 (Fig. 2 contours)"
+  },
   "psd": {
     "refD50": 150.0,
     "refWidth": 1.5,
@@ -604,7 +655,7 @@ window.ERW = {
   },
   "stats": {
     "croplandGha": 1.215,
-    "cdrMedian": 0.79,
+    "cdrMedian": 0.22,
     "quarryPoints": 5295
   },
   "provenance": {

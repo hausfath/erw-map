@@ -14,7 +14,16 @@ and validated differently:
                            Zero free parameters. This is the term Cascade's
                            index omits.
 
-The product of the two is the reactivity index. They must stay separate because
+  flux_ceiling_t_ha_yr()-- the most carbon the drainage water can physically
+                           carry away, q * [HCO3-]_max * 44. A BOUND on the
+                           output of the two above, not a third factor. It shares
+                           the carbonate constants with eta_dic but answers a
+                           different question: eta_dic asks what share of
+                           released alkalinity carries carbon at a given pH,
+                           this asks how much alkalinity the water can hold at
+                           all, with pH free to rise.
+
+The product of the first two is the reactivity index. They must stay separate because
 the field-trial calibration target (Beerling's CDRpot) is a cation-loss upper
 bound that already assumes eta_dic = 1; folding eta_dic in before fitting would
 double-count it.
@@ -36,9 +45,12 @@ __all__ = [
     "mineral_rate",
     "rate_ca_mg_release",
     "carbonate_constants",
+    "k_calcite",
     "eta_dic",
     "ph_half",
     "eta_transport",
+    "alkalinity_ceiling_mol_l",
+    "flux_ceiling_t_ha_yr",
     "cascade_baseline_index",
     "element_release",
 ]
@@ -264,6 +276,85 @@ def carbonate_constants(T_K):
     )
 
 
+def k_calcite(T_K):
+    """Calcite solubility product, Plummer & Busenberg 1982, same functional
+    form as the acid constants. -8.480 at 25 C against the accepted -8.48."""
+    return _pb82(C.PB82_KCAL, T_K)
+
+
+# ---------------------------------------------------------------------------
+# Drainage-concentration ceiling
+# ---------------------------------------------------------------------------
+def alkalinity_ceiling_mol_l(pco2_uatm, T_K, omega=None, f_ca=None):
+    """Maximum drainage [HCO3-] in mol/L, set by carbonate saturation.
+
+    THIS IS NOT eta_dic READ BACKWARDS, and the difference is the whole point.
+    eta_dic answers "at this cell's pH, what share of released alkalinity carries
+    carbon?" -- pH exogenous. This answers "how much alkalinity can the water hold
+    at all?" -- pH ENDOGENOUS, because adding base cations at fixed pCO2 raises
+    alkalinity and pH together, and raising pH is what a silicate amendment is
+    for. Treating the pre-treatment pH as a ceiling gives 0.42 mmol/L at the
+    median cropland cell, which is the observed alkalinity of streams draining
+    UNAMENDED volcanic rock -- a baseline, not a bound.
+
+    Closed form. With A = [HCO3-] and pH free, fixed pCO2 gives
+
+        [H+]   = K1 * K_H * pCO2 / A                (open system, A dominates DIC)
+        [CO3--] = K2 * A / [H+] = K2 * A^2 / (K1 K_H pCO2)
+
+    and charge balance on a basalt-derived solution, 2[Ca] + 2[Mg] = A, with
+    f_ca the Ca share of that divalent charge, gives [Ca] = f_ca * A / 2. Then
+    Omega = [Ca][CO3--]/Ksp yields
+
+        A = ( 2 * Omega * K1 * K_H * pCO2 * Ksp / (f_ca * K2) ) ** (1/3)
+
+    The cube root is why this is robust: being wrong about soil pCO2 by 5x moves
+    the ceiling only 1.7x. Temperature is weaker and runs the OTHER WAY from the
+    rate law -- 3.56 / 3.03 / 2.58 mmol/L at 5 / 15 / 25 C -- so on the
+    water-limited limb warm cropland is slightly worse per unit drainage, not
+    better. That is the single most consequential consequence of this term.
+
+    Only Ca constrains calcite, so f_ca < 1 raises the ceiling; magnesite is
+    kinetically inhibited at surface temperature and is not imposed at all.
+
+    Validated in test_kinetics.py against the textbook open-system calcite
+    benchmark (pure water + calcite at 400 uatm -> ~1 mmol/L alkalinity, pH ~8.3)
+    and against five independent literature anchors. Activity coefficients are 1,
+    as everywhere else in this module; at these ionic strengths that biases the
+    ceiling LOW by ~10-20%, i.e. conservative toward the flux being critiqued.
+    """
+    if omega is None:
+        omega = C.FLUX_CEILING_OMEGA
+    if f_ca is None:
+        f_ca = C.FLUX_CEILING_F_CA
+    K1, K2, KH, _ = carbonate_constants(T_K)
+    Ksp = k_calcite(T_K)
+    p = np.asarray(pco2_uatm, dtype=float) * 1e-6
+    f = max(float(f_ca), 1e-6)
+    return np.cbrt(2.0 * float(omega) * K1 * KH * p * Ksp / (f * K2))
+
+
+def flux_ceiling_t_ha_yr(q_m_yr, pco2_uatm, T_K, omega=None, f_ca=None):
+    """Upper bound on gross CDR, tCO2/ha/yr, from what the drainage can carry.
+
+    ceiling = q * [HCO3-]_max * 44.01, i.e. Maher & Chamberlain's W_max = q*c_eq
+    limb, stated in their SI p.1: "The theoretical maximum solute flux is achieved
+    when the water spends sufficient time in the subsurface to reach equilibrium
+    among the primary and secondary minerals (Wmax = qceq)."
+
+    The other M&C limb, W_max = C_eq*tau*D_w, is not imposed: with tau = e^2 it
+    binds only above q = tau*D_w = 222 mm/yr (D_w = 0.03) or 2,217 (D_w = 0.3),
+    at or above the p90 of cropland drainage either way, and where it does bind
+    it gives a LOWER ceiling. So the q limb is the binding one across all cropland
+    and imposing it alone is conservative toward the flux being critiqued.
+
+    q in m/yr; 1 m/yr over 1 ha is 1e7 L/ha/yr.
+    """
+    q = np.clip(np.asarray(q_m_yr, dtype=float), 0.0, None)
+    alk = alkalinity_ceiling_mol_l(pco2_uatm, T_K, omega=omega, f_ca=f_ca)
+    return q * 1e7 * alk * C.M_CO2_G_MOL / 1e6
+
+
 def eta_dic(pH, pco2_uatm, T_K):
     """Fraction of released base-cation charge that carries carbon as DIC.
 
@@ -455,24 +546,46 @@ def eta_transport(q_m_yr, D_w=None):
     carry the published range in constants.DAMKOHLER_DW_RANGE. An earlier
     version of this docstring said D_w was unconstrained, which was stale.
 
-    TWO OPEN PROBLEMS, both deliberately not acted on here, both recorded in
-    REVIEW_2026-07.md as the tabled "flux reconciliation" cluster:
+    THE CEILING IS NO LONGER MISSING, AND IT LIVES ELSEWHERE. Recasting their
+    Eq. 3 as a multiplier on a kinetic rate keeps the shape of the curve and drops
+    the finite concentration limit C_eq, which is why the CDR layer once needed a
+    hard clip and then a saturating exponential. That bound is now imposed
+    explicitly by flux_ceiling_t_ha_yr() and enforced by gate 12 in build_v0.py.
+    It is NOT imposed here, and the separation is deliberate: see below.
 
-      1. WHICH LIMB. Their Eq. 1 makes D_w proportional to reactive surface area
-         and inversely proportional to soil age, so freshly crushed feedstock in
-         a tilled topsoil arguably belongs at the 0.3 end (fresh minerals, short
-         path) rather than the 0.03 end (100,000-year regolith). If so, our
-         "correction" from 0.5 to 0.03 moved the wrong way. Unresolved.
-      2. NO CEILING. Recasting their Eq. 3 as a multiplier on a kinetic rate,
-         with the kinetic limit at q -> infinity, keeps the shape of the curve
-         and DROPS the finite concentration limit C_eq. Consequence, measured:
-         the CDR this model reports would require 28.5 mmol/L bicarbonate in
-         drainage water at the median cropland cell, against ~0.4 mmol/L at
-         that cell's own pH and pCO2. This is almost certainly why the layer
-         first needed a hard clip and now needs a saturating exponential.
+    THE TAU QUESTION IS RESOLVED, AND DELIBERATELY NOT APPLIED HERE. Their Eq. 3
+    as printed is C = C_eq * (tau*D_w/q) / (1 + tau*D_w/q) with tau = e^2, so the
+    dimensionless factor on the FLUX is q/(q + tau*D_w). tau is NOT already folded
+    into the Fig. 2 contour labels -- those reproduce to two significant figures
+    from the paper's own printed parameters using bare D_w = L_phi/T_eq, while
+    Fig. 2B's plotted plateaus match C_eq*tau*D_w and are 0.8 of a decade off
+    without tau. So applying tau on top of a Fig-2-derived D_w would be correct
+    arithmetic and the wrong thing to do HERE, because in M&C that factor
+    multiplies the kinetic-limit FLUX tau*L_phi*R_n, which carries C_eq with it,
+    whereas this eta multiplies a dimensionless relative reactivity, which does
+    not. Swapping tau in on its own drops the median 21.9x and undershoots the
+    physical ceiling by ~5x, double-penalising a rate that is ALREADY anchored to
+    field data. See constants.DAMKOHLER_TAU_APPLIED_IN_ETA.
 
-    Do not treat this term as settled. It sets the map's absolute level and, via
-    the moisture normalisation, most of its wet-dry contrast.
+    WHICH LIMB, still open but now second-order. Their Eq. 1 makes D_w
+    proportional to reactive surface area and inversely proportional to soil age,
+    so annually reapplied crushed feedstock in a tilled topsoil belongs at the 0.3
+    end (T_s ~ 1 yr, f_w ~ 1) rather than the 0.03 end, which the Fig. 2 caption
+    ties to "L_phi of 0.1 m and T_s of 100,000 years". We keep 0.03 because the
+    level is set by the explicit ceiling now rather than by this term, and because
+    moving D_w here without restructuring is exactly the double-penalty above.
+    What it still changes is the SHAPE of the wet-dry contrast, so it remains a
+    live sensitivity case rather than a settled default.
+
+    AND THE REGIME MATTERS MORE THAN EITHER. tau*D_w is 0.222 m/yr at D_w = 0.03
+    and 2.217 at 0.3, both at or above the p90 of cropland drainage (229 mm/yr).
+    So all cropland sits on the low-q limb where C -> C_eq and the flux is C_eq*q,
+    and Maher 2010 p.104 states the consequence directly: beyond L_eq the flux
+    c_eq*q "conveys no information on the actual weathering kinetics or available
+    surface area." Empirically the same: Godsey et al. 2009 measure
+    concentration-discharge slopes of -0.05 to -0.15 across 59 catchments, i.e.
+    near-chemostatic, so flux scales essentially linearly with q. Treat any result
+    that leans on the rate law's spatial pattern accordingly.
 
     q must include irrigation return flow on irrigated cells, not just
     precipitation surplus, or the Indo-Gangetic Plain is wrongly penalised.

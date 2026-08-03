@@ -36,7 +36,10 @@
     frac: "Share of the applied rock predicted to weather in the first year, " +
           "at the current grind.",
   };
-  const FACTOR_COLORS = ["#e0704f", "#4f9fe0", "#8fd14f"];
+  // Index 3 is the drainage-concentration ceiling, not one of the three terms.
+  // Must match factorColor() in the shader: vec3(0.796, 0.549, 0.902).
+  const FACTOR_COLORS = ["#e0704f", "#4f9fe0", "#8fd14f", "#cb8ce6"];
+  const CEIL_LABEL = "Drainage cannot carry it";
 
   let gl, prog, quad, texA, texB, texC, texRamp, texRampFrac, cpu = null;
   let mode = "score";
@@ -51,6 +54,10 @@
   // against each other.
   const econ = {costExp: E.cost ? E.cost.expDefault : 0};
   const CRIT = E.terms;
+  // Drainage-concentration ceiling. Falls back to OFF with a neutral encoding if
+  // an older engine_constants.js is served, so a stale build degrades to the
+  // previous behaviour rather than throwing on load.
+  const FC = E.fluxCeiling || {on: false, enc: {lo: -4, hi: 0.3}};
 
   // Data extent, from the generated grid constants.
   const DATA = {
@@ -131,6 +138,8 @@
   uniform vec3 uExp;              // term exponents; 1,1,1 == the physics
   uniform int  uMode;             // 0 suitability, 1 limiting, 2 fraction weathered
   uniform vec2 uL1Enc;            // lo, hi of the stored L1 range
+  uniform vec2 uCeilEnc;          // lo, hi of log10(ceiling / cdrPerFrac) in tex2.b
+  uniform int  uCeilOn;           // 1 = apply the drainage-concentration ceiling
   uniform float uSsaShift;        // log10(SSA(d50,width) / SSA(ref))
   uniform float uKdiss;           // -ln(1 - dissolved fraction at reference)
   uniform float uCdrPerFrac;      // tCO2/ha/yr per unit dissolved fraction
@@ -145,7 +154,8 @@
   vec3 factorColor(int i) {
     if (i == 0) return vec3(0.878, 0.439, 0.310);
     if (i == 1) return vec3(0.310, 0.624, 0.878);
-    return vec3(0.561, 0.820, 0.310);
+    if (i == 2) return vec3(0.561, 0.820, 0.310);
+    return vec3(0.796, 0.549, 0.902);          // 3 = drainage cannot carry it
   }
 
   void main() {
@@ -191,12 +201,6 @@
     float ld = uExp.y * log(max(eDic, 1e-12));
     float lt = uExp.z * log(max(eTr,  1e-12));
 
-    if (uMode == 1) {                          // which term costs the most here
-      int lo = (lr <= ld && lr <= lt) ? 0 : ((ld <= lt) ? 1 : 2);
-      fragColor = vec4(factorColor(lo), 1.0);
-      return;
-    }
-
     // Gross CDR, then suitability as a value function OF THAT. Zero CDR gives
     // zero suitability by construction rather than by tuning a floor.
     // eta_DIC stays OUT of the dissolution exponential: carbonate speciation
@@ -211,6 +215,9 @@
     // negligible cutoff: this is a physical quantity whose zero is meaningful on
     // the ramp itself, so masking the bottom would hide real information rather
     // than protect against over-reading a near-zero score.
+    //
+    // This layer is deliberately NOT bounded by the drainage ceiling below. It is
+    // the rock dissolving, which is a different quantity from the carbon leaving.
     if (uMode == 2) {
       vec3 fc = texture(uRampFrac, vec2(clamp(frac, 0.0, 1.0), 0.5)).rgb;
       fragColor = vec4(fc, 1.0);
@@ -221,6 +228,34 @@
     // frac via X. Multiplying again applied the grind twice -- at d50 = 40 um
     // that inflated CO2 by 3.45x and broke the stoichiometric ceiling.
     float cdr = frac * exp(ld) * uCdrPerFrac;
+
+    // DRAINAGE-CONCENTRATION CEILING. The carbon has to leave dissolved in the
+    // water that leaves, so it is bounded by q * [HCO3-]_max * 44 no matter how
+    // fast the rock dissolves. This MUST be applied here and not only in Python:
+    // the grind slider recomputes cdr live on the GPU, so without it the slider
+    // would walk the displayed carbon straight back through the bound.
+    //
+    // Deliberately NOT applied to frac above. Rock can dissolve without the
+    // carbon leaving -- that is the retention lag field trials measure -- so the
+    // fraction-weathered layer stays unbounded and the gap between the two is
+    // real information rather than an inconsistency.
+    float ceil = pow(10.0, mix(uCeilEnc.x, uCeilEnc.y,
+                               clamp((b.b * 255.0 - 5.0) / 250.0, 0.0, 1.0)))
+                 * uCdrPerFrac;
+    bool ceilBinds = uCeilOn == 1 && ceil < cdr;
+    if (uCeilOn == 1) cdr = min(cdr, ceil);
+
+    // Which term costs the most here. The ceiling gets its OWN state rather than
+    // being folded into the drainage term: when it binds, the limit is not that
+    // the water moves too slowly, it is that the water cannot hold the carbon at
+    // any speed -- and on 96.5% of cropland that is the operative limit, which is
+    // exactly the thing a reader needs to be told.
+    if (uMode == 1) {
+      if (ceilBinds) { fragColor = vec4(factorColor(3), 1.0); return; }
+      int lo = (lr <= ld && lr <= lt) ? 0 : ((ld <= lt) ? 1 : 2);
+      fragColor = vec4(factorColor(lo), 1.0);
+      return;
+    }
 
     if (cdr < uNegligible) { fragColor = NEGLIGIBLE; return; }
 
@@ -404,6 +439,8 @@
     gl.uniform3f(u("uExp"), termExp.reactivity, termExp.eta_dic, termExp.drainage);
     gl.uniform1i(u("uMode"), mode === "score" ? 0 : (mode === "limiting" ? 1 : 2));
     gl.uniform2f(u("uL1Enc"), E.l1Enc.lo, E.l1Enc.hi);
+    gl.uniform2f(u("uCeilEnc"), FC.enc.lo, FC.enc.hi);
+    gl.uniform1i(u("uCeilOn"), FC.on ? 1 : 0);
     gl.uniform1f(u("uSsaShift"), ssaShift());
     gl.uniform1f(u("uKdiss"), K_DISS);
     gl.uniform1f(u("uCdrPerFrac"), E.cdrPerFrac);
@@ -504,7 +541,7 @@
      One definition each, used by the hover readout and the stability sample.
      The shader has its own copy in GLSL; gate 8 in test_kinetics.py asserts the
      generated constants both read from agree with Python. */
-  function grossCdr(rel, eDic, eTr) {
+  function grossCdr(rel, eDic, eTr, ceil) {
     const lr = termExp.reactivity * Math.log(Math.max(rel, 1e-12));
     const ld = termExp.eta_dic * Math.log(Math.max(eDic, 1e-12));
     const lt = termExp.drainage * Math.log(Math.max(eTr, 1e-12));
@@ -513,7 +550,15 @@
     // must not multiply by it again -- see the matching shader comments.
     const X = Math.exp(lr + lt);
     const frac = 1 - Math.exp(-K_DISS * X);
-    return {cdr: frac * Math.exp(ld) * E.cdrPerFrac, frac, contrib: [lr, ld, lt]};
+    // The ceiling bounds the CARBON and not the rock, so frac is returned
+    // unbounded and cdr is capped. Mirrors the shader exactly; gate 8 in
+    // test_kinetics.py asserts both read the same generated constants.
+    const uncapped = frac * Math.exp(ld) * E.cdrPerFrac;
+    const capped = (FC.on && ceil !== undefined) ? Math.min(uncapped, ceil)
+                                                 : uncapped;
+    return {cdr: capped, cdrUncapped: uncapped, ceil, frac,
+            ceilBinds: FC.on && ceil !== undefined && ceil < uncapped,
+            contrib: [lr, ld, lt]};
   }
 
   function suitabilityOf(cdr) {
@@ -532,12 +577,20 @@
 
   /* Decode the raw physical terms at a cell index. */
   function termsAt(i) {
-    const A = cpu.A, C3 = cpu.C;
+    const A = cpu.A, B = cpu.B, C3 = cpu.C;
     const raw = (b) => clamp(0, (b - 5) / 250, 1);
     const l1 = E.l1Enc.lo + raw(A[i]) * (E.l1Enc.hi - E.l1Enc.lo) + ssaShift();
     const fl = E.cost ? E.cost.floor : 1;
     return {rel: Math.pow(10, l1), l1, eDic: raw(A[i + 1]), eTr: raw(A[i + 2]),
+            ceil: decodeCeil(B[i + 2]),
             vCost: fl + raw(C3[i + 2]) * (1 - fl)};
+  }
+
+  /* tex2.b holds log10(ceiling / cdrPerFrac), so the arid tail keeps resolution.
+     One definition, used by the hover readout and the stability sample. */
+  function decodeCeil(byte) {
+    const t = clamp(0, (byte - 5) / 250, 1);
+    return Math.pow(10, FC.enc.lo + t * (FC.enc.hi - FC.enc.lo)) * E.cdrPerFrac;
   }
 
   /* Invert the cost value function to report $/t, so the readout shows the
@@ -671,22 +724,40 @@
   }
 
   let pinned = false;
+  // Last cell drawn in the readout, so the box can be RE-rendered when a slider
+  // changes the numbers without the mouse moving. Without this a pinned readout
+  // silently went stale -- a latent bug that predates the drainage ceiling but
+  // that the ceiling makes invisible, because "the number did not change" is
+  // frequently the CORRECT answer once the cap binds, so a stale box and a
+  // correct one look identical.
+  let lastCell = null, lastPos = null;
+
   function onMove(ev) {
     if (pinned) return;
+    lastPos = {clientX: ev.clientX, clientY: ev.clientY};
+    lastCell = cpu ? screenToCell(ev) : null;
+    renderReadout();
+  }
+
+  /* Re-render the readout for lastCell. Called by onMove and by refresh(). */
+  function renderReadout() {
     const box = document.getElementById("readout");
-    const cell = cpu ? screenToCell(ev) : null;
-    if (!cell) { box.classList.add("hidden"); return; }
+    const cell = lastCell, ev = lastPos;
+    if (!cell || !ev || !cpu) { box.classList.add("hidden"); return; }
     const B = cpu.B, i = cell.i;
     const flags = B[i + 1];
     if (!(flags & 1)) { box.classList.add("hidden"); return; }
 
     const t = termsAt(i);
-    const g = grossCdr(t.rel, t.eDic, t.eTr);
+    const g = grossCdr(t.rel, t.eDic, t.eTr, t.ceil);
     const econOn = econ.costExp > 0;
     const score = suitabilityOf(g.cdr) * Math.pow(t.vCost, econ.costExp);
-    // Limiting term = the largest negative contribution to log X.
+    // Limiting term = the largest negative contribution to log X -- unless the
+    // drainage cannot carry the carbon at all, which outranks any of the three
+    // because it is a bound rather than a rate.
     let lo = 0;
     for (let k = 1; k < 3; k++) if (g.contrib[k] < g.contrib[lo]) lo = k;
+    const limLabel = g.ceilBinds ? CEIL_LABEL : CRIT[lo].label;
 
     const cdr = g.cdr;
     const pe = E.phEncoding;
@@ -705,14 +776,23 @@
       `<tr><td class="k">Suitability${econOn ? " (with cost)" : ""}</td><td class="v"><b>${(score * 100).toFixed(0)}</b></td></tr>` +
       `<tr><td class="k">Gross CO₂ removal</td><td class="v"><b>${cdr < 0.01 ? cdr.toExponential(1) : cdr.toFixed(2)}</b> tCO₂/ha/yr</td></tr>` +
       `<tr><td class="k">Weathered in year 1</td><td class="v">${(g.frac * 100).toFixed(1)}%</td></tr>` +
-      `<tr><td class="k">Limiting factor</td><td class="v">${CRIT[lo].label}</td></tr>` +
+      // Shown only when it binds, and it names what was cut. The rock still
+      // dissolves at the rate above; the carbon it releases cannot all leave.
+      (g.ceilBinds
+        ? `<tr><td class="k">Drainage ceiling</td><td class="v">capped from ` +
+          `${g.cdrUncapped < 0.01 ? g.cdrUncapped.toExponential(1) : g.cdrUncapped.toFixed(2)}</td></tr>`
+        : ``) +
+      `<tr><td class="k">Limiting factor</td><td class="v">${limLabel}</td></tr>` +
       `<tr><td class="k">Soil pH (0–15 cm)</td><td class="v">${soilPh.toFixed(1)}</td></tr>` +
       (econOn && usdT !== null
         ? `<tr><td class="k">Delivered rock</td><td class="v">$${usdT.toFixed(0)}/t · $${(usdT / E.cost.tco2PerT).toFixed(0)}/tCO₂</td></tr>`
         : ``) +
       `</table>` +
       flagHtml +
-      `<div class="flag pin-hint">Click to ${pinned ? "release" : "pin"}</div>`;
+      // Generated here rather than patched in by setPinned, because renderReadout
+      // now also runs while pinned (on slider changes) and would overwrite it.
+      `<div class="flag pin-hint">${pinned ? "Pinned — click or Esc to release"
+                                           : "Click to pin"}</div>`;
     box.classList.remove("hidden");
     const wrap = $("map-wrap").getBoundingClientRect();
     let x = ev.clientX - wrap.left + 14, y = ev.clientY - wrap.top + 14;
@@ -725,9 +805,15 @@
   function renderLegend() {
     const L = $("legend");
     if (mode === "limiting") {
-      L.innerHTML = CRIT.map((c, i) =>
+      const rows = CRIT.map((c, i) =>
         `<div class="lrow"><span class="sw" style="background:${FACTOR_COLORS[i]}"></span>` +
-        `<span class="lbl">${c.label}</span></div>`).join("") + eligRows();
+        `<span class="lbl">${c.label}</span></div>`);
+      // The ceiling is a bound, not a term, so it is listed last and only when
+      // it is actually in force.
+      if (FC.on) rows.push(
+        `<div class="lrow"><span class="sw" style="background:${FACTOR_COLORS[3]}"></span>` +
+        `<span class="lbl">${CEIL_LABEL}</span></div>`);
+      L.innerHTML = rows.join("") + eligRows();
       return;
     }
     const isFrac = mode === "frac";
@@ -775,7 +861,7 @@
         if (!(B[i + 1] & 1)) continue;
         const crop = B[i] / 255;
         if (crop < 0.01) continue;
-        out.push([A[i], A[i + 1], A[i + 2], crop * wLat, cpu.C[i + 2]]);
+        out.push([A[i], A[i + 1], A[i + 2], crop * wLat, cpu.C[i + 2], B[i + 2]]);
       }
     }
     sample = out;
@@ -788,7 +874,11 @@
     const X = Math.exp(exps[0] * Math.log(Math.max(rel, 1e-12))
                      + exps[2] * Math.log(Math.max(raw(row[2]), 1e-12)));
     const eDic = Math.pow(Math.max(raw(row[1]), 1e-12), exps[1]);
-    const cdr = (1 - Math.exp(-K_DISS * X)) * eDic * E.cdrPerFrac;
+    let cdr = (1 - Math.exp(-K_DISS * X)) * eDic * E.cdrPerFrac;
+    // Same ceiling as the shader and the hover readout. Without it here the
+    // stability metric and the decile edges would be computed on a different
+    // model from the one being drawn.
+    if (FC.on && row[5] !== undefined) cdr = Math.min(cdr, decodeCeil(row[5]));
     const fl = E.cost ? E.cost.floor : 1;
     const vc = fl + raw(row[4] === undefined ? 255 : row[4]) * (1 - fl);
     return suitabilityOf(cdr) * Math.pow(vc, econ.costExp);
@@ -873,16 +963,22 @@
       <b>Limiting factor</b>, the term that costs each cell the most; and
       <b>Weathered in year&nbsp;1</b>, the fraction of applied rock predicted to
       dissolve — the quantity field trials can measure.</p>
-      <p>Read the limiting-factor layer with one caveat: the two efficiency terms
-      have a natural zero (efficiency&nbsp;=&nbsp;1) but the dissolution term is
-      measured against a reference condition (pH&nbsp;6.5, 15&nbsp;°C), and the
-      answer moves with that choice. On the reference used here drainage limits
-      the largest share of cropland; a reference 0.5&nbsp;pH units lower and
-      5&nbsp;°C warmer would make dissolution the largest. It shows which term is
-      furthest from its best case, not an absolute ranking of mechanisms.</p>
+      <p>Read the limiting-factor layer with two caveats. First,
+      <b>&ldquo;drainage cannot carry it&rdquo; is a bound, not a term</b>: where
+      the drainage-concentration ceiling binds it outranks all three factors,
+      because no rate can push more carbon out than the water can hold. That is
+      most of the map. Second, among the three terms themselves, the two
+      efficiency terms have a natural zero (efficiency&nbsp;=&nbsp;1) but the
+      dissolution term is measured against a reference condition (pH&nbsp;6.5,
+      15&nbsp;°C), so the answer moves with that choice: a reference
+      0.5&nbsp;pH units lower and 5&nbsp;°C warmer would make dissolution rank
+      largest more often. It shows which term is furthest from its best case, not
+      an absolute ranking of mechanisms.</p>
       <p>It is a screening map, not a site-selection tool: zoom is capped on
-      purpose, and every CO₂ figure is gross removal, before in-soil carbonate
-      precipitation, riverine re-release and strong-acid competition.</p>
+      purpose, and every CO₂ figure is gross removal. Carbonate saturation enters
+      only as an upper bound on what the drainage can carry, not as a modelled
+      precipitation loss; cation retention in the soil, riverine re-release and
+      strong-acid competition are all still outstanding.</p>
 
       <h3>How it is computed</h3>
       <ol>
@@ -953,20 +1049,40 @@
           ${E.cost.tortuosity} road tortuosity</td></tr>
         <tr><td>D_w (transport limitation)</td><td>${p.dw ? p.dw.value : "?"} m/yr
           (published range ${p.dw ? p.dw.range.join("–") : "?"})</td></tr>
+        <tr><td>Drainage ceiling, calcite Ω</td><td>${FC.omega ?? "—"}
+          (strict case ${FC.omegaStrict ?? "—"}; precipitation is negligible below
+          Ω&nbsp;≈&nbsp;10, so the shipped value is the generous one)</td></tr>
+        <tr><td>Ca share of divalent charge</td><td>${FC.fCa ?? "—"}
+          (only Ca constrains calcite; a lower share raises the ceiling)</td></tr>
       </table>
 
       <h3>Known limitations</h3>
-      <div class="flagbox"><p><b>The absolute CO₂ figures are not reconcilable
-      with the model's own water flux, and this is unresolved.</b> Carrying the
-      CO₂ this map reports would require a bicarbonate concentration in drainage
-      water far above what soil solution at each cell's own pH and pCO₂ can hold
-      — a median of about 28 mmol/L against roughly 0.4 mmol/L available, and
-      natural river water runs 0.5–4. The transport term is a Damköhler
-      <i>ratio</i> with no concentration ceiling, so nothing in the chain enforces
-      that bound. Reconciling it is the largest open problem in the model and
-      needs the field-trial literature alongside it, so it is stated here rather
-      than patched. Read the CO₂ layer as a relative ranking; treat the tonnage
-      as an illustration that is probably too high.</p></div>
+      <div class="flagbox"><p><b>Weathered cations do not all leave the soil, and
+      the map does not model the ones that stay.</b> Field measurements find
+      <b>10–50× more base cations retained</b> in exchange sites, iron and
+      manganese oxide pools and neoformed clays than are exported in leachate
+      (Hammes et al. 2025), with retarded fractions of 93–98% (te Pas et al.
+      2025). This map reports the export that would occur at steady state with no
+      lag, so the CO₂ figures are still likely high — by a factor of roughly 2–4
+      against the trials that have measured drainage chemistry directly. Modelled
+      export lag times reach 5–22 years (Kanzaki et al. 2025). This is the largest
+      missing term and it is blocked on data, not effort.</p></div>
+      <p><b>The carbon is now bounded by the water that carries it.</b> Gross CO₂
+      removal is capped at what the drainage can hold as bicarbonate without
+      carbonate precipitating — around ${FC.medianTco2HaYr ? FC.medianTco2HaYr.toFixed(2) : "0.22"}
+      tCO₂/ha/yr at the median cell. The cap binds on
+      <b>${FC.bindsAreaFrac ? (FC.bindsAreaFrac * 100).toFixed(0) : "97"}% of
+      cropland</b>, and where it binds the dissolution rate, mineral mix and grind
+      no longer change the answer, which is why the limiting-factor layer is
+      dominated by one class. The cap is applied to the CO₂ and <i>not</i> to
+      &ldquo;weathered in year 1&rdquo;: rock can dissolve without the carbon
+      leaving, and the gap between those two layers is the retention problem
+      above. Because the ceiling falls slightly with temperature while dissolution
+      rises steeply with it, capping removes most of the warm-climate advantage an
+      uncapped rate law produces${FC.warmCoolUncapped && FC.warmCoolCeiling
+        ? ` — the warmest-to-coolest ratio of the median goes from `
+          + `${FC.warmCoolUncapped.toFixed(1)}× to ${FC.warmCoolCeiling.toFixed(1)}×`
+        : ""}.</p>
       <p><b>The kinetics over-predict an independent laboratory test.</b> Against
       Gudbrandsson et al. (2011) crystalline-basalt dissolution (pH 2–11,
       5–75 °C), the Ca+Mg charge sum the map actually uses over-predicts by
@@ -977,9 +1093,12 @@
       (${E.kinetics.measuredEaRange[0]}–${E.kinetics.measuredEaRange[1]} across
       pH), and Schaef &amp; McGrail (2009) measure 30 kJ/mol on Columbia River
       basalt from an independent laboratory; Cascade's ${E.kinetics.cascadeEaKJ}
-      has the same problem, so it is wrong for a reason we share. Temperature
-      sensitivity drives the tropical tilt, so the tropics-versus-temperate
-      contrast shown is likely ~2× too strong.</p>
+      has the same problem, so it is wrong for a reason we share. This inflates
+      the tropics-versus-temperate contrast in the dissolution term by roughly
+      2×, but note it no longer propagates to the CO₂ layer over most of the map:
+      the drainage ceiling above binds first and does not reward warmth, so the
+      tropical tilt now shows up in &ldquo;weathered in year 1&rdquo; rather than
+      in the tonnage.</p>
       <p><b>The mineral mix is olivine-dominated.</b> Forsterite is 12% of the
       modelled rock by volume but supplies 80% of its base-cation release, so the
       map's pH and temperature response is closer to olivine's than to basalt's.
@@ -1046,6 +1165,9 @@
   /* ---------------- wiring ---------------- */
   function refresh() {
     syncSliders(); syncPsd(); syncEcon(); renderLegend(); updateStability(); draw();
+    // Keep the readout consistent with what is drawn. A pinned box in particular
+    // has no mousemove to bring it up to date.
+    renderReadout();
   }
 
   function setMode(m) {
@@ -1101,7 +1223,9 @@
     });
     c.addEventListener("mousemove", onMove);
     c.addEventListener("mouseleave", () => {
-      if (!pinned) $("readout").classList.add("hidden");
+      // Drop lastCell as well, or a later refresh() would resurrect a box the
+      // pointer has already left.
+      if (!pinned) { lastCell = null; $("readout").classList.add("hidden"); }
     });
     // The zoom-cap notice only appears when a zoom-in is actually refused at
     // the ceiling — the moment it answers a real question. Shown persistently

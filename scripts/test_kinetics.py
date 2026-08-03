@@ -26,11 +26,22 @@ Gate 11 Gudbrandsson et al. 2011: reproduce MEASURED Ca and Mg release from
 Gate 11b Can any single surface partition reproduce all FOUR measured elements?
         Two free parameters against Si, Ca, Mg and Fe, so it is over-identified
         and is a test rather than a fit. Answer: no. Reported, not hidden.
+Gate 13 The drainage-concentration ceiling reproduces the textbook open-system
+        calcite benchmark (pure water + calcite at 400 uatm -> ~1 mmol/L
+        alkalinity, pH ~8.3), which tests the algebra, the calcite constant and
+        the charge-balance coupling in one shot.
+Gate 13b That ceiling lands inside five independent measured anchors on drained
+        cropland, and FALLS with warming -- the property that makes it remove the
+        map's warm-climate gradient rather than merely rescale the level.
+Gate 13c REPORTED, not scored: on saturated (paddy) cells the mandated 50,000
+        uatm lifts the ceiling above every anchor, and no measured paddy drainage
+        DIC exists to check it against. Standing justification for field-data
+        ask #6.
 
 Two gates fail, both informatively: 11 (the rate law over-predicts) and 6c (the
-archetypes' mineral modes do not mass-balance their stated oxides). Note that
-"16 passed" is not 16 pieces of validation evidence -- see the summary the script
-prints, and docs/VALIDATION.md section 1.
+archetypes' mineral modes do not mass-balance their stated oxides). Note that a
+count of passes is not a count of validation evidence -- see the summary the
+script prints, and docs/VALIDATION.md section 1.
 """
 
 from __future__ import annotations
@@ -446,6 +457,26 @@ def gate8_browser_constants_match_python() -> None:
     if abs(payload["cdrPerFrac"] - expect) > 1e-4:
         problems.append(f"cdrPerFrac {payload['cdrPerFrac']} != {expect:.4f}")
 
+    # The flux ceiling is decoded and applied in the shader as well as here, so
+    # its encoding is now part of the anti-drift surface.
+    try:
+        from build_v0 import CEIL_ENC
+    except Exception:
+        CEIL_ENC = None
+    fc = payload.get("fluxCeiling")
+    if fc is None:
+        problems.append("fluxCeiling missing from payload")
+    else:
+        if CEIL_ENC is not None and [fc["enc"]["lo"], fc["enc"]["hi"]] != list(CEIL_ENC):
+            problems.append("fluxCeiling.enc differs")
+        if bool(fc["on"]) != bool(C.FLUX_CEILING_ON):
+            problems.append("fluxCeiling.on differs")
+        for key, val in (("omega", C.FLUX_CEILING_OMEGA),
+                         ("omegaStrict", C.FLUX_CEILING_OMEGA_STRICT),
+                         ("fCa", C.FLUX_CEILING_F_CA)):
+            if abs(fc[key] - val) > 1e-9:
+                problems.append(f"fluxCeiling.{key} differs")
+
     # Bilinear-interpolate the emitted table the way app.js does, and compare
     # against the exact integral at points deliberately BETWEEN grid nodes.
     P = payload["psd"]
@@ -842,6 +873,109 @@ def gate11b_surface_partition_overidentified() -> None:
     gate11b_surface_partition_overidentified.detail = cases
 
 
+def gate13_flux_ceiling_chemistry() -> None:
+    """The drainage-concentration ceiling, against a textbook benchmark.
+
+    The closed form solves charge balance, fixed pCO2 and calcite saturation
+    simultaneously. The clean external check is the classic open-system calcite
+    equilibrium: pure water plus calcite at atmospheric pCO2 gives roughly
+    1 mmol/L alkalinity, 0.5 mmol/L Ca and pH ~8.3 (any aqueous-geochemistry
+    text; e.g. Drever, The Geochemistry of Natural Waters). Setting f_Ca = 1 and
+    Omega = 1 must reproduce that, which tests the algebra, the calcite constant
+    and the charge-balance coupling in one shot.
+
+    Neglecting activity coefficients and the CaHCO3+ ion pair biases the result
+    LOW by ~10-20% at these ionic strengths, so the tolerance is one-sided-ish
+    and the ceiling that ships is mildly conservative toward the flux it bounds.
+    """
+    a = float(K.alkalinity_ceiling_mol_l(C.PCO2_ATMOSPHERIC_UATM, 298.15,
+                                        omega=1.0, f_ca=1.0))
+    K1, _, KH, _ = K.carbonate_constants(298.15)
+    pH = -math.log10(K1 * KH * C.PCO2_ATMOSPHERIC_UATM * 1e-6 / a)
+    ok = (0.85e-3 <= a <= 1.05e-3) and (8.0 <= pH <= 8.4)
+    record("13. Flux-ceiling chemistry vs calcite benchmark", ok,
+           f"pure water + calcite at {C.PCO2_ATMOSPHERIC_UATM:.0f} uatm -> "
+           f"alkalinity {a * 1e3:.3f} mmol/L, Ca {a * 1e3 / 2:.3f}, pH {pH:.2f}; "
+           f"textbook ~1.0 / ~0.5 / ~8.3")
+
+
+def gate13b_flux_ceiling_within_observed_range() -> None:
+    """The ceiling must land inside independently measured drainage chemistry.
+
+    Not a validation -- the anchors are analogues, not replicates of amended
+    cropland. It is a falsification test: if the closed form put the ceiling at
+    0.4 or at 30 mmol/L it would sit outside everything ever measured and the
+    model would be bounding the carbon at the wrong level. The tightest and most
+    relevant anchor is Hamilton et al. 2007 (GBC 21, GB2021), which measured
+    1-7 mmol/L in Midwest agricultural tile drainage and limed-row-crop
+    porewater, the closest available analogue to the quantity being bounded.
+
+    Scored on DRAINED cropland only, at the protocol's mandated 4,000 uatm. The
+    saturated (paddy) case is reported separately by gate 13c because it is not
+    checkable against anything -- see that gate.
+
+    Also asserts the direction of the temperature dependence, because it is the
+    single most consequential property of this term: C_eq FALLS with warming
+    while the rate law rises, so the ceiling removes most of the map's
+    warm-climate advantage rather than merely rescaling it.
+    """
+    lo_env = min(v[0] for v in C.FLUX_CEILING_ANCHORS_MMOL_L.values())
+    hi_env = max(v[1] for v in C.FLUX_CEILING_ANCHORS_MMOL_L.values())
+    probes = [float(K.alkalinity_ceiling_mol_l(
+                  C.PCO2_UNSATURATED_UATM, T_C + 273.15, omega=om)) * 1e3
+              for T_C in (5.0, 15.0, 25.0)
+              for om in (C.FLUX_CEILING_OMEGA_STRICT, C.FLUX_CEILING_OMEGA)]
+    inside = all(lo_env <= v <= hi_env for v in probes)
+
+    cold = float(K.alkalinity_ceiling_mol_l(C.PCO2_UNSATURATED_UATM, 278.15))
+    warm = float(K.alkalinity_ceiling_mol_l(C.PCO2_UNSATURATED_UATM, 298.15))
+    falls = warm < cold
+    hlo, hhi = C.FLUX_CEILING_ANCHORS_MMOL_L[
+        "Hamilton 2007 Midwest tile drainage / porewater"]
+    record("13b. Flux ceiling inside measured drainage chemistry", inside and falls,
+           f"drained cropland ceiling spans {min(probes):.2f}-{max(probes):.2f} "
+           f"mmol/L over 5-25 C and Omega {C.FLUX_CEILING_OMEGA_STRICT:g}-"
+           f"{C.FLUX_CEILING_OMEGA:g}, inside the {lo_env:.2f}-{hi_env:.2f} "
+           f"envelope of five independent anchors and straddling the most "
+           f"relevant one ({hlo:g}-{hhi:g}, Hamilton et al. 2007). Warming "
+           f"LOWERS it, {cold * 1e3:.2f} -> {warm * 1e3:.2f} mmol/L over 5-25 C "
+           f"({'correct sign' if falls else 'WRONG SIGN'})"
+           + ("" if inside else "; a probe fell outside the envelope"))
+
+
+def gate13c_paddy_ceiling_is_unvalidated() -> None:
+    """REPORTED, not scored: on saturated cells the ceiling exceeds every anchor.
+
+    The protocol mandates 50,000 uatm for saturated systems (Isometric EW-in-
+    agriculture v1.2, requirement R-D338-0), and since the ceiling goes as
+    pCO2^(1/3) that lifts it to roughly 13-18 mmol/L at the shipped Omega -- above
+    the top of every anchor available, including Zhang et al. 2022's
+    back-converted riverine limit.
+
+    This is not resolvable here, and deliberately not tolerance-fudged into a
+    pass. The literature contains NO measured floodwater alkalinity or paddy
+    lateral DIC export flux: every ERW-in-paddy trial reached measured only
+    solid-phase carbon. So on the 7.6% of cropland with material flooded
+    cell-time the ceiling is an extrapolation, not a bound checked against
+    anything. It is also the loosest part of the term, so it constrains those
+    cells least -- which is the honest way round, but it means paddy CDR in this
+    map is bounded mostly by the kinetics and not by this gate.
+
+    Recorded as the standing justification for field-data ask #6 (one measured
+    paddy drainage-water DIC or alkalinity export flux).
+    """
+    hi_env = max(v[1] for v in C.FLUX_CEILING_ANCHORS_MMOL_L.values())
+    probes = [float(K.alkalinity_ceiling_mol_l(
+                  C.PCO2_SATURATED_UATM, T_C + 273.15, omega=om)) * 1e3
+              for T_C in (5.0, 15.0, 25.0)
+              for om in (C.FLUX_CEILING_OMEGA_STRICT, C.FLUX_CEILING_OMEGA)]
+    record("13c. Paddy ceiling exceeds every anchor (reported)", None,
+           f"at the mandated {C.PCO2_SATURATED_UATM:.0f} uatm the ceiling is "
+           f"{min(probes):.2f}-{max(probes):.2f} mmol/L against an anchor "
+           f"envelope topping out at {hi_env:.2f}; no measured paddy drainage "
+           f"DIC exists to check it. Unvalidated on ~7.6% of cropland area")
+
+
 def report_calibration_arithmetic() -> None:
     """Not a gate -- context that catches the error class that bit us once.
 
@@ -878,7 +1012,10 @@ def main() -> int:
                gate8_browser_constants_match_python, gate9_ssa_scaling,
                gate10_zero_cdr_zero_suitability,
                gate11_gudbrandsson_no_free_parameters,
-               gate11b_surface_partition_overidentified):
+               gate11b_surface_partition_overidentified,
+               gate13_flux_ceiling_chemistry,
+               gate13b_flux_ceiling_within_observed_range,
+               gate13c_paddy_ceiling_is_unvalidated):
         try:
             fn()
         except Exception as exc:  # a crashing gate is a failing gate

@@ -49,6 +49,9 @@ changes only this file and says why.
 | Surface partition, all four elements | 0.5 log units (same as gate 11) | gate 11b |
 | Cropland area vs Potapov et al. | 2% | gate 1, FATAL |
 | Stoichiometric ceiling | hard bound, no tolerance | gate 3 |
+| Drainage-concentration ceiling | hard bound, no tolerance | gate 12 (build) |
+| Ceiling vs open-system calcite benchmark | 0.85–1.05 mmol/L, pH 8.0–8.4 | gate 13 |
+| Ceiling inside measured drainage anchors | envelope of five anchors, drained cells only | gate 13b |
 
 ### What is frozen alongside the 0.5-log tolerance
 
@@ -226,6 +229,38 @@ observationally. That ratio is the argument to put to operators.
   single number decides whether the Fe-redox seasonal term is first-order or nil.
 
 ## 5. Known asymmetries and open audit items
+
+- **The global gross total now sits BELOW its own pre-registered Tier 2 band, and
+  the band has deliberately not been widened.** With the drainage-concentration
+  ceiling imposed, global gross removal is **0.354 GtCO₂/yr** (1.472 uncapped)
+  against a pre-registered 0.5–4.0. Reported by gate 2b in the build, not enforced.
+  Widening the band to fit would defeat the purpose of pre-registering it. The
+  substantive point is in §2's own wording — the published range is "Consistency,
+  NOT validation… several estimates descend from the same rate-law and surface-area
+  lineage as ours" — and those estimates are not bounded by drainage transport
+  either. Beerling et al. 2024's CDR_pot implies ~29.8 mmol/L bicarbonate at
+  Illinois tile drainage, essentially the figure this model produced before the
+  ceiling. Falling below a band derived from that lineage is what imposing the bound
+  is supposed to do, but it does mean the map no longer has an external consistency
+  check on its absolute level, and the honest reading is that the trials
+  (0.05–0.15 tCO₂/ha/yr at 20 t/ha) are now the only anchor.
+- **The drainage-concentration ceiling is unvalidated on paddy cells.** The
+  protocol's mandated 50,000 µatm lifts it to 13–18 mmol/L at the shipped Ω,
+  above all five anchors, and the literature contains no measured floodwater
+  alkalinity or paddy lateral DIC export flux to check it against — every
+  ERW-in-paddy trial reached measured only solid-phase carbon. Reported by
+  gate 13c rather than tolerance-fudged. Affects ~7.6% of cropland area, and it is
+  the loosest part of the term, so it constrains those cells least. Standing
+  justification for field-data ask #6.
+- **Ω = 10 versus Ω = 1 is a real order-of-magnitude-adjacent choice, not a
+  detail.** It moves the cropland median from 0.102 to 0.220 tCO₂/ha/yr. Both are
+  reported by the build, and the shipped value is the *generous* one, so the level
+  is conservative toward the model rather than against it. There is no measurement
+  that discriminates between them in an amended agricultural soil.
+- **Gate 12 is a tautology once the cap is applied, by design.** It cannot
+  discover that the ceiling is right; it can only catch someone removing the cap,
+  reordering the operations, or adding a path that writes CDR without bounding it.
+  Counting it as validation evidence would be a category error.
 
 - **No gap ledger exists.** The claim that the CO₂ gap narrowed "without being
   tuned" rests on recollection. Going forward, record per commit: median CDR, the

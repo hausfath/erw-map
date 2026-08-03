@@ -38,6 +38,7 @@ soil pH, soil T, soil moisture
         ↓  frac = 1 − exp(−k·X)
         ↓  × η_DIC  (carbonate-equilibrium efficiency)
         ↓  × application rate × tCO₂ per tonne
+        ↓  min(·, q · [HCO₃⁻]_max · 44)   drainage-concentration ceiling
    gross CO₂ removal, tCO₂/ha/yr
         ↓  piecewise-linear value function on absolute breakpoints
    suitability, 0–1
@@ -59,6 +60,14 @@ soil pH, soil T, soil moisture
   was applied twice until July 2026 (once inside L1, once again on the CO₂
   figure), inflating CO₂ by up to 3.45× at the fine end of the slider and
   breaking the stoichiometric ceiling.
+- **The ceiling bounds the carbon, not the rock.** `frac` — the one layer field
+  trials can measure — is deliberately left unbounded, and only the CO₂ is capped.
+  Rock can dissolve without the carbon leaving: field trials measure 10–50× more
+  cations retained in secondary phases than exported, and one mesocosm study at up
+  to 200 t/ha measured zero increase in leachate DIC while the rock demonstrably
+  weathered. So the gap between the fraction-weathered layer and the capped CO₂
+  layer is real information, not an inconsistency. The cap is applied *after*
+  η_DIC, because what has to fit in the water is the bicarbonate.
 - **The three terms are a product with unit exponents by default**, so zero in any
   required term gives zero carbon. The sliders are **exponents**, not importance
   weights: you cannot prefer dissolution over alkalinity retention because both
@@ -98,6 +107,80 @@ whether moisture limitation of the *rate* and transport limitation of the
 absolute saturation moves **64% of cropland area** by reactivity decile, so this
 is a first-order open item, not a units nicety.
 
+## 2b. The drainage-concentration ceiling
+
+The carbon reported has to leave the field dissolved in the water that leaves the
+field. That bounds gross CO₂ removal at `q · [HCO₃⁻]_max · 44` regardless of how
+fast the rock dissolves. Before this was imposed the model implied **28.5 mmol/L**
+bicarbonate in drainage at the median cropland cell.
+
+**What sets `[HCO₃⁻]_max`.** Not the cell's pre-treatment pH. pH is endogenous:
+adding base cations at fixed pCO₂ raises alkalinity and pH together, which is the
+same carbonate equation η_DIC uses, read the other way. Holding pH fixed gives
+0.42 mmol/L at the median — and that figure is, to two significant figures, the
+observed mean alkalinity of streams draining **unamended** volcanic rock (Meybeck,
+EOLSS *Chemical Characteristics of Rivers*, Table 1A). A good baseline, and exactly
+the wrong thing to use as a ceiling, because removing mineral-supply limitation is
+what ERW is for.
+
+The bound is where the rising pH meets **carbonate saturation**. Solving charge
+balance `2[Ca] + 2[Mg] = [HCO₃⁻]` simultaneously with fixed pCO₂ and calcite
+saturation state Ω gives
+
+    [HCO₃⁻]_max = ( 2 · Ω · K₁ · K_H · pCO₂ · K_sp / (f_Ca · K₂) ) ^ (1/3)
+
+The cube root is what makes this robust: being wrong about soil pCO₂ by 5× moves
+the ceiling only 1.7×.
+
+**Ω = 10 ships; Ω = 1 is the strict reading and is reported alongside.** Carbonate
+precipitation is kinetically inhibited by DOC and phosphate — Zhang et al. 2022
+state it "is generally observed to be negligible at Ω < 10" and run their own model
+over Ω = 5–25 — and soils carry far more DOC than rivers. The pair spans 0.102 to
+0.220 tCO₂/ha/yr at the cropland median, and that spread is the honest uncertainty
+on the level.
+
+**Five independent anchors on the resulting 3.0–6.5 mmol/L**, none sharing
+assumptions with the closed form:
+
+| anchor | mmol/L |
+|---|---|
+| Zhang et al. 2022 riverine carbon transport potential, back-converted | 4.3–13.0 |
+| Hamilton et al. 2007 Midwest agricultural **tile drainage** and limed-row-crop porewater | 1–7 |
+| Meybeck pristine-river 99th percentile | 5.95 |
+| Meybeck carbonate-terrain streams | 3.15 |
+| soil-pH backstop: holding 10 mmol/L needs pH 8.16 at 4,000 µatm | ~10 |
+
+**Effect, measured.** The ceiling binds on **96.5% of cropland area**; the median
+falls 0.792 → 0.220 tCO₂/ha/yr (3.6×). But the level is not the point:
+
+| mean soil T | uncapped | ceiling | exceedance |
+|---|---|---|---|
+| 0–10 °C | 0.400 | 0.221 | 1.8× |
+| 10–15 °C | 0.552 | 0.265 | 2.1× |
+| 15–20 °C | 0.787 | 0.139 | 5.7× |
+| 20–25 °C | 1.774 | 0.253 | 7.0× |
+| 25–45 °C | 1.745 | 0.202 | 8.6× |
+
+`C_eq` **falls** with warming while the rate law rises, so the exceedance is
+monotonic in temperature and the warmest/coolest ratio of the median goes from
+**4.37× uncapped to 0.91× at the ceiling**. Imposing the bound therefore removes
+the map's warm-climate gradient rather than merely rescaling the level, and that is
+the most consequential thing about this term.
+
+**What it is not.** It is not why the map's level was high. Field trials achieve
+0.11–0.75 mmol/L, i.e. 5–10× *below* this ceiling, because cations are retained
+rather than exported (§6 item 1). The ceiling is a rail that makes an impossible
+claim impossible; the level is a lab-to-field rate problem and belongs to the
+kinetics work.
+
+**Known limitation.** On saturated (paddy) cells the protocol-mandated 50,000 µatm
+lifts the ceiling to 13–18 mmol/L at Ω = 10, above every anchor above, and no
+measured paddy drainage DIC exists to check it against. Reported by gate 13c rather
+than tolerance-fudged; it is the standing justification for field-data ask #6.
+
+Gates: **12** in `build_v0.py` (nothing may report more carbon than its drainage can
+carry), **13/13b/13c** in `test_kinetics.py`.
+
 ## 3. Parameters
 
 | Parameter | Value | Basis |
@@ -107,6 +190,8 @@ is a first-order open item, not a units nicety.
 | Reference grind | d50 150 µm, Rosin–Rammler width 1.5 | mid-range of observed 67–600 µm p50; **width is assumed** and is narrow for a commercial crush |
 | Year-1 dissolved fraction at reference | 0.25 | anchored to field-reported first-period weathering (15–56%) |
 | D_w | 0.03 m/yr | Maher & Chamberlain 2014, collisional/craton divide; published range 0.001–0.3 |
+| Flux-ceiling Ω (calcite) | 10, strict case 1 | precipitation "negligible at Ω < 10", Zhang et al. 2022; both reported |
+| Flux-ceiling f_Ca | 0.5 | basalt releases Ca and Mg in roughly equal charge; only Ca constrains calcite |
 | Soil pCO₂, unsaturated | 4,000 µatm | Isometric v1.2 §10.4.5.7, mandated |
 | Soil pCO₂, flooded | 50,000 µatm | Isometric v1.2, mandated; this is the **floor** of the literature paddy range |
 | Flooded pH convergence | 6.7 | van Breemen 1987; submergence drives pH toward 6–7 |
@@ -188,11 +273,19 @@ the structural uncertainties in the chain.
 Recorded so absence is deliberate rather than accidental. Ordered roughly by
 likely effect on the map.
 
-1. **A concentration ceiling on the CO₂ flux.** The transport term is a Damköhler
-   ratio with no `C_eq`, so nothing enforces that the carbon reported can actually
-   be carried at a chemically possible bicarbonate concentration. Measured, the
-   median cropland cell would need ~28 mmol/L against ~0.4 mmol/L available. This
-   is the largest open problem in the model.
+1. **Cation retention in secondary phases — now the largest missing term.**
+   Weathered Ca and Mg do not all leave: they are held on exchange sites, in
+   reducible Fe/Mn-oxide pools and in neoformed clays. Greenhouse work across 4
+   soils × 13 feedstocks found **10–50× more cations retained than exported via
+   leachate** (Hammes et al. 2025, EGUsphere 2025-5402), and column work puts the
+   retarded fraction at **92.7–98.3%** (te Pas et al. 2025, *Front. Clim.*
+   6:1524998). The model has no retention term at all, so it reports the export
+   that *would* occur at steady state with no lag. Flagged as item 3 in `to_do.md`,
+   and blocked on data rather than on effort — see that entry for what would
+   unblock it. Note the modelling and measurement literatures disagree on the
+   dominant sink: SMEW attributes the gap primarily to CEC adsorption while the
+   two measurement studies find the exchangeable pool is the *minority* sink, so a
+   CEC-based term would model the wrong thing.
 2. **Strong-acid (nitrogen fertiliser) competition.** The rate law does not care
    which acid supplied the proton, but dissolution driven by HNO₃/H₂SO₄ generates
    no alkalinity. Both protocols treat this as a separate deduction; we carry the

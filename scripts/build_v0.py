@@ -6,7 +6,7 @@ Build the v0 layers and the browser textures.
 Reads data/raw/ (see fetch_v0.sh), writes:
   data/processed/v0_layers.npz    float layers, for aggregates and hover readout
   src/textures/tex1.png           RGB = reactivity, eta_DIC, drainage value functions
-  src/textures/tex2.png           RGB = cropland fraction, mask flags, indicative CDR
+  src/textures/tex2.png           RGB = cropland fraction, mask flags, flux ceiling
   src/engine_constants.js         generated; the browser's copy of constants.py
   src/colormap.js                 generated; legend stops AND the shader ramp
 
@@ -293,6 +293,23 @@ def main() -> int:
         annual_rate = None
         clim_source = "FALLBACK: annual AIR temperature + precipitation proxy"
 
+    # ---- Drainage-concentration ceiling on the CARBON, not on the rock.
+    # The carbon reported has to leave dissolved in the water that leaves, so it
+    # is bounded by q * [HCO3-]_max * 44 regardless of how fast the rock
+    # dissolves. See constants.py FLUX_CEILING_* for why the bound is carbonate
+    # saturation with pH ENDOGENOUS, and not the cell's pre-treatment pH.
+    #
+    # Temperature: the annual mean, because we have no monthly q to weight by.
+    # The dependence is weak (3.56/3.03/2.58 mmol/L at 5/15/25 C) and runs the
+    # opposite way to the rate law. Drainage is seasonally biased toward cool wet
+    # months, when the ceiling is HIGHER, so an annual mean is mildly strict --
+    # by less than the 1.4x that the full 5-25 C span spans.
+    T_ceil_K = (np.nanmean(soilT_m, axis=0) + 273.15) if monthly else T_K
+    ceiling = K.flux_ceiling_t_ha_yr(q, pco2, T_ceil_K)
+    ceiling_strict = K.flux_ceiling_t_ha_yr(
+        q, pco2, T_ceil_K, omega=C.FLUX_CEILING_OMEGA_STRICT)
+    alk_ceiling = K.alkalinity_ceiling_mol_l(pco2, T_ceil_K)
+
     ref = K.rate_ca_mg_release(
         C.FEEDSTOCK_DEFAULT, C.L1_REF["pH"], C.L1_REF["T_soil_C"] + 273.15
     ) * C.L1_REF["saturation"]
@@ -376,7 +393,26 @@ def main() -> int:
     # pinned 18.9% of cropland area at one value, giving the layer a flat top.
     k_diss = -np.log(1.0 - C.DISSOLVED_FRAC_AT_REF)
     frac = 1.0 - np.exp(-k_diss * np.clip(X, 0.0, None))
-    cdr = frac * eta * C.APPLICATION_RATE_T_HA_YR * ceil_t
+    cdr_uncapped = frac * eta * C.APPLICATION_RATE_T_HA_YR * ceil_t
+
+    # THE CEILING BINDS THE CARBON, NOT THE ROCK, and that separation is the
+    # physics rather than a convenience. Rock can dissolve without the carbon
+    # leaving: field trials measure 10-50x more cations retained in secondary
+    # phases than exported (Hammes et al. 2025), and one mesocosm study at up to
+    # 200 t/ha measured zero increase in leachate DIC while the rock demonstrably
+    # weathered (Vienne et al. 2025). So `frac` -- the one layer field trials can
+    # measure directly -- stays uncapped, and the GAP between frac and the capped
+    # CDR is now a visible, meaningful quantity instead of an inconsistency.
+    #
+    # Capped AFTER eta_DIC: what has to fit in the water is the bicarbonate, and
+    # that is the post-eta_DIC quantity. eta_DIC is a per-mole conversion
+    # efficiency and the ceiling is a concentration bound, so they do not
+    # double-count -- one asks what share of released alkalinity carries carbon,
+    # the other asks how much alkalinity the water can hold at all.
+    if C.FLUX_CEILING_ON:
+        cdr = np.minimum(cdr_uncapped, ceiling)
+    else:
+        cdr = cdr_uncapped
 
     suit_phys = piecewise(np.log10(np.maximum(cdr, 1e-9)),
                           [(np.log10(x), y) for x, y in C.CDR_SUITABILITY_KNOTS])
@@ -466,11 +502,103 @@ def main() -> int:
     print(f"  GATE 2 indicative CO2 median {p50:.2f} in 0.05-10 tCO2/ha/yr  "
           f"[{'PASS' if ok2 else 'FAIL'}]")
 
+    # ---- GATE 2b: global gross total against the pre-registered Tier 2 band.
+    # REPORTED, NOT ENFORCED, and it currently sits BELOW the band -- which is a
+    # finding rather than a failure, and the band is deliberately not widened to
+    # accommodate it. docs/VALIDATION.md already states why: the published range
+    # is "Consistency, NOT validation... several estimates descend from the same
+    # rate-law and surface-area lineage as ours." Those estimates are not bounded
+    # by drainage transport either. Beerling et al. 2024's own CDR_pot implies
+    # ~29.8 mmol/L bicarbonate at Illinois tile drainage, essentially the same
+    # figure this model produced before the ceiling -- so falling below a band
+    # derived from that lineage is what imposing the bound is SUPPOSED to do.
+    ha = (crop * area)[m] * 100.0                     # km2 -> ha
+    gt = float((ha * np.nan_to_num(cdr[m])).sum() / 1e9)
+    gt_un = float((ha * np.nan_to_num(cdr_uncapped[m])).sum() / 1e9)
+    glo, ghi = C.GATES["global_gross_gtco2_yr"]
+    inside = glo <= gt <= ghi
+    print(f"  GATE 2b global gross {gt:.3f} GtCO2/yr (uncapped {gt_un:.3f}) vs "
+          f"pre-registered {glo}-{ghi}  "
+          f"[{'inside' if inside else 'BELOW THE BAND -- reported, band NOT widened'}]")
+    if not inside:
+        print(f"    the band descends from estimates that also lack a transport "
+              f"bound, so this is the expected direction; see docs/VALIDATION.md "
+              f"section 2 and CHANGELOG 'Flux reconciliation, August 2026'")
+
     # ---- GATE 3: stoichiometric ceiling never exceeded
     worst = float(np.nanmax(cdr) / C.APPLICATION_RATE_T_HA_YR)
     ok3 = worst <= ceil_t + 1e-9
     print(f"  GATE 3 stoichiometric ceiling: max {worst:.3f} <= {ceil_t:.3f} "
           f"tCO2/t  [{'PASS' if ok3 else 'FAIL'}]")
+
+    # ---- GATE 12: the reported carbon must be carryable in the reported water.
+    # This is the gate the flux-reconciliation work exists to install. It is a
+    # tautology once the cap is applied, which is exactly the point: it fails
+    # loudly if anyone removes the cap, changes the order of operations, or
+    # reintroduces a path that writes CDR without bounding it.
+    over = cdr > ceiling * (1.0 + 1e-9)
+    frac_over = float((aw * over[m]).sum() / aw.sum())
+    ok12 = frac_over <= 1e-9
+    print(f"  GATE 12 flux reconciliation: {frac_over:.2%} of cropland area "
+          f"reports more carbon than its drainage can carry  "
+          f"[{'PASS' if ok12 else 'FAIL'}]")
+
+    # What the cap actually did, reported as a finding rather than hidden.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        exceed = cdr_uncapped / np.maximum(ceiling, 1e-12)
+        implied = cdr_uncapped * 1e6 / C.M_CO2_G_MOL / np.maximum(q * 1e7, 1e-9)
+    bound = (aw * (cdr_uncapped[m] > ceiling[m] * 1.000001)).sum() / aw.sum()
+    e10, e50, e90 = wq(exceed, (0.1, 0.5, 0.9))
+    i10, i50, i90 = wq(implied, (0.1, 0.5, 0.9))
+    a10, a50, a90 = wq(alk_ceiling, (0.1, 0.5, 0.9))
+    u50 = wq(cdr_uncapped, (0.5,))[0]
+    s50 = wq(np.minimum(cdr_uncapped, ceiling_strict), (0.5,))[0]
+    print(f"    ceiling binds on {bound:.1%} of cropland area; before/after "
+          f"median {u50:.3f} -> {p50:.3f} tCO2/ha/yr "
+          f"({u50 / max(p50, 1e-12):.1f}x)")
+    print(f"    Omega sensitivity: median CDR {s50:.3f} (Omega="
+          f"{C.FLUX_CEILING_OMEGA_STRICT:g}, strict) to {p50:.3f} (Omega="
+          f"{C.FLUX_CEILING_OMEGA:g}, shipped)")
+    print(f"    [HCO3-] the UNCAPPED model required: p10 {i10 * 1e3:.1f}  "
+          f"p50 {i50 * 1e3:.1f}  p90 {i90 * 1e3:.1f} mmol/L")
+    print(f"    [HCO3-] ceiling at each cell's own pCO2 and T: p10 "
+          f"{a10 * 1e3:.2f}  p50 {a50 * 1e3:.2f}  p90 {a90 * 1e3:.2f} mmol/L")
+    print(f"      for scale, measured agricultural tile drainage runs 1-7 mmol/L "
+          f"(Hamilton et al. 2007) and ERW trials ACHIEVE 0.11-0.75")
+    print(f"    uncapped exceedance: p10 {e10:.1f}x  p50 {e50:.1f}x  "
+          f"p90 {e90:.1f}x")
+
+    # The exceedance is MONOTONIC IN TEMPERATURE, and that is the finding that
+    # matters more than the level: the ceiling falls with warming while the rate
+    # law climbs, so the cap removes most of the map's warm-climate advantage.
+    tb = T_ceil_K - 273.15
+    print("    exceedance by mean soil temperature (the gradient, not the level):")
+
+    def med_in(v, sel_m):
+        """Area-weighted median of v over the cells selected by sel_m."""
+        vv, ww = v[sel_m], (crop * area)[sel_m]
+        g = np.isfinite(vv)
+        o = np.argsort(vv[g])
+        cw = np.cumsum(ww[g][o]) / ww[g].sum()
+        return float(vv[g][o][np.searchsorted(cw, 0.5)])
+
+    warm_cool, wc_ratio = {}, (None, None)
+    for lo, hi in [(0, 10), (10, 15), (15, 20), (20, 25), (25, 45)]:
+        sel = m & np.isfinite(tb) & (tb >= lo) & (tb < hi)
+        if sel.sum() < 100:
+            continue
+        share = float((crop * area)[sel].sum() / aw.sum())
+        u, c = med_in(cdr_uncapped, sel), med_in(ceiling, sel)
+        print(f"      {lo:2d}-{hi:2d} C  ({share:5.1%} of area): uncapped "
+              f"{u:.3f}  ceiling {c:.3f}  -> {u / max(c, 1e-12):.1f}x")
+        warm_cool[(lo, hi)] = (u, c)
+    if (0, 10) in warm_cool and (25, 45) in warm_cool:
+        (uc, cc), (uw, cw_) = warm_cool[(0, 10)], warm_cool[(25, 45)]
+        wc_ratio = (uw / max(uc, 1e-12), cw_ / max(cc, 1e-12))
+        print(f"      warmest/coolest ratio of the median: uncapped model "
+              f"{uw / max(uc, 1e-12):.2f}x, ceiling {cw_ / max(cc, 1e-12):.2f}x "
+              f"-- the ceiling does not support a warm-climate advantage, because "
+              f"C_eq FALLS with warming while the rate law rises")
 
     # ---- Quarry overlay: copy the point list into src/ so the page can draw it
     qp = INTERIM / "quarry_points.json"
@@ -493,6 +621,9 @@ def main() -> int:
         ph=ph, tair=tair, precip=precip, soc=soc, crop=crop, area=area,
         L1=L1.astype("float32"), eta=eta.astype("float32"),
         eta_tr=eta_tr.astype("float32"), cdr=cdr.astype("float32"),
+        cdr_uncapped=cdr_uncapped.astype("float32"),
+        ceiling=ceiling.astype("float32"),
+        alk_ceiling=alk_ceiling.astype("float32"),
         cascade=cascade.astype("float32"), p_soc=p_soc,
         q=q.astype("float32"), f_flood=f_flood.astype("float32"),
         pco2=pco2.astype("float32"),
@@ -504,11 +635,14 @@ def main() -> int:
     # ---- Encode textures
     write_textures(crop, p_soc, ph_warn, cdr, m,
                    cascade=cascade, ph=ph, L1=L1, eta=eta, eta_tr=eta_tr,
-                   v_cost=v_cost, cost_conf=cost_conf)
+                   v_cost=v_cost, cost_conf=cost_conf, ceiling=ceiling,
+                   cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t)
     emit_js(transform, w, h, gha, p50,
             cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
             clim_source=clim_source, monthly=monthly, n_quarries=n_q,
-            soc_excluded=excl, soc_marginal=marg)
+            soc_excluded=excl, soc_marginal=marg,
+            ceiling_binds=bound, ceiling_med=wq(ceiling, (0.5,))[0],
+            warm_cool=wc_ratio)
     print()
     print("done. Open src/index.html over HTTP:")
     print("  python3 -m http.server 8000 --directory src")
@@ -528,7 +662,8 @@ def quantize(v, floor: float) -> np.ndarray:
 
 
 def write_textures(crop, p_soc, ph_warn, cdr, valid,
-                   *, cascade, ph, L1, eta, eta_tr, v_cost, cost_conf) -> None:
+                   *, cascade, ph, L1, eta, eta_tr, v_cost, cost_conf,
+                   ceiling, cdr_per_frac) -> None:
     from PIL import Image
     out = SRC / "textures"
     out.mkdir(parents=True, exist_ok=True)
@@ -567,7 +702,25 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
     flags |= np.where(ph_warn, 8, 0).astype("uint8")                     # bit3 pH<5.2 note
 
     r2 = np.rint(np.clip(crop, 0, 1) * 255).astype("uint8")
-    b2 = np.rint(np.clip(np.nan_to_num(cdr) / 10.0, 0, 1) * 255).astype("uint8")
+
+    # tex2.b USED TO BE cdr/10, an "indicative CDR" channel that nothing read --
+    # dead since the shader started deriving CDR from the raw terms itself. It now
+    # carries the DRAINAGE-CONCENTRATION CEILING, which the shader needs because
+    # the grind slider recomputes CDR live: without the ceiling on the GPU, moving
+    # the slider would walk the displayed carbon straight back through the bound.
+    #
+    # Stored as log10(ceiling / cdrPerFrac) so the resolution is even in log
+    # space. A linear encoding over the full range would quantise the arid tail --
+    # where the ceiling is 0.01-0.1 tCO2/ha/yr and matters most -- to one or two
+    # steps. Value 0 stays reserved for masked cells, so a true zero ceiling
+    # (q = 0) lands on 5, the bottom of the range, which is 1e-4 of cdrPerFrac and
+    # far below CDR_NEGLIGIBLE anyway.
+    lo_c, hi_c = CEIL_ENC
+    with np.errstate(divide="ignore", invalid="ignore"):
+        cn = np.log10(np.maximum(ceiling / max(cdr_per_frac, 1e-12), 1e-30))
+    cn = np.clip((np.nan_to_num(cn, nan=lo_c, neginf=lo_c) - lo_c) / (hi_c - lo_c),
+                 0.0, 1.0)
+    b2 = np.where(valid, np.rint(5 + cn * 250.0), 0).astype("uint8")
 
     # tex3 carries the Cascade baseline and raw soil pH. The baseline needs its
     # own channel: an earlier version drew "Cascade baseline" from the CDR
@@ -604,6 +757,12 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
 # value off the end of the 8-bit encoding.
 L1_ENC = (-3.0, 3.0)
 
+# Flux-ceiling storage range, as log10(ceiling / cdrPerFrac). The ceiling cannot
+# exceed the stoichiometric maximum by construction, so the top only needs a
+# little headroom above 0; the bottom has to reach the arid tail, where the
+# ceiling is ~1e-3 of cdrPerFrac. 250 steps over 4.3 dex is 4% per step.
+CEIL_ENC = (-4.0, 0.3)
+
 RAMP = [  # viridis-like, colour-blind safe, legible in light and dark
     (0.00, "#3b1f4d"), (0.20, "#3d4a8f"), (0.40, "#2a7b8f"),
     (0.60, "#3fa66b"), (0.80, "#a8c93a"), (1.00, "#f7e94a"),
@@ -629,7 +788,9 @@ RAMP_FRAC = [
 
 def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
             clim_source="unknown", monthly=False, n_quarries=0,
-            soc_excluded=0.0, soc_marginal=0.0) -> None:
+            soc_excluded=0.0, soc_marginal=0.0,
+            ceiling_binds=0.0, ceiling_med=0.0,
+            warm_cool=(None, None)) -> None:
     # PASS THESE IN, never reach for main()'s locals. Reading a caller local from
     # here raises NameError at the very last step of the build, which leaves a
     # STALE engine_constants.js behind while everything upstream looks fine. That
@@ -664,6 +825,34 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
         # The shader multiplies its computed fraction by this to get CDR.
         "cdrPerFrac": round(cdr_per_frac, 6),
         "l1Enc": {"lo": L1_ENC[0], "hi": L1_ENC[1]},
+        # Drainage-concentration ceiling. ceilEnc decodes tex2.b, which stores
+        # log10(ceiling / cdrPerFrac); the shader and the JS readout both need it
+        # because the grind slider recomputes CDR live.
+        "fluxCeiling": {
+            "on": C.FLUX_CEILING_ON,
+            "enc": {"lo": CEIL_ENC[0], "hi": CEIL_ENC[1]},
+            "omega": C.FLUX_CEILING_OMEGA,
+            "omegaStrict": C.FLUX_CEILING_OMEGA_STRICT,
+            "omegaRange": list(C.FLUX_CEILING_OMEGA_RANGE),
+            "fCa": C.FLUX_CEILING_F_CA,
+            "source": C.FLUX_CEILING_SOURCE,
+            "anchors": {k: list(v)
+                        for k, v in C.FLUX_CEILING_ANCHORS_MMOL_L.items()},
+            "bindsAreaFrac": round(float(ceiling_binds), 4),
+            "medianTco2HaYr": round(float(ceiling_med), 4),
+            # Warmest/coolest ratio of the median, uncapped vs at the ceiling.
+            # Emitted rather than written into the panel copy, so the sentence in
+            # app.js cannot drift from the build the way a hardcoded number would.
+            "warmCoolUncapped": (None if warm_cool[0] is None
+                                 else round(float(warm_cool[0]), 2)),
+            "warmCoolCeiling": (None if warm_cool[1] is None
+                                else round(float(warm_cool[1]), 2)),
+        },
+        "damkohler": {"dw": C.DAMKOHLER_DW_M_YR,
+                      "dwRange": list(C.DAMKOHLER_DW_RANGE),
+                      "tau": round(C.DAMKOHLER_TAU, 4),
+                      "tauInEta": C.DAMKOHLER_TAU_APPLIED_IN_ETA,
+                      "source": C.DAMKOHLER_SOURCE},
         "psd": {
             "refD50": C.PSD_REF_D50_UM, "refWidth": C.PSD_REF_WIDTH,
             "d50Range": list(C.PSD_D50_SLIDER_RANGE),
