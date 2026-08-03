@@ -129,7 +129,7 @@ window.ERW = {
     "hi": 3.0
   },
   "fluxCeiling": {
-    "on": true,
+    "on": false,
     "enc": {
       "lo": -4.0,
       "hi": 0.3
@@ -168,6 +168,7 @@ window.ERW = {
     "medianTco2HaYr": 0.2202,
     "warmCoolUncapped": 4.37,
     "warmCoolCeiling": 0.91,
+    "exceedMedian": 6.19,
     "realisedShareOfStoich": 0.0253
   },
   "damkohler": {
@@ -656,7 +657,7 @@ window.ERW = {
   },
   "stats": {
     "croplandGha": 1.215,
-    "cdrMedian": 0.22,
+    "cdrMedian": 1.19,
     "quarryPoints": 5295
   },
   "provenance": {

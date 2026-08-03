@@ -49,7 +49,7 @@ changes only this file and says why.
 | Surface partition, all four elements | 0.5 log units (same as gate 11) | gate 11b |
 | Cropland area vs Potapov et al. | 2% | gate 1, FATAL |
 | Stoichiometric ceiling | hard bound, no tolerance | gate 3 |
-| Drainage-concentration ceiling | hard bound, no tolerance | gate 12 (build) |
+| Drainage-concentration ceiling | hard bound, no tolerance — **currently NOT enforced**, see §5 | gate 12 (build) |
 | Ceiling vs open-system calcite benchmark | 0.85–1.05 mmol/L, pH 8.0–8.4 | gate 13 |
 | Ceiling inside measured drainage anchors | envelope of five anchors, drained cells only | gate 13b |
 
@@ -236,10 +236,19 @@ observationally. That ratio is the argument to put to operators.
 
 ## 5. Known asymmetries and open audit items
 
-- **The global gross total now sits BELOW its own pre-registered Tier 2 band, and
-  the band has deliberately not been widened.** With the drainage-concentration
-  ceiling imposed, global gross removal is **0.360 GtCO₂/yr** (2.209 uncapped)
-  against a pre-registered 0.5–4.0. Reported by gate 2b in the build, not enforced.
+- **The drainage-concentration ceiling is OFF pending external review (2026-08-03),
+  so the shipped map violates a bound this repo computes and documents.** On 98.9%
+  of cropland area the CO₂ layer exceeds what the drainage could carry, by a median
+  factor of 6.2×. This is a deliberate, reported state, not an oversight: gate 12
+  prints the exceedance on every build, the Methods panel carries a flagbox, and
+  `FLUX_CEILING_ON = True` restores enforcement in one line. The reason to hold it
+  is that it moves the absolute level several-fold and that judgement is worth
+  outside scrutiny — but while it is off, **no absolute CO₂ figure from this map
+  should be quoted without that caveat.**
+- **If the ceiling is re-enabled, the global gross total sits BELOW its own
+  pre-registered Tier 2 band, and the band should not be widened.** With the ceiling
+  imposed, global gross removal is **0.360 GtCO₂/yr** against a pre-registered
+  0.5–4.0; with it off, 2.209, which is inside the band. Reported by gate 2b in the build, not enforced.
   Widening the band to fit would defeat the purpose of pre-registering it. The
   substantive point is in §2's own wording — the published range is "Consistency,
   NOT validation… several estimates descend from the same rate-law and surface-area
@@ -247,9 +256,11 @@ observationally. That ratio is the argument to put to operators.
   either. Beerling et al. 2024's CDR_pot implies ~29.8 mmol/L bicarbonate at
   Illinois tile drainage, essentially the figure this model produced before the
   ceiling. Falling below a band derived from that lineage is what imposing the bound
-  is supposed to do, but it does mean the map no longer has an external consistency
-  check on its absolute level, and the honest reading is that the field trials are
-  now the only anchor.
+  is supposed to do, but it does mean that under the ceiling the map has no external
+  consistency check on its absolute level, and the field trials are the only anchor.
+  Note the uncomfortable symmetry: with the ceiling OFF the map passes the band, and
+  with it ON the map fails the band but satisfies the physics. Passing that band is
+  therefore not evidence of anything.
 - **The trial comparison is not like-for-like on application rate, and the obvious
   fix is invalid.** The map applies **30 t/ha**. The trials do not share a single
   rate: they span roughly 20 to 200 t/ha, and only some are at or near the map's

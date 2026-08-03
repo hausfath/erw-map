@@ -870,7 +870,34 @@ DAMKOHLER_TAU_SOURCE = (
 # claim impossible; the level problem is the lab-to-field rate discrepancy and
 # belongs to the kinetics item. See to_do.md items 0 and 2.
 # ---------------------------------------------------------------------------
-FLUX_CEILING_ON = True
+# ---- OFF BY DECISION, 2026-08-03. Not abandoned, and not reverted.
+#
+# The bound below is implemented, gated, documented and shipped in the texture --
+# it is simply not APPLIED, because it moves the map's absolute level several-fold
+# and Zeke wants the wider ERW community to weigh in before it does. Everything
+# needed to turn it back on is present and tested.
+#
+# TO RE-ENABLE: set this to True and re-run scripts/build_v0.py. That is the whole
+# procedure. The round trip is verified: gate 12 flips from a reported diagnostic
+# back to a hard PASS, the Methods panel swaps its "computed but not applied"
+# flagbox for the active description, the limiting-factor layer regains its fourth
+# class, and the hover readout regains its "Without the drainage limit" row. No
+# other file needs touching.
+#
+# WHAT STAYS LIVE WHILE IT IS OFF, deliberately:
+#   - the ceiling is still computed, still written to tex2.b, and still emitted in
+#     engine_constants.js, so re-enabling needs no data migration
+#   - gate 12 still REPORTS the exceedance (98.9% of cropland area, median 6.2x)
+#     instead of vanishing along with the cap
+#   - the Methods panel carries a flagbox saying the CO2 layer is an upper bound on
+#     dissolution rather than carbon shown to leave
+#   - section 11 of analyse_deployments.py still runs the same test against the
+#     verified deliveries, since that is a finding about the deliveries and not a
+#     setting of this model
+#
+# The one thing to know if you re-enable: gate 2b will then report the global total
+# BELOW its pre-registered 0.5-4.0 band. That is expected and is discussed there.
+FLUX_CEILING_ON = False
 FLUX_CEILING_OMEGA = 10.0                  # shipped default, kinetically inhibited
 FLUX_CEILING_OMEGA_STRICT = 1.0            # thermodynamic reading, reported alongside
 FLUX_CEILING_OMEGA_RANGE = (1.0, 10.0)

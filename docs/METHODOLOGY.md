@@ -107,7 +107,18 @@ whether moisture limitation of the *rate* and transport limitation of the
 absolute saturation moves **64% of cropland area** by reactivity decile, so this
 is a first-order open item, not a units nicety.
 
-## 2b. The drainage-concentration ceiling
+## 2b. The drainage-concentration ceiling — COMPUTED BUT NOT APPLIED
+
+> **Status, 2026-08-03: switched OFF pending review by the wider ERW community.**
+> Everything below is implemented, gated and shipped; it is simply not applied to
+> the CO₂ layer. `constants.FLUX_CEILING_ON = False` is the whole switch, and
+> flipping it to `True` and rebuilding restores every behaviour described here.
+> While it is off, the map's CO₂ figures are **above this bound on 98.9% of
+> cropland, by a median factor of 6.2×**, so they should be read as an upper bound
+> on dissolution rather than as carbon that can be shown to leave the field. Gate 12
+> reports that exceedance on every build rather than letting it disappear with the
+> cap. The numbers quoted in this section are what the ceiling *would* impose.
+
 
 The carbon reported has to leave the field dissolved in the water that leaves the
 field. That bounds gross CO₂ removal at `q · [HCO₃⁻]_max · 44` regardless of how
@@ -216,6 +227,7 @@ carry), **13/13b/13c** in `test_kinetics.py`.
 
 | Parameter | Value | Basis |
 |---|---|---|
+| Flux ceiling applied? | **No — off pending review** | `FLUX_CEILING_ON = False`; computed and reported, not applied |
 | Application rate | **30 t/ha/yr** | stated assumption; raised from 20 in Aug 2026 to sit nearer commercial practice |
 | Feedstock | `delivered_basalt`, 0.289 tCO₂/t | mean implied CO₂ potential of n = 3 verified deliveries, one operator |
 | Reference grind | d50 150 µm, Rosin–Rammler width 1.5 | mid-range of observed 67–600 µm p50; **width is assumed** and is narrow for a commercial crush |

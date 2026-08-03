@@ -538,10 +538,21 @@ def main() -> int:
     # reintroduces a path that writes CDR without bounding it.
     over = cdr > ceiling * (1.0 + 1e-9)
     frac_over = float((aw * over[m]).sum() / aw.sum())
-    ok12 = frac_over <= 1e-9
-    print(f"  GATE 12 flux reconciliation: {frac_over:.2%} of cropland area "
-          f"reports more carbon than its drainage can carry  "
-          f"[{'PASS' if ok12 else 'FAIL'}]")
+    if C.FLUX_CEILING_ON:
+        ok12 = frac_over <= 1e-9
+        print(f"  GATE 12 flux reconciliation: {frac_over:.2%} of cropland area "
+              f"reports more carbon than its drainage can carry  "
+              f"[{'PASS' if ok12 else 'FAIL'}]")
+    else:
+        # The ceiling is computed and shipped in the texture but NOT applied, by
+        # decision, pending external review. Gate 12 cannot pass in that state and
+        # must not pretend to: it reports the exceedance instead, so the finding
+        # stays in front of anyone who runs the build rather than disappearing
+        # along with the cap.
+        print(f"  GATE 12 flux reconciliation: DISABLED "
+              f"(constants.FLUX_CEILING_ON = False). Reported, not enforced: "
+              f"{frac_over:.1%} of cropland area reports more carbon than its "
+              f"drainage can carry.")
 
     # What the cap actually did, reported as a finding rather than hidden.
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -553,12 +564,15 @@ def main() -> int:
     a10, a50, a90 = wq(alk_ceiling, (0.1, 0.5, 0.9))
     u50 = wq(cdr_uncapped, (0.5,))[0]
     s50 = wq(np.minimum(cdr_uncapped, ceiling_strict), (0.5,))[0]
-    print(f"    ceiling binds on {bound:.1%} of cropland area; before/after "
-          f"median {u50:.3f} -> {p50:.3f} tCO2/ha/yr "
-          f"({u50 / max(p50, 1e-12):.1f}x)")
+    would = "binds" if C.FLUX_CEILING_ON else "WOULD bind"
+    capped50 = wq(np.minimum(cdr_uncapped, ceiling), (0.5,))[0]
+    print(f"    ceiling {would} on {bound:.1%} of cropland area; median "
+          f"{u50:.3f} -> {capped50:.3f} tCO2/ha/yr "
+          f"({u50 / max(capped50, 1e-12):.1f}x)"
+          + ("" if C.FLUX_CEILING_ON else "  -- NOT APPLIED, see gate 12"))
     print(f"    Omega sensitivity: median CDR {s50:.3f} (Omega="
-          f"{C.FLUX_CEILING_OMEGA_STRICT:g}, strict) to {p50:.3f} (Omega="
-          f"{C.FLUX_CEILING_OMEGA:g}, shipped)")
+          f"{C.FLUX_CEILING_OMEGA_STRICT:g}, strict) to {capped50:.3f} (Omega="
+          f"{C.FLUX_CEILING_OMEGA:g}, shipped default)")
     print(f"    [HCO3-] the UNCAPPED model required: p10 {i10 * 1e3:.1f}  "
           f"p50 {i50 * 1e3:.1f}  p90 {i90 * 1e3:.1f} mmol/L")
     print(f"    [HCO3-] ceiling at each cell's own pCO2 and T: p10 "
@@ -642,7 +656,7 @@ def main() -> int:
             clim_source=clim_source, monthly=monthly, n_quarries=n_q,
             soc_excluded=excl, soc_marginal=marg,
             ceiling_binds=bound, ceiling_med=wq(ceiling, (0.5,))[0],
-            warm_cool=wc_ratio)
+            warm_cool=wc_ratio, exceed_med=e50)
     print()
     print("done. Open src/index.html over HTTP:")
     print("  python3 -m http.server 8000 --directory src")
@@ -822,7 +836,7 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
             clim_source="unknown", monthly=False, n_quarries=0,
             soc_excluded=0.0, soc_marginal=0.0,
             ceiling_binds=0.0, ceiling_med=0.0,
-            warm_cool=(None, None)) -> None:
+            warm_cool=(None, None), exceed_med=0.0) -> None:
     # PASS THESE IN, never reach for main()'s locals. Reading a caller local from
     # here raises NameError at the very last step of the build, which leaves a
     # STALE engine_constants.js behind while everything upstream looks fine. That
@@ -884,6 +898,8 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
             # it is the cleanest single number for "how much of the rock's carbon
             # actually leaves", and it FALLS as the application rate rises because
             # the ceiling does not scale with how much rock is on the field.
+            # Median exceedance of the ceiling, for the "not applied" notice.
+            "exceedMedian": round(float(exceed_med), 2),
             "realisedShareOfStoich": round(
                 float(ceiling_med) / C.APPLICATION_RATE_T_HA_YR
                 / (cdr_per_frac / C.APPLICATION_RATE_T_HA_YR), 4),

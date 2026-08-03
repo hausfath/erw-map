@@ -5,6 +5,44 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Flux ceiling switched OFF pending outside review, August 2026
+
+Held, not reverted. `constants.FLUX_CEILING_ON = False` and rebuild; that is the
+entire change. The bound stays implemented, gated, documented and written to the
+texture, and flipping the flag back to True restores every behaviour. The round trip
+is verified in both directions.
+
+Why: the ceiling moves the map's absolute level several-fold -- global gross 2.209 ->
+0.360 GtCO2/yr, median 1.189 -> 0.220 tCO2/ha/yr -- on a chain of reasoning that has
+not yet been outside this repo. That judgement is worth other ERW scientists' eyes
+before it ships. The four questions most likely to be contested are listed in to_do
+item 0.
+
+Reverting the commits would have been the wrong way to do this. It would have thrown
+away the gates, the five literature anchors, the Maher tau/D_w resolution and the
+deployment test along with the switch, and re-deriving them later is most of the
+work. A flag costs one line and loses nothing.
+
+WHAT DELIBERATELY STAYS LIVE WHILE IT IS OFF, so the finding cannot quietly vanish
+with the cap:
+
+- Gate 12 no longer enforces; it REPORTS. Every build now prints that 98.9% of
+  cropland area reports more carbon than its drainage can carry, median 6.2x over.
+- The Methods panel swaps the active description for a flagbox saying the CO2 layer
+  is an upper bound on dissolution, not carbon shown to leave the field.
+- The ceiling is still computed and still written to tex2.b, so re-enabling needs no
+  data migration.
+- Section 11 of analyse_deployments.py is untouched: the verified deliveries still
+  exceed their own drainage ceilings by 3-19x. That is a finding about the
+  deliveries, not a setting of this model.
+
+An uncomfortable symmetry worth stating plainly, now recorded in VALIDATION section
+5: with the ceiling OFF the map passes its pre-registered global consistency band
+(2.209 inside 0.5-4.0); with it ON the map fails that band (0.360) but satisfies the
+physics. Passing the band is therefore not evidence of anything, and while the
+ceiling is off no absolute CO2 figure from this map should be quoted without the
+caveat.
+
 ## Application rate 20 -> 30 t/ha, and the grind slider tells the truth at its own reference
 
 **Application rate raised to 30 t/ha**, because 20 sat below what commercial projects

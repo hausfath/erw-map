@@ -1078,27 +1078,32 @@
       against the trials that have measured drainage chemistry directly. Modelled
       export lag times reach 5–22 years (Kanzaki et al. 2025). This is the largest
       missing term and it is blocked on data, not effort.</p></div>
-      <p><b>The carbon is now bounded by the water that carries it.</b> Gross CO₂
-      removal is capped at what the drainage can hold as bicarbonate without
-      carbonate precipitating — around ${FC.medianTco2HaYr ? FC.medianTco2HaYr.toFixed(2) : "0.22"}
+      ${FC.on ? `<p><b>The carbon is bounded by the water that carries it.</b>
+      Gross CO₂ removal is capped at what the drainage can hold as bicarbonate
+      without carbonate precipitating — around ${FC.medianTco2HaYr ? FC.medianTco2HaYr.toFixed(2) : "0.22"}
       tCO₂/ha/yr at the median cell. The cap binds on
       <b>${FC.bindsAreaFrac ? (FC.bindsAreaFrac * 100).toFixed(0) : "97"}% of
       cropland</b>, and where it binds the dissolution rate, mineral mix, grind
-      <i>and application rate</i> no longer change the answer, which is why the
-      limiting-factor layer is dominated by one class. That last one matters for
-      deployment: spreading more rock than the drainage can carry the carbon from
-      raises the share of the map that is transport-limited rather than raising the
-      tonnage. At ${E.feedstock.rateTHaYr}&nbsp;t/ha the median cell realises just
+      <i>and application rate</i> no longer change the answer. Spreading more rock
+      than the drainage can carry the carbon from raises the share of the map that
+      is transport-limited rather than raising the tonnage. At
+      ${E.feedstock.rateTHaYr}&nbsp;t/ha the median cell realises just
       ${FC.realisedShareOfStoich ? (FC.realisedShareOfStoich * 100).toFixed(1) : "—"}%
-      of the feedstock's stoichiometric CO₂ potential as exported carbon. The cap is applied to the CO₂ and <i>not</i> to
-      &ldquo;weathered in year 1&rdquo;: rock can dissolve without the carbon
-      leaving, and the gap between those two layers is the retention problem
-      above. Because the ceiling falls slightly with temperature while dissolution
-      rises steeply with it, capping removes most of the warm-climate advantage an
-      uncapped rate law produces${FC.warmCoolUncapped && FC.warmCoolCeiling
-        ? ` — the warmest-to-coolest ratio of the median goes from `
-          + `${FC.warmCoolUncapped.toFixed(1)}× to ${FC.warmCoolCeiling.toFixed(1)}×`
-        : ""}.</p>
+      of the feedstock's stoichiometric CO₂ potential as exported carbon.</p>`
+      : `<div class="flagbox"><p><b>A drainage limit on the carbon is computed but
+      deliberately NOT applied, pending review by the wider ERW community.</b> The
+      carbon reported here has to leave the field dissolved in the water that leaves
+      the field, which bounds it at roughly
+      ${FC.medianTco2HaYr ? FC.medianTco2HaYr.toFixed(2) : "0.22"} tCO₂/ha/yr at the
+      median cell. Every figure on this map is above that bound — on
+      <b>${FC.bindsAreaFrac ? (FC.bindsAreaFrac * 100).toFixed(0) : "99"}% of
+      cropland</b>, by a median factor of about
+      ${FC.exceedMedian ? FC.exceedMedian.toFixed(0) : "5"}× — so the CO₂ layer
+      should be read as an upper bound on dissolution, not as carbon that can be
+      shown to leave. The bound is implemented, gated and documented; it is switched
+      off only because it moves the map's absolute level by several-fold and that is
+      worth outside scrutiny before it ships. See the changelog for the analysis and
+      how to re-enable it.</p></div>`}
       <p><b>The kinetics over-predict an independent laboratory test.</b> Against
       Gudbrandsson et al. (2011) crystalline-basalt dissolution (pH 2–11,
       5–75 °C), the Ca+Mg charge sum the map actually uses over-predicts by
