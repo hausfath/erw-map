@@ -641,6 +641,10 @@ def main() -> int:
         cascade=cascade.astype("float32"), p_soc=p_soc,
         q=q.astype("float32"), f_flood=f_flood.astype("float32"),
         pco2=pco2.astype("float32"),
+        # The temperature the ceiling was evaluated at, so downstream figures bin
+        # on the SAME basis the build reports. Binning on air temperature instead
+        # shifted the headline warm/cool ratio from 4.37x to 4.63x.
+        t_ceil_c=(T_ceil_K - 273.15).astype("float32"),
         transform=np.array(transform).reshape(3, 3)[:2].ravel(),
     )
     print(f"  wrote {PROC / 'v0_layers.npz'} "
