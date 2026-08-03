@@ -952,20 +952,46 @@
     sample = out;
   }
 
-  function scoreOf(row, exps) {
-    const raw = (b) => clamp(0, (b - 5) / 250, 1);
-    const rel = Math.pow(10, E.l1Enc.lo + raw(row[0]) * (E.l1Enc.hi - E.l1Enc.lo));
+  const rawByte = (b) => clamp(0, (b - 5) / 250, 1);
+
+  /* Gross CDR for one sampled cell. One definition, used by the suitability score,
+     the decile edges and the global total in the footer, so those three can never
+     disagree about what is being drawn. */
+  function cdrOfRow(row, exps) {
+    const rel = Math.pow(10, E.l1Enc.lo + rawByte(row[0]) * (E.l1Enc.hi - E.l1Enc.lo));
     const X = Math.exp(exps[0] * Math.log(Math.max(rel, 1e-12))
-                     + exps[2] * Math.log(Math.max(raw(row[2]), 1e-12)));
-    const eDic = Math.pow(Math.max(raw(row[1]), 1e-12), exps[1]);
+                     + exps[2] * Math.log(Math.max(rawByte(row[2]), 1e-12)));
+    const eDic = Math.pow(Math.max(rawByte(row[1]), 1e-12), exps[1]);
     let cdr = fracOf(X) * eDic * E.cdrPerFrac;
     // Same ceiling as the shader and the hover readout. Without it here the
     // stability metric and the decile edges would be computed on a different
     // model from the one being drawn.
     if (FC.on && row[5] !== undefined) cdr = Math.min(cdr, decodeCeil(row[5]));
+    return cdr;
+  }
+
+  function scoreOf(row, exps) {
     const fl = E.cost ? E.cost.floor : 1;
-    const vc = fl + raw(row[4] === undefined ? 255 : row[4]) * (1 - fl);
-    return suitabilityOf(cdr) * Math.pow(vc, econ.costExp);
+    const vc = fl + rawByte(row[4] === undefined ? 255 : row[4]) * (1 - fl);
+    return suitabilityOf(cdrOfRow(row, exps)) * Math.pow(vc, econ.costExp);
+  }
+
+  /* Global gross removal, GtCO2/yr, from the gridded data rather than a stored
+     number: the area-weighted mean CDR over the decimated sample, scaled by total
+     cropland area. It therefore MOVES with the grind and term sliders, which a
+     stored figure could not. row[3] is crop x cos(lat), proportional to true cell
+     area, so the weighted mean is unbiased. */
+  function globalGt() {
+    if (!sample || !sample.length) return null;
+    const exps = [termExp.reactivity, termExp.eta_dic, termExp.drainage];
+    let num = 0, den = 0;
+    for (const r of sample) { num += cdrOfRow(r, exps) * r[3]; den += r[3]; }
+    if (!(den > 0)) return null;
+    // Scale by the EVALUATED area, not all cropland: the sample only covers cells
+    // with a computable rate, and multiplying its mean by the full extent would
+    // credit removal to the cells we declined to evaluate.
+    const gha = E.stats.evaluatedGha ?? E.stats.croplandGha;
+    return (num / den) * gha;                              // t/ha/yr x Gha -> Gt
   }
 
   function deciles(nw) {
@@ -1047,11 +1073,11 @@
       <b>Limiting factor</b>, the term that costs each cell the most; and
       <b>Weathered in year&nbsp;1</b>, the fraction of applied rock predicted to
       dissolve — the quantity field trials can measure.</p>
-      <p>Read the limiting-factor layer with two caveats. First,
-      <b>&ldquo;drainage cannot carry it&rdquo; is a bound, not a term</b>: where
-      the drainage-concentration ceiling binds it outranks all three factors,
-      because no rate can push more carbon out than the water can hold. That is
-      most of the map. Second, among the three terms themselves, the two
+      <p>Read the limiting-factor layer with ${FC.on ? "two caveats. First, " +
+      "<b>&ldquo;drainage cannot carry it&rdquo; is a bound, not a term</b>: where " +
+      "the drainage-concentration ceiling binds it outranks all three factors, " +
+      "because no rate can push more carbon out than the water can hold. That is " +
+      "most of the map. Second, among" : "one caveat. Among"} the three terms, the two
       efficiency terms have a natural zero (efficiency&nbsp;=&nbsp;1) but the
       dissolution term is measured against a reference condition (pH&nbsp;6.5,
       15&nbsp;°C), so the answer moves with that choice: a reference
@@ -1059,10 +1085,16 @@
       largest more often. It shows which term is furthest from its best case, not
       an absolute ranking of mechanisms.</p>
       <p>It is a screening map, not a site-selection tool: zoom is capped on
-      purpose, and every CO₂ figure is gross removal. Carbonate saturation enters
-      only as an upper bound on what the drainage can carry, not as a modelled
-      precipitation loss; cation retention in the soil, riverine re-release and
-      strong-acid competition are all still outstanding.</p>
+      purpose, and every CO₂ figure is gross removal.
+      ${FC.on
+        ? "Carbonate saturation enters only as an upper bound on what the drainage " +
+          "can carry, not as a modelled precipitation loss; cation retention in the " +
+          "soil, riverine re-release and strong-acid competition are all still " +
+          "outstanding."
+        : "Nothing downstream of dissolution is deducted: not the drainage limit " +
+          "(computed, but switched off — see Known limitations), not cation " +
+          "retention in the soil, not riverine re-release, and not strong-acid " +
+          "competition."}</p>
 
       <h3>How it is computed</h3>
       <ol>
@@ -1133,7 +1165,7 @@
           ${E.cost.tortuosity} road tortuosity</td></tr>
         <tr><td>D_w (transport limitation)</td><td>${p.dw ? p.dw.value : "?"} m/yr
           (published range ${p.dw ? p.dw.range.join("–") : "?"})</td></tr>
-        <tr><td>Drainage ceiling, calcite Ω</td><td>${FC.omega ?? "—"}
+        <tr><td>Drainage ceiling, calcite Ω${FC.on ? "" : " (not applied)"}</td><td>${FC.omega ?? "—"}
           (strict case ${FC.omegaStrict ?? "—"}; precipitation is negligible below
           Ω&nbsp;≈&nbsp;10, so the shipped value is the generous one)</td></tr>
         <tr><td>Ca share of divalent charge</td><td>${FC.fCa ?? "—"}
@@ -1188,11 +1220,16 @@
       pH), and Schaef &amp; McGrail (2009) measure 30 kJ/mol on Columbia River
       basalt from an independent laboratory; Cascade's ${E.kinetics.cascadeEaKJ}
       has the same problem, so it is wrong for a reason we share. This inflates
-      the tropics-versus-temperate contrast in the dissolution term by roughly
-      2×, but note it no longer propagates to the CO₂ layer over most of the map:
-      the drainage ceiling above binds first and does not reward warmth, so the
-      tropical tilt now shows up in &ldquo;weathered in year 1&rdquo; rather than
-      in the tonnage.</p>
+      the tropics-versus-temperate contrast by roughly 2×.
+      ${FC.on
+        ? "It no longer propagates to the CO₂ layer over most of the map, though: " +
+          "the drainage ceiling above binds first and does not reward warmth, so the " +
+          "tropical tilt now shows up in &ldquo;weathered in year 1&rdquo; rather " +
+          "than in the tonnage."
+        : "With the drainage limit switched off it propagates in full to the CO₂ " +
+          "layer, so the warm-climate advantage this map shows is roughly 2× too " +
+          "strong on the kinetics alone, before the drainage bound is even " +
+          "considered."}</p>
       <p><b>The mineral mix is olivine-dominated.</b> Forsterite is 12% of the
       modelled rock by volume but supplies 80% of its base-cation release, so the
       map's pH and temperature response is closer to olivine's than to basalt's.
@@ -1257,8 +1294,27 @@
   }
 
   /* ---------------- wiring ---------------- */
+  /* Footer headline. Recomputed on every refresh so it tracks the sliders. */
+  function updateHeadline() {
+    const gt = globalGt();
+    $("stat-main").textContent = gt === null ? "—" : gt.toFixed(2) + " GtCO\u2082/yr";
+    // Computed live from the gridded data so it tracks the sliders, which means it
+    // reads the 8-bit textures and a 1-in-3 decimation: about 0.5% above the exact
+    // area-weighted total the build prints. Said here rather than papered over.
+    $("stat-main").title = gt === null ? "" :
+      "Area-weighted over " + (E.stats.evaluatedGha ?? E.stats.croplandGha).toFixed(2) +
+      " Gha of evaluated cropland, recomputed from the grid at the current settings. " +
+      "Sampled 1 cell in 3 and read from 8-bit textures, so it sits ~0.5% above the " +
+      "exact total.";
+    $("stat-label").textContent = gt === null
+      ? "cropland in scope"
+      : `gross removal over ${E.stats.croplandGha.toFixed(2)} Gha of cropland`
+        + (FC.on ? "" : ", drainage limit not applied");
+  }
+
   function refresh() {
     syncSliders(); syncPsd(); syncEcon(); renderLegend(); updateStability(); draw();
+    updateHeadline();
     // Keep the readout consistent with what is drawn. A pinned box in particular
     // has no mousemove to bring it up to date.
     renderReadout();
@@ -1351,7 +1407,7 @@
   async function main() {
     $("res-label").textContent =
       `${E.labels.build} · ${E.labels.grid} · ${E.labels.effectiveRes}`;
-    $("stat-main").textContent = E.stats.croplandGha.toFixed(2) + " Gha";
+    updateHeadline();
     const nq = (window.QUARRIES && window.QUARRIES.points.length) || 0;
     const bySrc = {};
     if (nq) window.QUARRIES.points.forEach((p) => {

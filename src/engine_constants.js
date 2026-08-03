@@ -1543,6 +1543,7 @@ window.ERW = {
   },
   "stats": {
     "croplandGha": 1.215,
+    "evaluatedGha": 1.21,
     "cdrMedian": 1.27,
     "quarryPoints": 5295
   },

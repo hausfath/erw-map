@@ -5,6 +5,43 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Headline stat is now the CO2 total, and the panel stops claiming a bound it is not applying
+
+The footer read "1.22 Gha cropland in scope", which is an input to the model rather
+than a result. It now reads the GLOBAL GROSS REMOVAL, computed live from the gridded
+data: the area-weighted mean CDR over the decimated sample, scaled by the EVALUATED
+cropland area. Because it is computed rather than stored it moves with the sliders --
+0.68 GtCO2/yr at a 700 um grind, 2.16 at the reference, 4.50 at 40 um.
+
+Two things done properly rather than approximately:
+
+  - It scales by evaluatedGha (1.21), not total cropland (1.215). The sample only
+    covers cells with a computable rate, so scaling its mean by the full extent
+    would credit removal to the cells we declined to evaluate.
+  - It reads 8-bit textures on a 1-in-3 decimation, so it lands ~0.5% above the
+    exact area-weighted total the build prints (2.16 vs 2.149). The decimation
+    itself costs only 0.2%; the rest is texture quantisation. Stated in the stat's
+    tooltip rather than papered over or fudged to match.
+
+cdrOfRow is now one definition shared by the suitability score, the decile edges and
+this total, so the three cannot disagree about what is being drawn.
+
+METHODS PANEL. Three passages still asserted the drainage ceiling was in force,
+which it is not:
+
+  - the limiting-factor caveat led with "drainage cannot carry it is a bound, not a
+    term... That is most of the map"
+  - the gross-removal note said carbonate saturation "enters only as an upper bound
+    on what the drainage can carry"
+  - the kinetics note claimed the temperature bias "no longer propagates to the CO2
+    layer... the drainage ceiling above binds first"
+
+That last one was the worst: with the ceiling off the tropical tilt propagates in
+FULL, so the panel was reassuring the reader about a correction that is switched
+off. All three are now conditional, and the off-state text says plainly that
+nothing downstream of dissolution is deducted. The assumptions table marks the
+ceiling rows "(not applied)".
+
 ## Shrinking-core dissolution, and two scales that could not be reached
 
 **Dissolution is now shrinking core over the particle-size distribution**, not a

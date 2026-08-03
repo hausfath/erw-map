@@ -674,10 +674,11 @@ def main() -> int:
                    v_cost=v_cost, cost_conf=cost_conf, ceiling=ceiling,
                    cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
                    no_input=no_input)
+    gha_eval = float(((crop * area)[m & np.isfinite(L1)]).sum() * 100.0 / 1e9)
     emit_js(transform, w, h, gha, p50,
             cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
             clim_source=clim_source, monthly=monthly, n_quarries=n_q,
-            soc_excluded=excl, soc_marginal=marg,
+            gha_eval=gha_eval, soc_excluded=excl, soc_marginal=marg,
             ceiling_binds=bound, ceiling_med=wq(ceiling, (0.5,))[0],
             warm_cool=wc_ratio, exceed_med=e50)
     print()
@@ -873,11 +874,13 @@ _G_TABLE = [[round(float(v), 5) for v in K.dissolved_fraction(_U_GRID, n)]
             for n in _WIDTH_GRID]
 
 
-def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
+def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
             clim_source="unknown", monthly=False, n_quarries=0,
             soc_excluded=0.0, soc_marginal=0.0,
             ceiling_binds=0.0, ceiling_med=0.0,
             warm_cool=(None, None), exceed_med=0.0) -> None:
+    if gha_eval is None:
+        gha_eval = gha
     # PASS THESE IN, never reach for main()'s locals. Reading a caller local from
     # here raises NameError at the very last step of the build, which leaves a
     # STALE engine_constants.js behind while everything upstream looks fine. That
@@ -1024,7 +1027,12 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
         "feedstock": {"archetype": C.FEEDSTOCK_DEFAULT,
                       "tco2PerT": round(C.DELIVERED_BASALT_TCO2_PER_T, 3),
                       "rateTHaYr": C.APPLICATION_RATE_T_HA_YR},
-        "stats": {"croplandGha": round(gha, 3), "cdrMedian": round(cdr_p50, 2),
+        # evaluatedGha is the area the browser's sample can actually see: in-domain
+        # AND with a computable rate. Scaling a mean over evaluated cells by TOTAL
+        # cropland would attribute removal to cells we declined to evaluate.
+        "stats": {"croplandGha": round(gha, 3),
+                  "evaluatedGha": round(gha_eval, 3),
+                  "cdrMedian": round(cdr_p50, 2),
                   "quarryPoints": n_quarries},
         "provenance": {
             "soil": "SoilGrids v2.0 via ISRIC WCS (pH 0-15 cm, SOC 0-5 cm + quantiles)",
