@@ -988,6 +988,99 @@ def gate13c_paddy_ceiling_is_unvalidated() -> None:
            f"DIC exists to check it. Unvalidated on ~7.6% of cropland area")
 
 
+def gate14_dissolution_table_matches_exact() -> None:
+    """The browser's shrinking-core lookup must reproduce the exact integral.
+
+    The shader cannot integrate 6,000 size bins per pixel, so it interpolates a
+    64 x 13 table of G(u, n). This asserts the interpolated value against the exact
+    integral at points deliberately BETWEEN nodes on both axes, which is where a
+    table is wrong if it is wrong.
+
+    Tolerance 0.004 in fraction weathered, which is the 8-bit texture quantisation
+    step -- there is no point being more accurate than the thing downstream.
+    """
+    import json
+
+    root = Path(__file__).resolve().parent.parent
+    js = root / "src/engine_constants.js"
+    if not js.exists():
+        record("14. Dissolution table matches the exact integral", None,
+               "src/engine_constants.js not built yet; run scripts/build_v0.py")
+        return
+    txt = js.read_text()
+    D = json.loads(txt[txt.index("{"):txt.rindex(";")]).get("dissolution")
+    if D is None:
+        record("14. Dissolution table matches the exact integral", False,
+               "no dissolution block in the payload")
+        return
+
+    lo, hi, T, ws = D["uLog"]["lo"], D["uLog"]["hi"], D["table"], D["widthGrid"]
+    nu = len(T[0])
+
+    def lookup(u, n):
+        j = 0
+        while j < len(ws) - 2 and n > ws[j + 1]:
+            j += 1
+        fj = min(max((n - ws[j]) / (ws[j + 1] - ws[j]), 0.0), 1.0)
+        t = (math.log10(u) - lo) / (hi - lo) * (nu - 1)
+        if t <= 0:
+            return 0.0
+        if t >= nu - 1:
+            return T[j][nu - 1] + (T[j + 1][nu - 1] - T[j][nu - 1]) * fj
+        i = int(t)
+        a = T[j][i] + (T[j][i + 1] - T[j][i]) * (t - i)
+        b = T[j + 1][i] + (T[j + 1][i + 1] - T[j + 1][i]) * (t - i)
+        return a + (b - a) * fj
+
+    worst, at = 0.0, ""
+    for u in (2e-5, 3.7e-4, 0.0031, 0.019, 0.047, 0.31, 1.7, 9.0):
+        for n in (0.78, 1.1, 1.5, 1.93, 2.31):
+            e = abs(lookup(u, n) - float(K.dissolved_fraction(u, n)[0]))
+            if e > worst:
+                worst, at = e, f"u={u:g} n={n}"
+    # And the reference must come back as the anchor, exactly.
+    dref = K.retreat_at_reference()
+    at_ref = lookup(dref / C.PSD_REF_D50_UM, C.PSD_REF_WIDTH)
+    ref_err = abs(at_ref - C.DISSOLVED_FRAC_AT_REF)
+
+    ok = worst <= 0.004 and ref_err <= 0.004
+    record("14. Dissolution table matches the exact integral", ok,
+           f"worst interpolation error {worst:.4f} in fraction at {at} "
+           f"(tolerance 0.004, the 8-bit step); at the reference grind the table "
+           f"returns {at_ref:.4f} against the {C.DISSOLVED_FRAC_AT_REF} anchor "
+           f"(off by {ref_err:.4f})")
+
+
+def gate15_no_grind_double_count() -> None:
+    """Grind must enter the CDR chain exactly ONCE.
+
+    Under shrinking core the linear retreat rate does not depend on particle size,
+    so the old specific-surface-area multiplier on the rate had to go when the
+    particle-size integral came in. If both were live, a finer grind would raise
+    the rate AND shrink the particles, counting the same physics twice -- which is
+    the defect that once inflated CO2 by 3.45x at the fine end.
+
+    Asserted structurally: the shader must not add the SSA shift into L1.
+    """
+    root = Path(__file__).resolve().parent.parent
+    app = (root / "src/app.js")
+    if not app.exists():
+        record("15. Grind is not double-counted", None, "src/app.js not found")
+        return
+    src = app.read_text()
+    # The rate path is the l1 decode; it must be free of the SSA shift.
+    i = src.find("float l1  = mix(uL1Enc.x")
+    seg = src[i:src.find(";", i)] if i >= 0 else ""
+    bad = "uSsaShift" in seg
+    still_used = "uSsaShift" in src
+    record("15. Grind is not double-counted", (not bad) and (not still_used),
+           "the shader's L1 decode carries no surface-area term, and uSsaShift is "
+           "gone from the shader entirely; grind acts only through the "
+           "particle-size integral"
+           + ("; FOUND uSsaShift in the L1 decode" if bad else "")
+           + ("; uSsaShift still present elsewhere in the shader" if still_used and not bad else ""))
+
+
 def report_calibration_arithmetic() -> None:
     """Not a gate -- context that catches the error class that bit us once.
 
@@ -1027,7 +1120,9 @@ def main() -> int:
                gate11b_surface_partition_overidentified,
                gate13_flux_ceiling_chemistry,
                gate13b_flux_ceiling_within_observed_range,
-               gate13c_paddy_ceiling_is_unvalidated):
+               gate13c_paddy_ceiling_is_unvalidated,
+               gate14_dissolution_table_matches_exact,
+               gate15_no_grind_double_count):
         try:
             fn()
         except Exception as exc:  # a crashing gate is a failing gate

@@ -41,6 +41,9 @@ __all__ = [
     "arrhenius_factor",
     "ssa_geometric",
     "ssa_log_shift",
+    "dissolved_fraction",
+    "retreat_at_reference",
+    "dissolved_fraction_at",
     "d80_to_d50",
     "mineral_rate",
     "rate_ca_mg_release",
@@ -526,6 +529,84 @@ def ssa_log_shift(d50_um, rr_width):
     """
     ref = ssa_geometric(C.PSD_REF_D50_UM, C.PSD_REF_WIDTH)
     return float(np.log10(ssa_geometric(d50_um, rr_width) / ref))
+
+
+# ---------------------------------------------------------------------------
+# Dissolution over a particle-size distribution (shrinking core)
+# ---------------------------------------------------------------------------
+def dissolved_fraction(u, rr_width, nbin=6000):
+    """Mass fraction of a Rosin-Rammler feedstock dissolved, shrinking-core.
+
+    REPLACES frac = 1 - exp(-k*X), which was a single first-order decay on the
+    BULK mass. That form let the last 10% of mass dissolve as easily as the first
+    10%, when physically the last 10% is the coarse tail with the least surface
+    area per unit mass -- so it over-predicted the high end and could reach 100%
+    in a year, which no real grind can do.
+
+    Shrinking core instead: every particle's surface retreats at the same linear
+    rate, because the reaction rate is per unit area and does not know how big the
+    particle is. After a radial retreat `delta`, a particle of initial diameter d
+    has diameter max(d - 2*delta, 0). The fine tail vanishes early and the coarse
+    tail persists, which is the whole point.
+
+        u = delta / d50          (dimensionless retreat)
+        Fw(u, n) = 1 - integral f(x) * max(1 - 2u/x, 0)^3 dx,   x = d / d50
+
+    Fw depends ONLY on u and the width n, because the distribution scales with
+    d50. That 2-D form is what lets the browser interpolate a small table rather
+    than integrate. The integral is taken untruncated; truncating at the 1-5000 um
+    range ssa_geometric uses changes Fw by <=0.001 for n >= 1.5 and by up to 0.03
+    at n = 0.7, where real mass sits outside that window. Documented, not hidden.
+
+    GRIND NOW ENTERS ONCE, HERE, and no longer multiplies the rate. Under shrinking
+    core the linear retreat rate is independent of particle size; finer feedstock
+    weathers a larger FRACTION purely because it has less mass per unit surface,
+    which this integral already captures. Keeping the old specific-surface-area
+    multiplier on the rate as well would count grind twice.
+    """
+    u = np.atleast_1d(np.asarray(u, dtype=float))
+    n = float(rr_width)
+    cn = 1.0 / (np.log(2.0) ** (1.0 / n))            # d_c / d50
+    edges = np.geomspace(1e-4, 60.0, nbin + 1)
+    wm = np.diff(1.0 - np.exp(-((edges / cn) ** n)))
+    x = np.sqrt(edges[:-1] * edges[1:])
+    wm = wm / wm.sum()
+    rem = np.clip(1.0 - 2.0 * u[:, None] / x[None, :], 0.0, None) ** 3
+    return 1.0 - (rem * wm[None, :]).sum(axis=1)
+
+
+def retreat_at_reference(target=None, d50_um=None, rr_width=None):
+    """Radial retreat, in micrometres, that dissolves `target` of the reference
+    grind in one year at the reference condition. This is the single anchored
+    quantity in the dissolution model -- see constants.DISSOLVED_FRAC_AT_REF."""
+    if target is None:
+        target = C.DISSOLVED_FRAC_AT_REF
+    if d50_um is None:
+        d50_um = C.PSD_REF_D50_UM
+    if rr_width is None:
+        rr_width = C.PSD_REF_WIDTH
+    lo, hi = 0.0, 10.0
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        if float(dissolved_fraction(mid, rr_width)[0]) < target:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi) * d50_um
+
+
+def dissolved_fraction_at(X, d50_um, rr_width, delta_ref_um=None):
+    """Fraction weathered for a cell of dimensionless rate X at a given grind.
+
+    X is the kinetic-and-transport rate relative to the reference condition, WITH
+    NO surface-area term (see dissolved_fraction). The retreat scales linearly
+    with it, and the grind enters as d50.
+    """
+    if delta_ref_um is None:
+        delta_ref_um = retreat_at_reference()
+    u = delta_ref_um * np.asarray(X, dtype=float) / float(d50_um)
+    out = dissolved_fraction(u.ravel(), rr_width)
+    return out.reshape(np.shape(X)) if np.shape(X) else float(out[0])
 
 
 # ---------------------------------------------------------------------------

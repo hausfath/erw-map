@@ -48,7 +48,6 @@
   // exactly the physical product, so gross CDR -- and hence suitability -- is
   // zero wherever any required term is zero.
   const termExp = {reactivity: 1, eta_dic: 1, drainage: 1};
-  const K_DISS = -Math.log(1 - E.dissolvedFracAtRef);
   // Economic weight. A real preference, not a what-if: cost genuinely trades off
   // against physical potential in a way the physical terms do not trade off
   // against each other.
@@ -140,10 +139,16 @@
   uniform vec2 uL1Enc;            // lo, hi of the stored L1 range
   uniform vec2 uCeilEnc;          // lo, hi of log10(ceiling / cdrPerFrac) in tex2.b
   uniform int  uCeilOn;           // 1 = apply the drainage-concentration ceiling
-  uniform float uSsaShift;        // log10(SSA(d50,width) / SSA(ref))
-  uniform float uKdiss;           // -ln(1 - dissolved fraction at reference)
+  // Shrinking-core dissolution. uG is a 64-node slice of G(u, n) at the CURRENT
+  // width, interpolated in JS because the width slider is global. u = delta/d50,
+  // so the grind enters HERE and no longer multiplies the rate -- under shrinking
+  // core the linear retreat rate does not depend on particle size.
+  uniform float uG[64];
+  uniform vec2  uGLogU;           // lo, hi of log10(u) spanned by uG
+  uniform float uUScale;          // deltaRef / d50, i.e. u = uUScale * X
   uniform float uCdrPerFrac;      // tCO2/ha/yr per unit dissolved fraction
   uniform float uNegligible;      // CDR below this is "no meaningful potential"
+  uniform float uFracRampMax;     // top of the fraction-weathered colour ramp
   uniform float uCx[6], uCy[6];   // suitability knots, x in log10(tCO2/ha/yr)
   uniform float uCostExp;         // exponent on the compensatory cost multiplier
   uniform float uCostFloor;
@@ -195,8 +200,9 @@
     // Dequantise the RAW physical terms. Value 0 is reserved for masked cells,
     // so data occupies 5..255 -- and a decoded zero is a true zero, which
     // matters because zero really does mean no carbon.
-    float l1  = mix(uL1Enc.x, uL1Enc.y, clamp((a.r * 255.0 - 5.0) / 250.0, 0.0, 1.0))
-                + uSsaShift;
+    // NO grind term here any more. Grind acts through the particle-size integral
+    // below, not as a surface-area multiplier on the rate.
+    float l1  = mix(uL1Enc.x, uL1Enc.y, clamp((a.r * 255.0 - 5.0) / 250.0, 0.0, 1.0));
     float rel = pow(10.0, l1);                          // R / R_ref
     float eDic = clamp((a.g * 255.0 - 5.0) / 250.0, 0.0, 1.0);
     float eTr  = clamp((a.b * 255.0 - 5.0) / 250.0, 0.0, 1.0);
@@ -216,7 +222,22 @@
     // fraction weathered by up to ~2x in acid soils -- the one layer field
     // trials can measure.
     float X = exp(lr + lt);
-    float frac = 1.0 - exp(-uKdiss * X);       // saturates at 1, no flat top
+
+    // Shrinking core over the Rosin-Rammler distribution, by lookup. Replaces
+    // frac = 1 - exp(-k*X), which decayed the BULK mass at one rate and so let the
+    // coarse tail dissolve as easily as the fines.
+    float frac;
+    {
+      float u = uUScale * X;
+      float t = (log(max(u, 1e-30)) / log(10.0) - uGLogU.x)
+                / (uGLogU.y - uGLogU.x) * 63.0;
+      if (t <= 0.0)       { frac = 0.0; }
+      else if (t >= 63.0) { frac = uG[63]; }
+      else {
+        int i = int(t);
+        frac = mix(uG[i], uG[i + 1], t - float(i));
+      }
+    }
 
     // Fraction weathered on its OWN ramp. No economics multiplier and no
     // negligible cutoff: this is a physical quantity whose zero is meaningful on
@@ -226,14 +247,18 @@
     // This layer is deliberately NOT bounded by the drainage ceiling below. It is
     // the rock dissolving, which is a different quantity from the carbon leaving.
     if (uMode == 2) {
-      vec3 fc = texture(uRampFrac, vec2(clamp(frac, 0.0, 1.0), 0.5)).rgb;
+      // Ramp spans 0..uFracRampMax, not 0..1: most of cropland sits below 60%
+      // weathered, so a full-range ramp spent its top 40% on ~2% of the map.
+      // Values above the top clamp, and the legend labels that end with ">=".
+      vec3 fc = texture(uRampFrac, vec2(clamp(frac / uFracRampMax, 0.0, 1.0), 0.5)).rgb;
       fragColor = vec4(fc, 1.0);
       return;
     }
 
-    // NO grind factor here: uSsaShift is already inside l1, so it is already in
-    // frac via X. Multiplying again applied the grind twice -- at d50 = 40 um
-    // that inflated CO2 by 3.45x and broke the stoichiometric ceiling.
+    // No grind factor here: grind is inside frac, through the particle-size
+    // integral. It was applied twice once before, via a surface-area multiplier
+    // on the rate AND again on the CO2 figure, which inflated CO2 by 3.45x at the
+    // fine end and broke the stoichiometric ceiling.
     float cdr = frac * exp(ld) * uCdrPerFrac;
 
     // DRAINAGE-CONCENTRATION CEILING. The carbon has to leave dissolved in the
@@ -448,10 +473,13 @@
     gl.uniform2f(u("uL1Enc"), E.l1Enc.lo, E.l1Enc.hi);
     gl.uniform2f(u("uCeilEnc"), FC.enc.lo, FC.enc.hi);
     gl.uniform1i(u("uCeilOn"), FC.on ? 1 : 0);
-    gl.uniform1f(u("uSsaShift"), ssaShift());
-    gl.uniform1f(u("uKdiss"), K_DISS);
+    const gslice = gSlice();
+    gl.uniform1fv(u("uG[0]"), gslice);
+    gl.uniform2f(u("uGLogU"), E.dissolution.uLog.lo, E.dissolution.uLog.hi);
+    gl.uniform1f(u("uUScale"), E.dissolution.deltaRefUm / psd.d50);
     gl.uniform1f(u("uCdrPerFrac"), E.cdrPerFrac);
     gl.uniform1f(u("uNegligible"), E.cdrNegligible);
+    gl.uniform1f(u("uFracRampMax"), E.fracRampMax || 1.0);
     gl.uniform1fv(u("uCx"), new Float32Array(E.cdrKnots.map(k => Math.log10(k[0]))));
     gl.uniform1fv(u("uCy"), new Float32Array(E.cdrKnots.map(k => k[1])));
     gl.uniform1f(u("uCostExp"), econ.costExp);
@@ -556,7 +584,7 @@
     // (it does not slow the rock). rel already carries the grind shift, so cdr
     // must not multiply by it again -- see the matching shader comments.
     const X = Math.exp(lr + lt);
-    const frac = 1 - Math.exp(-K_DISS * X);
+    const frac = fracOf(X);
     // The ceiling bounds the CARBON and not the rock, so frac is returned
     // unbounded and cdr is capped. Mirrors the shader exactly; gate 8 in
     // test_kinetics.py asserts both read the same generated constants.
@@ -586,11 +614,33 @@
   function termsAt(i) {
     const A = cpu.A, B = cpu.B, C3 = cpu.C;
     const raw = (b) => clamp(0, (b - 5) / 250, 1);
-    const l1 = E.l1Enc.lo + raw(A[i]) * (E.l1Enc.hi - E.l1Enc.lo) + ssaShift();
+    const l1 = E.l1Enc.lo + raw(A[i]) * (E.l1Enc.hi - E.l1Enc.lo);   // no grind term
     const fl = E.cost ? E.cost.floor : 1;
     return {rel: Math.pow(10, l1), l1, eDic: raw(A[i + 1]), eTr: raw(A[i + 2]),
             ceil: decodeCeil(B[i + 2]),
             vCost: fl + raw(C3[i + 2]) * (1 - fl)};
+  }
+
+  /* Shrinking-core dissolution, mirroring the shader exactly. One definition each
+     for the width slice and the fraction; gate 14 asserts they agree with Python. */
+  function gSlice() {
+    const D = E.dissolution, ws = D.widthGrid;
+    let j = 0;
+    while (j < ws.length - 2 && psd.width > ws[j + 1]) j++;
+    const f = clamp(0, (psd.width - ws[j]) / (ws[j + 1] - ws[j]), 1);
+    const a = D.table[j], b = D.table[j + 1];
+    return Float32Array.from(a, (v, i) => v + (b[i] - v) * f);
+  }
+
+  function fracOf(X) {
+    const D = E.dissolution, g = gSlice();
+    const u = (D.deltaRefUm / psd.d50) * X;
+    if (!(u > 0)) return 0;
+    const t = (Math.log10(u) - D.uLog.lo) / (D.uLog.hi - D.uLog.lo) * (g.length - 1);
+    if (t <= 0) return 0;
+    if (t >= g.length - 1) return g[g.length - 1];
+    const i = Math.floor(t);
+    return g[i] + (g[i + 1] - g[i]) * (t - i);
   }
 
   /* tex2.b holds log10(ceiling / cdrPerFrac), so the arid tail keeps resolution.
@@ -857,7 +907,7 @@
       `<div class="ramp" style="background:linear-gradient(90deg,${grad})"></div>` +
       `<div class="ends"><span>0</span>` +
       `<span>${isFrac ? "% weathered in year 1" : "suitability"}</span>` +
-      `<span>100</span></div>` +
+      `<span>${isFrac ? "&ge;&nbsp;" + ((E.fracRampMax || 1) * 100).toFixed(0) : "100"}</span></div>` +
       (isFrac
         ? `<p class="hint">Measured year-one weathering across the verified 2026
              deliveries spans <b>${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%</b>.
@@ -904,12 +954,11 @@
 
   function scoreOf(row, exps) {
     const raw = (b) => clamp(0, (b - 5) / 250, 1);
-    const rel = Math.pow(10, E.l1Enc.lo + raw(row[0]) * (E.l1Enc.hi - E.l1Enc.lo)
-                             + ssaShift());
+    const rel = Math.pow(10, E.l1Enc.lo + raw(row[0]) * (E.l1Enc.hi - E.l1Enc.lo));
     const X = Math.exp(exps[0] * Math.log(Math.max(rel, 1e-12))
                      + exps[2] * Math.log(Math.max(raw(row[2]), 1e-12)));
     const eDic = Math.pow(Math.max(raw(row[1]), 1e-12), exps[1]);
-    let cdr = (1 - Math.exp(-K_DISS * X)) * eDic * E.cdrPerFrac;
+    let cdr = fracOf(X) * eDic * E.cdrPerFrac;
     // Same ceiling as the shader and the hover readout. Without it here the
     // stability metric and the decile edges would be computed on a different
     // model from the one being drawn.

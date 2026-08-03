@@ -542,22 +542,81 @@ APPLICATION_RATE_PREVIOUS_T_HA_YR = 20.0   # for the changelog and the rate note
 #     frac = 1 - exp(-k * X)
 # where X is the dimensionless rate relative to the reference condition,
 #     X = (R/R_ref) * eta_DIC * eta_transport
-# and k is set so that frac = DISSOLVED_FRAC_AT_REF when X = 1:
-#     k = -ln(1 - DISSOLVED_FRAC_AT_REF)
+# and the dissolution model turns X into a fraction weathered.
 #
-# This replaces a hard clip at 0.6, which pinned 18.9% of cropland area at an
+# THE EXPONENTIAL WAS REPLACED BY SHRINKING CORE, August 2026. The old form,
+# frac = 1 - exp(-k*X) with k = -ln(1 - DISSOLVED_FRAC_AT_REF), was a single
+# first-order decay on the BULK mass: it let the last 10% of the rock dissolve as
+# easily as the first 10%, when physically that last 10% is the coarse tail with
+# the least surface area per unit mass. It could reach 100% in a year, which no
+# real grind does. See kinetics.dissolved_fraction.
+#
+# Consequence of the swap, at the reference grind: fraction weathered rises
+# slightly at low X (+1 pp) and falls in the middle and upper range, worst around
+# X = 8 at -8 pp. It converges again at very high X, because enough capacity does
+# eventually consume even the coarse tail.
+#
+# The shrinking-core form also moved GRIND out of the rate. Under shrinking core
+# the linear retreat rate does not depend on particle size, so the old
+# surface-area multiplier on the rate is gone and grind now enters once, through
+# the particle-size integral. Keeping both would count it twice.
+#
+# Both replace a hard clip at 0.6, which pinned 18.9% of cropland area at an
 # identical value and gave the CDR layer a flat top across a fifth of the map.
-# A saturating exponential is bounded by 1 for the right reason -- you cannot
-# dissolve more rock than you applied -- and has no artificial ceiling.
 #
-# DISSOLVED_FRAC_AT_REF is anchored to the MIDPOINT OF OBSERVATION, not fitted:
-# first-period fraction weathered across the 2026 verified deliveries spans
-# roughly 15-56%, so 0.25 sits inside that range at the reference condition.
-# It is still not a calibration -- see docs/VALIDATION.md, which requires
-# per-delivery particle-size distributions before any real fit.
+# WHERE 0.25 COMES FROM. Corrected 2026-08 -- the previous version of this note
+# overstated how well determined it is, and got the statistic wrong.
+#
+# It is the ONLY free parameter in the dissolution model, set by hand so that a
+# cell at the reference condition weathers 25% of the applied rock in year one.
+# Three things a reader needs, none of which the old note said:
+#
+#  1. IT IS NOT THE MIDPOINT of the observed range, which the old note claimed.
+#     First-period fraction weathered across the eight 2026 verified deliveries
+#     spans 15.4-55.9%. Midpoint 35.7%, mean 32.8%, MEDIAN 26.4%. 0.25 is nearest
+#     the median, and coincides almost exactly with one delivery (25.0%).
+#  2. THE OBSERVATIONS ARE NOT AT THE REFERENCE CONDITION. No delivery is at
+#     d50 150 um / width 1.5: they run 67, 120 and 600 um at 15-100 t/ha. Renormal-
+#     ised to a common grind and rate the same eight span 8.7-71.3% with a median
+#     of 31.7%, not 15-56% with a median of 26%. So a number defined at a
+#     normalised condition is being justified by un-normalised observations.
+#     Neither range is a sound basis: analyse_deployments.py shows grind is
+#     perfectly collinear with regime here, so the renormalisation is itself
+#     unidentifiable. Both are reported; neither is load-bearing.
+#  3. THE REFERENCE CONDITION IS UNDER-SPECIFIED ON THE TRANSPORT SIDE. L1_REF
+#     pins pH, temperature and saturation but says nothing about drainage, and
+#     frac = DISSOLVED_FRAC_AT_REF is defined at X = 1, which requires
+#     eta_transport = 1, i.e. INFINITE drainage. No real site meets that. A cell
+#     with exactly reference kinetics at the median cropland drainage
+#     (eta_tr = 0.71) weathers 18.5%, not 25%.
+#
+# It remains an anchor rather than a fit, and docs/VALIDATION.md still requires
+# per-delivery particle-size distributions before any real fit. But "anchored to
+# the midpoint of observation" was wrong twice over and is withdrawn.
 # ---------------------------------------------------------------------------
 DISSOLVED_FRAC_AT_REF = 0.25
-DISSOLVED_FRAC_OBSERVED_RANGE = (0.15, 0.56)
+DISSOLVED_FRAC_OBSERVED_RANGE = (0.154, 0.559)          # raw, each at its own grind
+DISSOLVED_FRAC_OBSERVED_MEDIAN = 0.264
+DISSOLVED_FRAC_NORMALISED_RANGE = (0.087, 0.713)        # to d50 150 um and 44.7 t/ha
+DISSOLVED_FRAC_NORMALISED_MEDIAN = 0.317
+DISSOLVED_FRAC_REF_REQUIRES_ETA_TR = 1.0                # X = 1 implies infinite drainage
+
+# Top of the fraction-weathered COLOUR RAMP. Not a cap on the quantity -- the
+# layer still reports its true value in the readout, and cells above this clamp to
+# the top colour with the legend labelled ">=".
+#
+# The old ramp spanned 0-100% and spent 40% of its colour range on 2% of cropland
+# area. Under shrinking core the distribution is p50 15%, p90 59%, p99 87%, so
+# most of the map lives below 60% and the top of the ramp was close to unused.
+# 0.65 clamps 7.3% of area; 0.80 would clamp 2.2% and 0.90 only 0.6%, so this is a
+# readability-versus-headroom trade and 0.65 is the readability end of it.
+#
+# NOTE the shrinking-core swap did NOT make 100% unreachable, only much harder:
+# 0.01% of cropland area still exceeds 99%, down from 0.11% under the exponential.
+# Cells get there by having 40x the reference reactivity, which is a kinetics
+# question, not a particle-size one.
+FRAC_RAMP_MAX = 0.65
+FRAC_RAMP_CLAMPED_AREA_FRAC = 0.073     # measured; reported in the build
 
 # ---------------------------------------------------------------------------
 # Suitability is a value function of GROSS CDR, on absolute breakpoints in
@@ -576,14 +635,36 @@ DISSOLVED_FRAC_OBSERVED_RANGE = (0.15, 0.56)
 # quantity that has units and can be argued about.
 #
 # Zero CDR now gives zero suitability BY CONSTRUCTION, not by tuning.
+#
+# THE TOP KNOT WAS UNREACHABLE, and had been since it was written. It sat at
+# 10 tCO2/ha/yr, but you cannot get 10 tCO2/ha/yr out of the applied rock: the
+# stoichiometric maximum is APPLICATION_RATE x the feedstock's CO2 potential,
+# which is 8.69 at 30 t/ha and was 5.79 at the old 20 t/ha. So a score of 100 was
+# not merely unreached in this build, it was arithmetically impossible in every
+# build, and roughly the top 8 points of the scale were dead.
+#
+# The top knot is now the STOICHIOMETRIC MAXIMUM itself, computed rather than
+# stated. 100 therefore means "every tonne applied has dissolved and every
+# available cation has carried its carbon" -- an interpretable anchor, and one
+# that stays correct if the rate or the feedstock changes. The lower knots stay
+# as absolute values, because they are the ones that make the score comparable
+# between builds; only the endpoint is tied to what is physically attainable.
+#
+# It remains true that the breakpoints are absolute and do NOT move with the
+# grind or term-exponent sliders, which is what keeps the colour scale stable
+# while a reader explores. The application rate is not a slider.
 # ---------------------------------------------------------------------------
+_STOICH_MAX_T_HA_YR = (APPLICATION_RATE_T_HA_YR
+                       * (FEEDSTOCK_ARCHETYPES[FEEDSTOCK_DEFAULT]["CaO_wt"] / M_CAO
+                          + FEEDSTOCK_ARCHETYPES[FEEDSTOCK_DEFAULT]["MgO_wt"] / M_MGO)
+                       * 1000.0 * 2.0 * MOL_CO2_PER_KMOL_CHARGE_T)
 CDR_SUITABILITY_KNOTS = [
     (0.02, 0.0),     # at or below this, negligible: rendered as its own state
     (0.10, 0.20),
     (0.50, 0.40),
     (1.50, 0.60),
     (4.00, 0.80),
-    (10.00, 1.0),
+    (round(_STOICH_MAX_T_HA_YR, 2), 1.0),   # complete dissolution; see above
 ]
 # Below this, a cell is drawn as "negligible potential" rather than given a
 # low-but-nonzero colour. A near-zero score and a genuine zero are different

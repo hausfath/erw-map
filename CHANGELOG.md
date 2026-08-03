@@ -5,6 +5,61 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Shrinking-core dissolution, and two scales that could not be reached
+
+**Dissolution is now shrinking core over the particle-size distribution**, not a
+single first-order decay on the bulk mass. The old frac = 1 - exp(-k*X) let the
+last 10% of rock dissolve as easily as the first 10%, when physically that last 10%
+is the coarse tail with the least surface area per unit mass. Every particle's
+surface now retreats at the same linear rate, so the fines vanish early and the
+coarse tail persists.
+
+    u = delta/d50,  Fw(u,n) = 1 - integral f(x) max(1 - 2u/x, 0)^3 dx
+
+Fw depends only on u and the width, which is what lets the browser interpolate a
+64x13 table rather than integrate 6,000 size bins per pixel (gate 14 bounds that at
+0.0019, below the 8-bit step).
+
+  cropland area above 75% weathered   6.4%  -> 3.4%
+  above 90%                           1.8%  -> 0.63%
+  above 99%                           0.11% -> 0.01%
+  p50 / p90 / p99            13.9/65.0/94.0 -> 14.9/58.6/87.1%
+
+The median barely moves and the extreme tail is cut by about two thirds. It does
+NOT make 100% unreachable: a cell with 40x reference reactivity still gets there,
+which is a kinetics question, not a particle-size one.
+
+**Grind moved out of the rate.** Under shrinking core the linear retreat rate does
+not depend on particle size, so the surface-area multiplier on the rate is gone and
+grind enters once, through the integral. Keeping both would count the same physics
+twice. Gate 15 asserts the shader's L1 decode carries no surface-area term. The
+grind readout no longer says "x faster weathering" -- it reports surface area,
+which is what it actually measures.
+
+**Suitability 100 was arithmetically impossible, in every build.** The top knot sat
+at 10 tCO2/ha/yr, but the stoichiometric maximum is rate x the feedstock's CO2
+potential: 8.69 at 30 t/ha, and 5.79 at the old 20. So roughly the top 8 points of
+the scale were dead. The top knot is now the stoichiometric maximum itself,
+computed, so 100 means "every tonne applied dissolved and every available cation
+carried its carbon". The lower knots stay absolute, which is what keeps scores
+comparable between builds.
+
+**The fraction-weathered ramp spanned 0-100% and spent 40% of its colour on 2% of
+cropland.** Top is now 0.65, labelled ">= 65", which clamps 7.3% of area. 0.80
+would clamp 2.2% and 0.90 only 0.6%, so this is a readability-versus-headroom trade
+made at the readability end.
+
+**Where DISSOLVED_FRAC_AT_REF comes from, corrected.** The note claimed it was
+"anchored to the MIDPOINT OF OBSERVATION". It is not the midpoint (35.7%) but
+nearest the median (26.4%) of the eight verified deliveries. Worse, those
+deliveries are not at the reference grind -- renormalised to a common grind and
+rate they span 8.7-71.3% with median 31.7%, so a number defined at a normalised
+condition was justified by un-normalised observations. And the reference condition
+is under-specified on the transport side: frac = 0.25 at X = 1 implies
+eta_transport = 1, i.e. infinite drainage, which no site has. At median cropland
+drainage the same cell weathers 18.5%. Still an anchor rather than a fit, but the
+old wording oversold how well determined it is.
+
 ## Missing climate input is drawn as missing, August 2026
 
 695 cropland cells -- 0.35 Mha, 0.03% of cropland area, almost all high-latitude

@@ -35,7 +35,7 @@ soil pH, soil T, soil moisture
         ↓  × grind shift, log10(SSA(d50, width) / SSA(reference))
         ↓  × η_transport = q / (q + D_w)
       X (dimensionless, relative to the reference condition)
-        ↓  frac = 1 − exp(−k·X)
+        ↓  frac = shrinking core over the Rosin–Rammler PSD  (grind enters HERE)
         ↓  × η_DIC  (carbonate-equilibrium efficiency)
         ↓  × application rate × tCO₂ per tonne
         ↓  min(·, q · [HCO₃⁻]_max · 44)   drainage-concentration ceiling
@@ -84,6 +84,44 @@ suggests, because soil at 5–15 cm is strongly damped.
 
 η_DIC is **rate-weighted** across months, not plainly averaged: the efficiency
 that matters is the one operating while dissolution is happening.
+
+### Dissolution: shrinking core, not a bulk exponential
+
+`frac = 1 − exp(−k·X)` was a single first-order decay on the **bulk mass**. The
+particle-size distribution entered only through specific surface area, which
+scaled the rate; it never shaped the dissolution curve. So the model let the last
+10% of the rock dissolve as easily as the first 10%, when physically that last 10%
+is the coarse tail with the least surface area per unit mass — and it could reach
+100% in a year, which no real grind does.
+
+It is now shrinking core: every particle's surface retreats at the same linear
+rate, so after a radial retreat δ a particle of initial diameter d has diameter
+max(d − 2δ, 0). The fines vanish early and the coarse tail persists.
+
+    u = δ / d50,    Fw(u, n) = 1 − ∫ f(x)·max(1 − 2u/x, 0)³ dx,   x = d / d50
+
+Fw depends only on u and the width n, which is what lets the browser interpolate a
+64 × 13 table instead of integrating (gate 14 bounds that at 0.0019 in fraction,
+below the 8-bit step). δ scales linearly with X, anchored so that the reference
+grind gives `DISSOLVED_FRAC_AT_REF` at X = 1.
+
+Measured effect on the shipped map, at the reference grind:
+
+| | exponential | shrinking core |
+|---|---|---|
+| cropland area above 50% weathered | 15.6% | 13.7% |
+| above 75% | 6.4% | **3.4%** |
+| above 90% | 1.8% | **0.63%** |
+| above 99% | 0.11% | **0.01%** |
+| p50 / p90 / p99 | 13.9 / 65.0 / 94.0% | 14.9 / 58.6 / 87.1% |
+
+The median barely moves; the extreme tail is cut by about two thirds. Note it does
+**not** make 100% unreachable — a cell with 40× the reference reactivity still gets
+there, which is a kinetics question rather than a particle-size one.
+
+The integral is untruncated. Truncating at the 1–5000 µm range `ssa_geometric`
+uses changes Fw by ≤0.001 for n ≥ 1.5 and by up to 0.03 at n = 0.7, where real mass
+sits outside that window.
 
 ### Soil moisture: a known defect, stated plainly
 
@@ -242,7 +280,9 @@ showing numbers derived from the NaN fallback.
 | Application rate | **30 t/ha/yr** | stated assumption; raised from 20 in Aug 2026 to sit nearer commercial practice |
 | Feedstock | `delivered_basalt`, 0.289 tCO₂/t | mean implied CO₂ potential of n = 3 verified deliveries, one operator |
 | Reference grind | d50 150 µm, Rosin–Rammler width 1.5 | mid-range of observed 67–600 µm p50; **width is assumed** and is narrow for a commercial crush |
-| Year-1 dissolved fraction at reference | 0.25 | anchored to field-reported first-period weathering (15–56%) |
+| Year-1 dissolved fraction at reference | 0.25 | **the only free parameter.** Nearest the *median* of the eight verified deliveries (26.4%), not the midpoint of their 15.4–55.9% range as previously stated. Those deliveries are not at the reference grind: renormalised they span 8.7–71.3%, median 31.7%. And X = 1 implies η_transport = 1, i.e. infinite drainage — at median cropland drainage the same cell weathers 18.5% |
+| Suitability = 100 at | **8.69 tCO₂/ha/yr** | the stoichiometric maximum, `rate × tCO₂/t`, computed. The old 10 was **above** the maximum and so unreachable in every build |
+| Fraction-weathered ramp top | **0.65** | readability: p50 is 15%, p90 59%. Clamps 7.3% of area, labelled "≥ 65" |
 | D_w | 0.03 m/yr | Maher & Chamberlain 2014, collisional/craton divide; published range 0.001–0.3 |
 | Flux-ceiling Ω (calcite) | 10, strict case 1 | precipitation "negligible at Ω < 10", Zhang et al. 2022; both reported |
 | Flux-ceiling f_Ca | 0.5 | basalt releases Ca and Mg in roughly equal charge; only Ca constrains calcite |

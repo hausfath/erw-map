@@ -391,8 +391,15 @@ def main() -> int:
 
     # First-order decay of remaining mass. Replaces a hard clip at 0.6 that
     # pinned 18.9% of cropland area at one value, giving the layer a flat top.
-    k_diss = -np.log(1.0 - C.DISSOLVED_FRAC_AT_REF)
-    frac = 1.0 - np.exp(-k_diss * np.clip(X, 0.0, None))
+    # Shrinking core over the reference particle-size distribution, evaluated
+    # through a monotone lookup: the exact integral is 6,000 size bins per cell
+    # and there are 5M cells. The table is dense enough that interpolation error
+    # is below the 8-bit texture quantisation -- asserted by gate 14.
+    delta_ref = K.retreat_at_reference()
+    u_grid = np.concatenate([[0.0], np.geomspace(1e-5, 12.0, 512)])
+    g_grid = np.concatenate([[0.0], K.dissolved_fraction(u_grid[1:], C.PSD_REF_WIDTH)])
+    u_cell = delta_ref * np.clip(X, 0.0, None) / C.PSD_REF_D50_UM
+    frac = np.interp(u_cell, u_grid, g_grid)
     cdr_uncapped = frac * eta * C.APPLICATION_RATE_T_HA_YR * ceil_t
 
     # THE CEILING BINDS THE CARBON, NOT THE ROCK, and that separation is the
@@ -853,6 +860,18 @@ def _grid_through(lo, hi, ref, n, nd):
 _D50_GRID = _grid_through(*C.PSD_D50_SLIDER_RANGE, C.PSD_REF_D50_UM, 24, 1)
 _WIDTH_GRID = _grid_through(*C.PSD_WIDTH_SLIDER_RANGE, C.PSD_REF_WIDTH, 13, 3)
 
+# Shrinking-core dissolution table, G(u, n), for the browser. u = delta/d50 on a
+# log grid; n reuses the width axis. 64 u-nodes keeps bilinear error at 0.0023 in
+# fraction, below the 0.0040 the 8-bit texture quantises to anyway (gate 14).
+#
+# The WIDTH axis is interpolated in JS, not in the shader: the width slider is a
+# single global value, so the browser only ever needs one 64-element slice at a
+# time. That keeps the shader uniform to 64 floats instead of 832.
+_U_LOG = (-5.0, np.log10(12.0))
+_U_GRID = np.logspace(*_U_LOG, 64)
+_G_TABLE = [[round(float(v), 5) for v in K.dissolved_fraction(_U_GRID, n)]
+            for n in _WIDTH_GRID]
+
 
 def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
             clim_source="unknown", monthly=False, n_quarries=0,
@@ -883,6 +902,7 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
         "aggP": C.AGG_P_DEFAULT,
         "ramp": RAMP,
         "rampFrac": RAMP_FRAC,
+        "fracRampMax": C.FRAC_RAMP_MAX,
         "cdrKnots": C.CDR_SUITABILITY_KNOTS,
         "cdrNegligible": C.CDR_NEGLIGIBLE_T_HA_YR,
         "dissolvedFracAtRef": C.DISSOLVED_FRAC_AT_REF,
@@ -925,6 +945,18 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0,
             "realisedShareOfStoich": round(
                 float(ceiling_med) / C.APPLICATION_RATE_T_HA_YR
                 / (cdr_per_frac / C.APPLICATION_RATE_T_HA_YR), 4),
+        },
+        # Shrinking-core dissolution. The browser needs delta_ref and the table
+        # because the grind sliders change d50 and n, and grind now enters through
+        # the particle-size integral rather than as a multiplier on the rate.
+        "dissolution": {
+            "model": "shrinking_core",
+            "deltaRefUm": round(float(K.retreat_at_reference()), 6),
+            "refD50Um": C.PSD_REF_D50_UM,
+            "fracAtRef": C.DISSOLVED_FRAC_AT_REF,
+            "uLog": {"lo": _U_LOG[0], "hi": round(_U_LOG[1], 6)},
+            "widthGrid": _WIDTH_GRID,
+            "table": _G_TABLE,
         },
         "damkohler": {"dw": C.DAMKOHLER_DW_M_YR,
                       "dwRange": list(C.DAMKOHLER_DW_RANGE),
