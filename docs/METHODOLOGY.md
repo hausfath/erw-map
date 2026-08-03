@@ -223,6 +223,17 @@ than tolerance-fudged; it is the standing justification for field-data ask #6.
 Gates: **12** in `build_v0.py` (nothing may report more carbon than its drainage can
 carry), **13/13b/13c** in `test_kinetics.py`.
 
+### Cells with no climate input
+
+695 cropland cells (0.35 Mha, 0.03% of cropland area, almost all high-latitude
+Scandinavia) fall inside the cropland mask but have no monthly soil temperature or
+moisture, so the rate is undefined there. They used to fall through the texture
+encoder's `nan_to_num(L1, nan=−3.0)` and were drawn as near-zero potential —
+**missing data rendered as a confident "nothing here"**. They now carry their own
+flag bit and are drawn in a distinct grey in every layer, excluded from the
+decimated sample, and the hover readout says the cell was not evaluated rather than
+showing numbers derived from the NaN fallback.
+
 ## 3. Parameters
 
 | Parameter | Value | Basis |

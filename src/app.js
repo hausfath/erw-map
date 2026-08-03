@@ -150,6 +150,9 @@
 
   const vec4 OUT_OF_DOMAIN = vec4(0.0, 0.0, 0.0, 0.0);
   const vec4 NEGLIGIBLE    = vec4(0.16, 0.17, 0.19, 1.0);
+  // Distinct from NEGLIGIBLE on purpose: "we do not know" and "there is nothing
+  // here" are different claims and must not share a colour.
+  const vec4 NO_INPUT      = vec4(0.42, 0.44, 0.47, 1.0);
 
   vec3 factorColor(int i) {
     if (i == 0) return vec3(0.878, 0.439, 0.310);
@@ -184,6 +187,10 @@
       fragColor = vec4(0.30, 0.16, 0.16, 1.0);
       return;
     }
+
+    // No monthly climate input, so the rate is undefined here. Drawn in every
+    // mode, including "weathered in year 1": there is no number to show.
+    if ((flags & 4) != 0) { fragColor = NO_INPUT; return; }
 
     // Dequantise the RAW physical terms. Value 0 is reserved for masked cells,
     // so data occupies 5..255 -- and a decoded zero is a true zero, which
@@ -753,6 +760,21 @@
     const flags = B[i + 1];
     if (!(flags & 1)) { box.classList.add("hidden"); return; }
 
+    // No climate input: every downstream number would be an artefact of the
+    // encoder's NaN fallback, so show none of them.
+    if (flags & 4) {
+      const rg = regionNameAt(i);
+      box.innerHTML =
+        `<div class="rt">${rg ? rg : `${cell.lat.toFixed(1)}°, ${cell.lon.toFixed(1)}°`}</div>` +
+        `<div class="flag warn">No monthly soil temperature or moisture data here, ` +
+        `so this cell was not evaluated. It is not a prediction of zero.</div>`;
+      box.classList.remove("hidden");
+      const wr = $("map-wrap").getBoundingClientRect();
+      box.style.left = Math.min(ev.clientX - wr.left + 14, wr.width - 290) + "px";
+      box.style.top = (ev.clientY - wr.top + 14) + "px";
+      return;
+    }
+
     const t = termsAt(i);
     const g = grossCdr(t.rel, t.eDic, t.eTr, t.ceil);
     const econOn = econ.costExp > 0;
@@ -852,7 +874,9 @@
 
   function eligRows() {
     return `<div class="lrow" style="margin-top:9px"><span class="sw" style="background:#4d2929"></span>` +
-      `<span class="lbl">Fails SOC &gt; ${E.eligibility.socThreshold} wt% screen</span></div>`;
+      `<span class="lbl">Fails SOC &gt; ${E.eligibility.socThreshold} wt% screen</span></div>` +
+      `<div class="lrow"><span class="sw" style="background:#6b7078"></span>` +
+      `<span class="lbl">No climate input — not evaluated</span></div>`;
   }
 
   /* Fraction of cropland area whose decile moves away from the neutral default.

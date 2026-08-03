@@ -5,6 +5,24 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Missing climate input is drawn as missing, August 2026
+
+695 cropland cells -- 0.35 Mha, 0.03% of cropland area, almost all high-latitude
+Scandinavia -- are inside the cropland mask but have no monthly soil temperature or
+moisture, so the rate is undefined. They were falling through the texture encoder's
+nan_to_num(L1, nan=-3.0), which turned NaN into a relative reactivity of 0.001 and
+drew them as near-zero potential. Small in area, but the wrong category: it states
+"no removal here" where the honest answer is "we did not evaluate this".
+
+They now set flag bit 2 (free since the marginal-SOC hatch was removed), render in a
+distinct grey in every layer, are excluded from the decimated sample behind the
+stability metric and decile edges, and the hover readout says so in words instead of
+printing numbers derived from the fallback. The build reports the count and area on
+every run.
+
+The flag is masked to the in-domain cells. Unmasked it claimed 3.5M "no input"
+pixels, because L1 is NaN over every non-cropland pixel too.
+
 ## Flux ceiling switched OFF pending outside review, August 2026
 
 Held, not reverted. `constants.FLUX_CEILING_ON = False` and rebuild; that is the

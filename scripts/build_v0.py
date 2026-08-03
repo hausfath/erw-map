@@ -466,6 +466,17 @@ def main() -> int:
     print(f"    cells >5% flooded cell-time: {paddy_share:.1%} of cropland area")
     print(f"    pH<5.2 annotation flag: "
           f"{float((aw * ph_warn[m]).sum() / aw.sum()):.1%} of cropland area")
+    # Cells inside the cropland mask that have NO monthly climate input, so the
+    # rate could not be computed. Previously these fell through the texture
+    # encoder's nan_to_num(L1, nan=-3.0) and were drawn as near-zero potential --
+    # missing data rendered as a confident "nothing here". They are now their own
+    # flagged class. Small, but it is the wrong category, not a small error.
+    no_input = ~np.isfinite(L1)
+    n_ni = int((m & no_input).sum())
+    print(f"    NO CLIMATE INPUT: {n_ni:,} cropland cells "
+          f"({float((aw * no_input[m]).sum() / aw.sum()):.3%} of area, "
+          f"{float((aw * no_input[m]).sum()) * 100 / 1e6:.2f} Mha) have no monthly "
+          f"soil T/moisture; flagged as no-data, not as zero potential")
 
     if annual_rate is not None:
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -654,7 +665,8 @@ def main() -> int:
     write_textures(crop, p_soc, ph_warn, cdr, m,
                    cascade=cascade, ph=ph, L1=L1, eta=eta, eta_tr=eta_tr,
                    v_cost=v_cost, cost_conf=cost_conf, ceiling=ceiling,
-                   cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t)
+                   cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
+                   no_input=no_input)
     emit_js(transform, w, h, gha, p50,
             cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
             clim_source=clim_source, monthly=monthly, n_quarries=n_q,
@@ -681,7 +693,7 @@ def quantize(v, floor: float) -> np.ndarray:
 
 def write_textures(crop, p_soc, ph_warn, cdr, valid,
                    *, cascade, ph, L1, eta, eta_tr, v_cost, cost_conf,
-                   ceiling, cdr_per_frac) -> None:
+                   ceiling, cdr_per_frac, no_input) -> None:
     from PIL import Image
     out = SRC / "textures"
     out.mkdir(parents=True, exist_ok=True)
@@ -711,12 +723,18 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
     flags = np.zeros((h, w), dtype="uint8")
     flags |= np.where(valid, 1, 0).astype("uint8")                       # bit0 in-domain
     flags |= np.where(p_soc > C.P_EXCEED_EXCLUDED, 2, 0).astype("uint8")  # bit1 excluded
-    # bit2 was a MARGINAL state (0.1 < P <= 0.9), drawn as a hatch. Removed: it
-    # covered 53% of cropland, which made it the dominant visual feature of the
-    # map while conveying almost nothing actionable, and it swamped the failures
-    # it was meant to sit alongside. The underlying probability is still computed
-    # and still reported as a statistic -- see the note in the Methods panel --
-    # it is just no longer part of the visual encoding. Bit 2 is now unused.
+    # bit2 was a MARGINAL state (0.1 < P <= 0.9), drawn as a hatch. Removed in an
+    # earlier build: it covered 53% of cropland, which made it the dominant visual
+    # feature of the map while conveying almost nothing actionable. REUSED here for
+    # NO CLIMATE INPUT -- cells inside the cropland mask whose rate could not be
+    # computed because the monthly soil temperature and moisture stacks have no
+    # data there. They used to fall through nan_to_num below and be drawn as
+    # near-zero potential, which states "no removal here" where the honest answer
+    # is "we do not know".
+    # Masked to the in-domain cells: L1 is NaN over every non-cropland pixel too,
+    # and an unmasked flag would claim 3.5M "no input" cells instead of the 695
+    # that are actually inside the map.
+    flags |= np.where(no_input & valid, 4, 0).astype("uint8")            # bit2 no input
     flags |= np.where(ph_warn, 8, 0).astype("uint8")                     # bit3 pH<5.2 note
 
     r2 = np.rint(np.clip(crop, 0, 1) * 255).astype("uint8")
