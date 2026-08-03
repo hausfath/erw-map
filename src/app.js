@@ -776,11 +776,17 @@
       `<tr><td class="k">Suitability${econOn ? " (with cost)" : ""}</td><td class="v"><b>${(score * 100).toFixed(0)}</b></td></tr>` +
       `<tr><td class="k">Gross CO₂ removal</td><td class="v"><b>${cdr < 0.01 ? cdr.toExponential(1) : cdr.toFixed(2)}</b> tCO₂/ha/yr</td></tr>` +
       `<tr><td class="k">Weathered in year 1</td><td class="v">${(g.frac * 100).toFixed(1)}%</td></tr>` +
-      // Shown only when it binds, and it names what was cut. The rock still
-      // dissolves at the rate above; the carbon it releases cannot all leave.
+      // Shown only when it binds. LABEL THE QUANTITY THAT IS PRINTED: an earlier
+      // version called this row "Drainage ceiling" while printing the UNCAPPED
+      // figure, so it read as though the ceiling were the larger number and
+      // contradicted the removal above it. When the cap binds the ceiling IS the
+      // removal already shown, so the only new information is what dissolution
+      // alone would have given. Units repeated, because that was the other half
+      // of the confusion.
       (g.ceilBinds
-        ? `<tr><td class="k">Drainage ceiling</td><td class="v">capped from ` +
-          `${g.cdrUncapped < 0.01 ? g.cdrUncapped.toExponential(1) : g.cdrUncapped.toFixed(2)}</td></tr>`
+        ? `<tr><td class="k">Without the drainage limit</td><td class="v">` +
+          `${g.cdrUncapped < 0.01 ? g.cdrUncapped.toExponential(1) : g.cdrUncapped.toFixed(2)}` +
+          ` tCO₂/ha/yr</td></tr>`
         : ``) +
       `<tr><td class="k">Limiting factor</td><td class="v">${limLabel}</td></tr>` +
       `<tr><td class="k">Soil pH (0–15 cm)</td><td class="v">${soilPh.toFixed(1)}</td></tr>` +
