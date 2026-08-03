@@ -756,9 +756,16 @@
     document.querySelectorAll("#econ-seg .seg-btn").forEach((b) =>
       b.classList.toggle("active", (+b.dataset.econ > 0) === on));
     $("econ-tag").textContent = on ? "On" : "Off";
+    // Two distinct effects, and the second is easy to miss: the toggle discounts
+    // the MAP by cost, and it also restricts the headline TOTAL to cells under the
+    // $/tCO2 screen. Say both.
+    const scr = E.cost && E.cost.screenUsdPerTco2;
     $("econ-readout").textContent = on
-      ? "Hover the map to see delivered cost per tonne of rock and per tCO\u2082."
-      : "Off: the map shows physical potential only.";
+      ? (scr ? `Total below restricted to cells under $${scr}/tCO\u2082 delivered. `
+             : "")
+        + "Hover the map for cost per tonne of rock and per tCO\u2082."
+      : "Off: the map shows physical potential only, and the total below is "
+        + "unrestricted.";
   }
 
   function syncSliders() {
@@ -934,6 +941,7 @@
      docs/METHODOLOGY.md — uniform sampling of a lat/lon grid over-samples high
      latitudes, which would bias this toward the boreal margin. */
   let sample = null;
+  let lastKeptAreaFrac = 1;      // set by globalGt(); area surviving the cost screen
   function buildSample() {
     if (!cpu) return;
     const A = cpu.A, B = cpu.B, out = [];
@@ -984,9 +992,26 @@
   function globalGt() {
     if (!sample || !sample.length) return null;
     const exps = [termExp.reactivity, termExp.eta_dic, termExp.drainage];
-    let num = 0, den = 0;
-    for (const r of sample) { num += cdrOfRow(r, exps) * r[3]; den += r[3]; }
+    // With the economics toggle ON the headline is restricted to cells whose
+    // delivered feedstock and haul come in under the $/tCO2 screen. Per tonne of
+    // CO2, not per tonne of rock: rock cost is nearly uncorrelated with CDR, so a
+    // rock-cost screen barely discriminates, while this one rewards cells that
+    // produce enough carbon to justify the haul.
+    const screening = econ.costExp > 0 && E.cost && E.cost.screenUsdPerTco2;
+    const rate = E.feedstock.rateTHaYr, fl = E.cost ? E.cost.floor : 1;
+    let num = 0, den = 0, kept = 0;
+    for (const r of sample) {
+      const cdr = cdrOfRow(r, exps);
+      if (screening) {
+        const usdT = costUsdT(fl + rawByte(r[4] === undefined ? 255 : r[4]) * (1 - fl));
+        if (!(cdr > 0) || usdT === null
+            || usdT * rate / cdr >= E.cost.screenUsdPerTco2) { den += r[3]; continue; }
+        kept += r[3];
+      }
+      num += cdr * r[3]; den += r[3];
+    }
     if (!(den > 0)) return null;
+    lastKeptAreaFrac = screening ? kept / den : 1;
     // Scale by the EVALUATED area, not all cropland: the sample only covers cells
     // with a computable rate, and multiplying its mean by the full extent would
     // credit removal to the cells we declined to evaluate.
@@ -1306,9 +1331,14 @@
       " Gha of evaluated cropland, recomputed from the grid at the current settings. " +
       "Sampled 1 cell in 3 and read from 8-bit textures, so it sits ~0.5% above the " +
       "exact total.";
+    const gha = (E.stats.evaluatedGha ?? E.stats.croplandGha) * lastKeptAreaFrac;
+    const scr = econ.costExp > 0 && E.cost && E.cost.screenUsdPerTco2;
     $("stat-label").textContent = gt === null
       ? "cropland in scope"
-      : `gross removal over ${E.stats.croplandGha.toFixed(2)} Gha of cropland`
+      : (scr
+          ? `gross removal under $${E.cost.screenUsdPerTco2}/tCO\u2082 delivered, `
+            + `on ${gha.toFixed(2)} Gha`
+          : `gross removal over ${gha.toFixed(2)} Gha of cropland`)
         + (FC.on ? "" : ", drainage limit not applied");
   }
 

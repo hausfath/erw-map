@@ -292,6 +292,7 @@ showing numbers derived from the NaN fallback.
 | Quarry gate cost | $10/t | operator-reported quarry-fines prices |
 | Truck haul | $0.12/t-km × 1.35 tortuosity | US trade-association rate; **not verified outside the US** |
 | Haul penalty scale S | $100/t | editorial choice, stated as such |
+| Headline cost screen | **$200/tCO₂ delivered** | applies to the footer total when economics is on; acquisition and haul only, not a levelised cost |
 | SOC exclusion | 5 wt%, P > 0.9 | Puro.earth rule 3.9.1(c) |
 
 ### Choices that are not forced by physics

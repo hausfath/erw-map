@@ -1500,6 +1500,7 @@ window.ERW = {
     "hi": 10.0
   },
   "cost": {
+    "screenUsdPerTco2": 200.0,
     "floor": 0.05,
     "expDefault": 0.0,
     "haulScaleUsdT": 100.0,

@@ -1114,6 +1114,22 @@ OUTCROP_TO_QUARRY_FACTOR = 2.0
 HAUL_PENALTY_SCALE_USD_T = 100.0
 COST_FLOOR = 0.05
 
+# Screen used by the headline total when the economics toggle is ON. Per tonne of
+# CO2, NOT per tonne of rock, because that is the quantity a buyer transacts in and
+# because the two screens keep very different cells: rock cost is nearly
+# uncorrelated with CDR here (a <$100/t-rock screen keeps 83.7% of area and 83.3%
+# of the carbon), whereas a $/tCO2 screen rewards cells that produce enough carbon
+# to justify the haul.
+#
+# Effect at 200: 0.503 GtCO2/yr on 0.122 Gha, i.e. 23% of the unscreened total on
+# 10% of the area. For scale the unscreened global mean is ~$1,000/tCO2 on
+# feedstock and haul alone -- before grinding, spreading, MRV or any net deduction
+# -- which is what makes the screen bite so hard.
+#
+# It bounds ACQUISITION AND TRANSPORT ONLY. It is not a levelised cost and must not
+# be read as one.
+COST_SCREEN_USD_PER_TCO2 = 200.0
+
 
 def cost_value(cost_usd_t):
     """v_cost from delivered $/t. Defined here so Python and the emitted JS

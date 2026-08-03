@@ -5,6 +5,37 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## The headline total responds to the economics toggle, August 2026
+
+With economics ON the footer total is now restricted to cells whose delivered
+feedstock and haul come in under **$200 per tonne of CO2**: 0.50 GtCO2/yr on
+0.12 Gha, against 2.15 GtCO2/yr on 1.21 Gha unrestricted. The map itself is
+unchanged -- economics still discounts suitability compositely, as before -- so this
+affects the headline only, and the toggle's caption now says both things.
+
+PER TONNE OF CO2, NOT PER TONNE OF ROCK, and the difference is the whole point.
+Rock cost is nearly uncorrelated with CDR in this model, because haul distance is
+driven by quarry geography while CDR is driven by soil and climate. So a rock-cost
+screen barely discriminates -- under $100/t rock keeps 83.7% of area and 83.3% of
+the carbon -- whereas a $/tCO2 screen keeps 10% of area and 23% of the carbon,
+because it rewards cells that produce enough carbon to justify the haul.
+
+For scale, the unscreened global mean is roughly $1,000/tCO2 on feedstock and haul
+alone, before grinding, spreading, MRV or any net-versus-gross deduction. That is
+what makes a $200 screen bite so hard, and it follows directly from 30 t/ha of rock
+buying only ~1.8 tCO2/ha/yr.
+
+The browser recovers $/t by inverting the cost value function out of an 8-bit
+texture channel, which is lossy, so this was checked rather than assumed: no cell
+reaches the value-function floor where the inversion would saturate (max delivered
+cost $429/t against a $1,910/t saturation point), round-trip error is 0.43% at the
+median and 1.3% at worst, and the screened total via the texture lands within 0.12%
+of the exact figure computed from the raster.
+
+Also corrected here: the unrestricted headline now reads 2.15 rather than 2.16,
+because it scales by evaluated area rather than total cropland. That matches the
+2.149 the build prints.
+
 ## Headline stat is now the CO2 total, and the panel stops claiming a bound it is not applying
 
 The footer read "1.22 Gha cropland in scope", which is an input to the model rather
