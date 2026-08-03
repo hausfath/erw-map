@@ -16,10 +16,13 @@ inputs are not redistributed.
 
 To reproduce, supply tests/fixtures/deployments_2026.csv with the header:
     deployment,operator,registry,regime,country,rate_t_ha,fw_p50,fw_p16,
-    cdr_tco2_ha,cdr_exact,period_months,psd_known,soil_note
+    cdr_tco2_ha,cdr_exact,period_months,psd_known,p50_um,lat,lon,soil_note
 where fw_* are fractions of applied rock weathered, cdr_exact is yes/no for
 whether CDR was measured independently rather than derived, and regime groups
-sites by soil and climate.
+sites by soil and climate. p50_um is the feedstock median particle size, blank if
+undisclosed. lat/lon are APPROXIMATE REGION CENTROIDS -- not site coordinates --
+used only by section 11 to look up regional drainage from the built map; rows
+without them are skipped there and the rest of the script is unaffected.
 
 Three findings, in decreasing order of how much I'd stake on them. Run it and
 read the output rather than taking these on trust.
@@ -34,7 +37,12 @@ from pathlib import Path
 
 import numpy as np
 
-FIXTURE = Path(__file__).resolve().parent.parent / "tests/fixtures/deployments_2026.csv"
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import constants as C  # noqa: E402
+
+ROOT = Path(__file__).resolve().parent.parent
+FIXTURE = ROOT / "tests/fixtures/deployments_2026.csv"
 
 
 def load() -> list[dict] | None:
@@ -50,6 +58,8 @@ def load() -> list[dict] | None:
     for r in rows:
         for k in ("rate_t_ha", "fw_p50", "fw_p16", "cdr_tco2_ha", "period_months"):
             r[k] = float(r[k])
+        for k in ("lat", "lon"):
+            r[k] = float(r[k]) if r.get(k) else None
         r["p50_um"] = float(r["p50_um"]) if r.get("p50_um") else None
     return rows
 
@@ -326,6 +336,87 @@ def grain_size_controlled(rows: list[dict]) -> None:
     print("  side by side would do it.")
 
 
+def flux_ceiling_check(rows: list[dict]) -> None:
+    """Does each deployment's reported CDR/ha fit in its own drainage water?
+
+    This is the flux-reconciliation test that put Beerling et al. 2024's CDRpot at
+    ~29.8 mmol/L implied bicarbonate, now run on projects that are actually being
+    credited. It needs no assumption about regime, grind or rate exponent, which is
+    what makes it usable on a set where all three are collinear: it only divides a
+    reported carbon flux by a measured water flux and compares the quotient to
+    carbonate saturation.
+
+    Reads q and the ceiling from the built map, so it is skipped if the build has
+    not been run. Lat/lon are approximate region centroids, so q is regional --
+    quoted to two significant figures at most.
+    """
+    npz = ROOT / "data/processed/v0_layers.npz"
+    if not npz.exists():
+        print("  SKIP: data/processed/v0_layers.npz missing; run scripts/build_v0.py")
+        return
+    import numpy as _np
+    z = _np.load(npz, allow_pickle=True)
+    a, _b, c, _d, e, f = z["transform"]
+
+    def med_at(lat, lon, hw=3):
+        row = int(round((lat - f) / e - 0.5)); col = int(round((lon - c) / a - 0.5))
+        sl = _np.s_[max(row - hw, 0):row + hw + 1, max(col - hw, 0):col + hw + 1]
+        m = (z["crop"][sl] > 0.01) & _np.isfinite(z["alk_ceiling"][sl])
+        if not m.any():
+            return None
+        return (float(_np.nanmedian(z["q"][sl][m])),
+                float(_np.nanmedian(z["alk_ceiling"][sl][m])),
+                float(_np.nanmedian(z["ceiling"][sl][m])))
+
+    print("  Reported CDR/ha divided by the water available to carry it, against")
+    print("  carbonate saturation at that region's own soil pCO2 and temperature.")
+    print()
+    print(f"  {'deployment':14} {'t/ha':>6} {'q mm/yr':>8} {'CDR/yr':>7} "
+          f"{'implied':>8} {'ceiling':>8} {'over':>6} {'exact?':>7}")
+    print(f"  {'':14} {'':>6} {'':>8} {'tCO2/ha':>7} {'mmol/L':>8} {'mmol/L':>8}")
+    worst, exact_ratios = 0.0, []
+    for r in rows:
+        if r["lat"] is None:
+            continue
+        g = med_at(r["lat"], r["lon"])
+        if g is None:
+            continue
+        q, alk, _ceil = g
+        per_yr = r["cdr_tco2_ha"] * 12.0 / r["period_months"]
+        implied = per_yr * 1e6 / C.M_CO2_G_MOL / max(q * 1e7, 1e-9)
+        ratio = implied / alk
+        worst = max(worst, ratio)
+        if r["cdr_exact"] == "yes":
+            exact_ratios.append(ratio)
+        print(f"  {r['deployment']:14} {r['rate_t_ha']:6.1f} {q * 1000:8.0f} "
+              f"{per_yr:7.2f} {implied * 1e3:8.1f} {alk * 1e3:8.2f} "
+              f"{ratio:5.0f}x {r['cdr_exact']:>7}")
+    print()
+    print(f"  EVERY deployment exceeds its own drainage-concentration ceiling.")
+    if exact_ratios:
+        print(f"  Restricting to the INDEPENDENTLY MEASURED rows, where CDR is exact and")
+        print(f"  not algebra on fw: {min(exact_ratios):.0f}x to {max(exact_ratios):.0f}x over.")
+    print()
+    print("  READ THIS CAREFULLY -- it is not an over-crediting finding. These are")
+    print("  DISSOLUTION-BASED figures: the fixture's own header says so, and section 1")
+    print("  shows the derived rows are rate x fw x 0.33 by construction. So the")
+    print("  comparison is 'how much rock dissolved' against 'how much carbon the water")
+    print("  could carry out'. Both can be right at once, and the gap is then the")
+    print("  retention-and-lag term: cations held on exchange sites, in Fe/Mn-oxide")
+    print("  pools and in neoformed clays rather than exported. Independent")
+    print("  measurements put that at 10-50x (Hammes et al. 2025) and retarded")
+    print("  fractions at 93-98% (te Pas et al. 2025), which is the same order as the")
+    print("  gap here.")
+    print()
+    print("  What it DOES establish, and it is the strongest statement this set")
+    print("  supports: dissolution-based CDR/ha cannot be read as export without a")
+    print("  retention term, because export at those concentrations is not physically")
+    print("  available. That closes the question in to_do.md item 4 -- whatever the")
+    print("  delivery fixture's 'fraction weathered' measures, it is not realised")
+    print("  export. It also means this set cannot anchor the map's absolute level,")
+    print("  and the map's own anchor inherits the same problem.")
+
+
 def what_would_make_this_a_real_test(rows: list[dict]) -> None:
     rule("10. What is needed to turn this into a real test")
     print("  In priority order, by how much each would raise the test's power:")
@@ -379,6 +470,8 @@ def main() -> int:
     grain_size_controlled(rows)
     feedstock_co2_potential(rows)
     why_year_one_fw_is_the_wrong_observable(rows)
+    rule("11. Does the reported CDR fit in the drainage water?")
+    flux_ceiling_check(rows)
     what_would_make_this_a_real_test(rows)
     print()
     return 0

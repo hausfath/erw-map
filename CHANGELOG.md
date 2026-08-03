@@ -29,12 +29,13 @@ constraint got 1.5x harder for almost nothing, which makes it the binding practi
 limit well before geology is.
 
 Two honest caveats. The dissolved fraction is held at DISSOLVED_FRAC_AT_REF regardless
-of rate, so the uncapped layer scales linearly while the delivery set implies per-tonne
-efficiency is sublinear (exponent near -0.58, so a 20 -> 30 step is over-credited by
-~27% before the cap). The cap absorbs nearly all of that, which is luck rather than
-design. And the ceiling bounds EXPORT, so it does not follow that the extra rock is
-wasted -- it may weather and sit in the soil, which is the retention question, not this
-one.
+of rate, so the uncapped layer scales linearly. Whether that is wrong, and in which
+direction, is NOT known: an earlier draft of this entry claimed the delivery set implied
+a -0.58 sublinear exponent and hence a ~27% over-credit, which is withdrawn --
+constants.py already documents that -0.58 is the operator/grind contrast wearing a rate
+label, with a within-operator slope of -0.01 +/- 0.57. And the ceiling bounds EXPORT, so
+it does not follow that the extra rock is wasted -- it may weather and sit in the soil,
+which is the retention question, not this one.
 
 **The trial comparison is no longer at matched rate.** The trials span roughly 20 to
 200 t/ha rather than sharing one rate, and per-trial rates in this repo are being

@@ -527,14 +527,13 @@ CROPLAND_GAP_COMPONENTS_MHA = {
 #     a modelling artefact -- and it is the first place the ceiling changes what a
 #     deployment decision looks like.
 #  2. The dissolved FRACTION is held at DISSOLVED_FRAC_AT_REF regardless of rate,
-#     so this scales the uncapped carbon linearly. Field data says the per-tonne
-#     efficiency is SUBLINEAR in rate (the delivery set implies an exponent near
-#     -0.58), so a linear model over-credits a rate increase by roughly 25% at
-#     this step. Recorded in to_do.md item 4; not corrected here because the
-#     exponent is confounded with grind in the only data that constrains it.
+#     so this scales the uncapped carbon linearly. Whether that is wrong, and in
+#     which direction, IS NOT KNOWN -- see FW_RATE_EXPONENT_OBSERVED above and its
+#     note. -0.58 is the operator/grind contrast wearing a rate label, the
+#     within-operator slope is -0.01 +/- 0.57, and using it to correct for rate
+#     removes the grind contrast twice. So do NOT reach for it to "fix" this.
 APPLICATION_RATE_T_HA_YR = 30.0
 APPLICATION_RATE_PREVIOUS_T_HA_YR = 20.0   # for the changelog and the rate note
-APPLICATION_RATE_SUBLINEAR_EXPONENT = -0.58  # observed, NOT applied; see above
 
 # ---------------------------------------------------------------------------
 # Annual dissolution fraction.

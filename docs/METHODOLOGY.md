@@ -187,12 +187,16 @@ physical result, not a modelling artefact, and it is the kind of thing an uncapp
 rate law cannot say.
 
 Two caveats on it. The dissolved *fraction* is held at `DISSOLVED_FRAC_AT_REF`
-regardless of rate, so the uncapped layer scales linearly with rate while the
-delivery set implies per-tonne efficiency is sublinear (exponent near −0.58, so the
-uncapped layer over-credits a 20 → 30 step by ~27%). The cap absorbs nearly all of
-that, which is luck rather than design. And the flux ceiling is an upper bound on
-*export*, so it does not follow that the extra rock is wasted — it may weather and
-sit in the soil, which is the retention question in §6 item 1, not this one.
+regardless of rate, so the uncapped layer scales linearly with rate. **Whether that
+is wrong, and in which direction, is not known.** An earlier version of this section
+claimed the delivery set implied a sublinear exponent near −0.58 and therefore a ~27%
+over-credit; checked against the deliveries directly, that is not supported — three
+deliveries sharing one feedstock p50 differ only in rate, and two sitting 6% apart in
+rate have fractions weathered differing by 2.1×, so the scatter at matched rate and
+grind exceeds any rate signal. Recovering the exponent needs the blocked design in
+`to_do.md` field-data ask #4. And the flux ceiling is an upper bound on *export*, so it
+does not follow that the extra rock is wasted — it may weather and sit in the soil,
+which is the retention question in §6 item 1, not this one.
 
 **What it is not.** It is not why the map's level was high. Field trials achieve
 0.11–0.75 mmol/L, i.e. 5–10× *below* this ceiling, because cations are retained

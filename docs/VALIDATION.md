@@ -183,7 +183,11 @@ not be used to normalise for rate — doing so removes the grind contrast twice.
 Fitting λ separately per deployment and publishing the spread is worth doing, but
 because grind is nested in operator the pooled spread conflates site-to-site
 variability with grind mis-specification. **Only the within-cluster spread is
-interpretable** (Mati's 3 sites, Lithos's 3 bins — and confirm whether the Lithos
+interpretable** (Mati's 3 sites, Lithos's 3 bins — **RESOLVED 2026-08: the bins are
+all p50 = 67 µm, so they are not grain-size bins.** They are a rate contrast at fixed
+grind, 25 / 50 / 47 t/ha, and two of them sit 6% apart in rate with fractions
+weathered differing 2.1× — which is the direct evidence that the pooled −0.58 is not
+a rate effect. Original text follows: confirm whether the Lithos
 bins are sites or grain-size bins first, because if they are grain-size bins they
 are the best grind test in the set). Pre-register that.
 
@@ -209,7 +213,9 @@ exist. The identifying designs are small and blocked:
 2. **Flooded versus drained pair at one site.** The only clean test of the
    η_DIC/paddy mechanism, which is the map's most distinctive claim.
 3. **Two rates within one grind at ≥3 sites.** Recovers the rate exponent that
-   −0.58 currently misattributes.
+   −0.58 currently misattributes. **Note the Lithos bins are now known to be a rate
+   contrast at fixed grind and they do NOT deliver this** — the within-bin scatter
+   exceeds the rate signal — so this ask is still open and needs a designed split.
 4. **One deployment on alkaline (pH > 7.5) or arid cropland.** Zero of the eight
    sample where the model departs most from Cascade, so the covariate envelope
    has no leverage on the claims being made. Even n = 1 is a qualitative
@@ -261,6 +267,15 @@ observationally. That ratio is the argument to put to operators.
   30 t/ha**, because the ceiling does not scale with how much rock is applied. So
   conclusions that rest on the ceiling are unaffected by the rate change; conclusions
   that rest on comparing absolute tonnages to trials are not, and need matched rates.
+- **All eight verified deliveries report CDR/ha above their own drainage-
+  concentration ceiling, by 3–19×** (5–19× restricting to the three independently
+  measured rows). Reported by section 11 of `analyse_deployments.py`. This is *not*
+  an over-crediting finding: those figures are dissolution-based, so the comparison
+  is "how much rock dissolved" against "how much carbon the water could carry", and
+  both can hold at once. What it establishes is that **dissolution-based CDR/ha
+  cannot be read as export without a retention term**, which closes the standing
+  question in to_do item 4, and that this delivery set therefore cannot anchor the
+  map's absolute level. The map's own calibration anchor inherits the same problem.
 - **The drainage-concentration ceiling is unvalidated on paddy cells.** The
   protocol's mandated 50,000 µatm lifts it to 13–18 mmol/L at the shipped Ω,
   above all five anchors, and the literature contains no measured floodwater
