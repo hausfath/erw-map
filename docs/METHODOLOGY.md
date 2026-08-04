@@ -42,7 +42,7 @@ soil pH, soil T, soil moisture
    gross CO₂ removal, tCO₂/ha/yr
         ↓  piecewise-linear value function on absolute breakpoints
    suitability, 0–1
-        ↓  × cost multiplier ^ exponent  (off by default)
+        ↓  × cost multiplier ^ exponent  (ON by default; toggle switches it off)
    suitability with cost
 ```
 
@@ -440,6 +440,22 @@ likely effect on the map.
    tortuosity, so a monsoon-season Gangetic haul and a Midwest haul are treated
    identically.
 10. **Net removal.** Everything reported is gross alkalinity generation.
+
+### Overlays
+
+**Quarry locations** — 5,295 mafic-hosted quarries from three national registers
+(US MRDS, Brazil ANM) and OSM. Coverage is very uneven: outside those countries the
+absence of a dot means the register does not exist, not that the rock does not.
+
+**Mafic rock outcrop** — GLiM mafic and ultramafic outcrop fraction, drawn on *and
+off* cropland because **74% of it is outside the cropland domain** and "is there
+feedstock near here" is a question about exactly the land the rest of the map
+ignores. It is the better guide where quarry coverage is thin. It is not a quarry:
+outcrop says nothing about whether the rock is permitted, crushed or for sale.
+
+Sanity-checked against the flood basalt provinces — Deccan, Siberian Traps,
+Columbia River, Paraná and the Ethiopian highlands all return a mafic fraction of
+1.00, while the Corn Belt and the Ganges plain return 0.00.
 
 ## 7. Deliberate design choices in the viewer
 

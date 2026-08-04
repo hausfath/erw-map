@@ -7,6 +7,7 @@ Reads data/raw/ (see fetch_v0.sh), writes:
   data/processed/v0_layers.npz    float layers, for aggregates and hover readout
   src/textures/tex1.png           RGB = reactivity, eta_DIC, drainage value functions
   src/textures/tex2.png           RGB = cropland fraction, mask flags, flux ceiling
+  src/textures/tex4.png           R   = GLiM mafic outcrop fraction (overlay)
   src/engine_constants.js         generated; the browser's copy of constants.py
   src/colormap.js                 generated; legend stops AND the shader ramp
 
@@ -673,7 +674,7 @@ def main() -> int:
                    cascade=cascade, ph=ph, L1=L1, eta=eta, eta_tr=eta_tr,
                    v_cost=v_cost, cost_conf=cost_conf, ceiling=ceiling,
                    cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
-                   no_input=no_input)
+                   no_input=no_input, mafic_frac=mafic_frac)
     gha_eval = float(((crop * area)[m & np.isfinite(L1)]).sum() * 100.0 / 1e9)
     emit_js(transform, w, h, gha, p50,
             cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
@@ -701,7 +702,7 @@ def quantize(v, floor: float) -> np.ndarray:
 
 def write_textures(crop, p_soc, ph_warn, cdr, valid,
                    *, cascade, ph, L1, eta, eta_tr, v_cost, cost_conf,
-                   ceiling, cdr_per_frac, no_input) -> None:
+                   ceiling, cdr_per_frac, no_input, mafic_frac) -> None:
     from PIL import Image
     out = SRC / "textures"
     out.mkdir(parents=True, exist_ok=True)
@@ -790,8 +791,19 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
         (v_cost - C.COST_FLOOR) / (1.0 - C.COST_FLOOR), 0, 1) * 250.0),
         0).astype("uint8")
 
+    # tex4.r = GLiM mafic outcrop fraction, for the feedstock overlay. Its own
+    # texture rather than a spare channel: tex3.r still holds the Cascade baseline,
+    # which nothing currently reads but which is a documented comparison layer and
+    # should not be quietly deleted to save a file.
+    #
+    # Drawn OUTSIDE the cropland domain as well as inside -- 74% of mafic outcrop
+    # is not cropland, and "where is the nearest feedstock" is exactly a question
+    # about the land the rest of the map ignores.
+    r4 = np.rint(np.clip(np.nan_to_num(mafic_frac, nan=0.0), 0, 1) * 255).astype("uint8")
+    z4 = np.zeros_like(r4)
+
     for name, img in (("tex1", rgba(r1, g1, b1)), ("tex2", rgba(r2, flags, b2)),
-                      ("tex3", rgba(r3, g3, b3))):
+                      ("tex3", rgba(r3, g3, b3)), ("tex4", rgba(r4, z4, z4))):
         p = out / f"{name}.png"
         img.save(p, optimize=True)
         print(f"  wrote {p} ({p.stat().st_size / 1e6:.2f} MB)")

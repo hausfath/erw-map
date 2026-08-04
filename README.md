@@ -333,9 +333,12 @@ median** ($10 and $43 per tonne of rock divided by 0.289 tCO₂/t) —
 letting the trade-off be judged in units that mean something.
 
 Cost is compensatory with a floor, not annihilating: expensive rock is bad, not
-impossible. It is **off by default** — the landing map is a statement about physical
-potential, and economics is a layer of assumption that should be switched on
-deliberately. Turning it on takes the area-weighted score from 0.48 to 0.35.
+impossible. It is **on by default** as of August 2026. It used to be off, so that
+the landing map was a statement about physical potential — but the unscreened map
+implies 2.15 GtCO₂/yr across essentially all cropland, and almost none of that is
+deployable at a price anyone would pay. Leading with the physical figure put the
+less useful number in front. The toggle still switches it off, and the footer states
+its basis either way.
 
 ### Monthly soil temperature and moisture
 

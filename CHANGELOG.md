@@ -5,6 +5,40 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Economics on by default, and a mafic-outcrop overlay
+
+ECONOMICS DEFAULTS TO ON. It was off, on the argument that the landing map should
+state physical potential and economics should be opted into. That lost to a stronger
+argument: the unscreened map implies 2.15 GtCO2/yr across essentially all cropland,
+and almost none of that is deployable at a price anyone would pay, so leading with
+the physical figure put the less useful number in front. The landing state is now
+0.50 GtCO2/yr on 0.17 Gha under the $100/tCO2 screen.
+
+The counter-argument is recorded rather than discarded: economics adds a gate cost,
+a truck rate, a tortuosity factor and a quarry inventory of very uneven
+completeness, none as well constrained as the physics. The toggle still switches it
+off, the footer states its basis either way, and if the cost inputs turn out to be
+badly wrong the flag flips back rather than being patched around.
+
+MAFIC OUTCROP OVERLAY, alongside the quarry points. Quarries are a real inventory
+but a very unevenly complete one -- three national registers plus OSM -- so outside
+those countries an absent dot says nothing. GLiM mafic and ultramafic outcrop is
+global and answers the prior question: is there mafic rock near here at all.
+
+Drawn ON AND OFF cropland, which needed the shader restructured: 74% of mafic
+outcrop lies outside the cropland domain, where the map is otherwise transparent.
+The tint also applies on every in-domain return path -- suitability, limiting
+factor, fraction weathered, negligible, SOC-excluded and no-input -- through a
+single withMafic() blend, so it cannot silently vanish in one layer.
+
+Its own texture (tex4, 0.40 MB) rather than a spare channel. tex3.r still holds the
+Cascade baseline, which nothing currently reads but which is a documented
+comparison layer and should not be quietly deleted to save a file.
+
+Sanity-checked geologically rather than by eye: Deccan, Siberian Traps, Columbia
+River, Parana and the Ethiopian highlands all return mafic fraction 1.00; the Corn
+Belt and Ganges plain return 0.00.
+
 ## The cost screen is costed over ten years, not one, August 2026
 
 The $/tCO2 screen divided a ONE-OFF rock cost by ONE YEAR of removal. The rock keeps

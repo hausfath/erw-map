@@ -1179,19 +1179,25 @@ def cost_value(cost_usd_t):
 # cost -- while expensive rock reduces the score without zeroing it, because
 # expensive is bad, not impossible.
 #
-# DEFAULT OFF, with a toggle to full. Two reasons this is the better default:
-#   - It keeps the landing map a statement about PHYSICAL potential, which is what
-#     this model computes from measured inputs. Economics is a layer of assumption
-#     on top: a gate cost, a truck rate, a tortuosity factor, and a quarry
-#     inventory of very uneven completeness.
-#   - It makes the economic view something the reader opts into and can switch off
-#     again, so the effect of those assumptions shows up as a visible change
-#     rather than being baked invisibly into every number.
+# DEFAULT ON as of 2026-08. It was off, on the argument that the landing map
+# should be a statement about physical potential and economics a layer the reader
+# opts into. That argument lost to a stronger one: the unscreened map implies
+# 2.15 GtCO2/yr across essentially all cropland, and almost none of that is
+# deployable at any price a buyer would pay. Presenting the physical figure first
+# and the affordable one behind a toggle put the less useful number in front.
+#
+# The counter-argument has not gone away and is worth keeping in view: economics
+# adds a gate cost, a truck rate, a tortuosity factor and a quarry inventory of
+# very uneven completeness, none of which is as well constrained as the physics.
+# The mitigation is that the toggle still switches it OFF, the caption states the
+# basis on both settings, and turning it off is a visible change rather than a
+# hidden one. If the cost inputs are ever shown to be badly wrong, flip this back
+# rather than patching around it.
 #
 # On means 1.0, the straightforward reading of "delivered cost matters". There is
 # deliberately no middle default: inventing a 0.5 to soften it would be an
 # unlabelled editorial thumb on the scale.
-COST_EXPONENT_DEFAULT = 0.0
+COST_EXPONENT_DEFAULT = 1.0
 COST_EXPONENT_ON = 1.0
 
 # ---------------------------------------------------------------------------

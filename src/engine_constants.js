@@ -1504,7 +1504,7 @@ window.ERW = {
     "screenYears": 10,
     "screenDiscount": 0.05,
     "floor": 0.05,
-    "expDefault": 0.0,
+    "expDefault": 1.0,
     "haulScaleUsdT": 100.0,
     "tco2PerT": 0.289,
     "gateUsdT": 10.0,

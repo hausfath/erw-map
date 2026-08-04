@@ -41,9 +41,10 @@
   const FACTOR_COLORS = ["#e0704f", "#4f9fe0", "#8fd14f", "#cb8ce6"];
   const CEIL_LABEL = "Drainage cannot carry it";
 
-  let gl, prog, quad, texA, texB, texC, texRamp, texRampFrac, cpu = null;
+  let gl, prog, quad, texA, texB, texC, texD, texRamp, texRampFrac, cpu = null;
   let mode = "score";
   let showQuarries = false;
+  let showMafic = false;
   // Term exponents, NOT importance weights. Default 1 means the composite is
   // exactly the physical product, so gross CDR -- and hence suitability -- is
   // zero wherever any required term is zero.
@@ -130,7 +131,8 @@
   in vec2 vUV;
   out vec4 fragColor;
 
-  uniform sampler2D uA, uB, uC, uRamp, uRampFrac;
+  uniform sampler2D uA, uB, uC, uD, uRamp, uRampFrac;
+  uniform int uShowMafic;         // 1 = tint GLiM mafic outcrop
   uniform vec4 uGeo;              // lon0, lat0, lonSpan, latSpan of the visible box
   uniform vec4 uGrid;             // west, north, dlon, dlat of the data grid
   uniform vec2 uGridSize;
@@ -158,6 +160,16 @@
   // Distinct from NEGLIGIBLE on purpose: "we do not know" and "there is nothing
   // here" are different claims and must not share a colour.
   const vec4 NO_INPUT      = vec4(0.42, 0.44, 0.47, 1.0);
+  // Earthy and desaturated on purpose: it reads as geology rather than as data,
+  // and it collides with neither ramp (teal-yellow, magenta-orange) nor the
+  // quarry dots (orange / aqua / gold).
+  const vec3 MAFIC         = vec3(0.549, 0.478, 0.388);
+
+  // One blend, used on every in-domain return path so the overlay does not
+  // silently vanish in the fraction-weathered and limiting-factor layers.
+  vec4 withMafic(vec3 c, float mafic) {
+    return vec4(mafic > 0.02 ? mix(c, MAFIC, mafic * 0.55) : c, 1.0);
+  }
 
   vec3 factorColor(int i) {
     if (i == 0) return vec3(0.878, 0.439, 0.310);
@@ -184,18 +196,25 @@
     vec4 a = vec4(texelFetch(uA, px, 0));
     vec4 b = vec4(texelFetch(uB, px, 0));
     vec4 cc = vec4(texelFetch(uC, px, 0));
+    float mafic = uShowMafic == 1 ? texelFetch(uD, px, 0).r : 0.0;
 
     int flags = int(b.g * 255.0 + 0.5);
-    if ((flags & 1) == 0) { fragColor = OUT_OF_DOMAIN; return; }
+    if ((flags & 1) == 0) {
+      // Outside the cropland domain the map is otherwise transparent, but three
+      // quarters of mafic outcrop lives out here and "where is the nearest
+      // feedstock" is a question about exactly that land.
+      if (mafic > 0.02) { fragColor = vec4(MAFIC, mafic * 0.62); return; }
+      fragColor = OUT_OF_DOMAIN; return;
+    }
 
     if ((flags & 2) != 0) {                   // fails the SOC screen outright
-      fragColor = vec4(0.30, 0.16, 0.16, 1.0);
+      fragColor = withMafic(vec3(0.30, 0.16, 0.16), mafic);
       return;
     }
 
     // No monthly climate input, so the rate is undefined here. Drawn in every
     // mode, including "weathered in year 1": there is no number to show.
-    if ((flags & 4) != 0) { fragColor = NO_INPUT; return; }
+    if ((flags & 4) != 0) { fragColor = withMafic(NO_INPUT.rgb, mafic); return; }
 
     // Dequantise the RAW physical terms. Value 0 is reserved for masked cells,
     // so data occupies 5..255 -- and a decoded zero is a true zero, which
@@ -251,7 +270,7 @@
       // weathered, so a full-range ramp spent its top 40% on ~2% of the map.
       // Values above the top clamp, and the legend labels that end with ">=".
       vec3 fc = texture(uRampFrac, vec2(clamp(frac / uFracRampMax, 0.0, 1.0), 0.5)).rgb;
-      fragColor = vec4(fc, 1.0);
+      fragColor = withMafic(fc, mafic);
       return;
     }
 
@@ -283,13 +302,13 @@
     // any speed -- and on 96.5% of cropland that is the operative limit, which is
     // exactly the thing a reader needs to be told.
     if (uMode == 1) {
-      if (ceilBinds) { fragColor = vec4(factorColor(3), 1.0); return; }
+      if (ceilBinds) { fragColor = withMafic(factorColor(3), mafic); return; }
       int lo = (lr <= ld && lr <= lt) ? 0 : ((ld <= lt) ? 1 : 2);
-      fragColor = vec4(factorColor(lo), 1.0);
+      fragColor = withMafic(factorColor(lo), mafic);
       return;
     }
 
-    if (cdr < uNegligible) { fragColor = NEGLIGIBLE; return; }
+    if (cdr < uNegligible) { fragColor = withMafic(NEGLIGIBLE.rgb, mafic); return; }
 
     float lc = log(cdr) / log(10.0);
     float sc = uCy[0];
@@ -310,7 +329,7 @@
     // No marginal-eligibility hatch. It covered 53% of cropland, which made it
     // the dominant feature of the map while saying little, and it drowned out the
     // failures it was meant to accompany. Only outright failures are drawn now.
-    fragColor = vec4(col, 1.0);
+    fragColor = withMafic(col, mafic);
   }`;
 
   function compile(src, type) {
@@ -480,6 +499,7 @@
     gl.uniform1f(u("uCdrPerFrac"), E.cdrPerFrac);
     gl.uniform1f(u("uNegligible"), E.cdrNegligible);
     gl.uniform1f(u("uFracRampMax"), E.fracRampMax || 1.0);
+    gl.uniform1i(u("uShowMafic"), showMafic ? 1 : 0);
     gl.uniform1fv(u("uCx"), new Float32Array(E.cdrKnots.map(k => Math.log10(k[0]))));
     gl.uniform1fv(u("uCy"), new Float32Array(E.cdrKnots.map(k => k[1])));
     gl.uniform1f(u("uCostExp"), econ.costExp);
@@ -490,6 +510,8 @@
     gl.uniform1i(u("uB"), 1);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, texC);
     gl.uniform1i(u("uC"), 2);
+    gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, texD);
+    gl.uniform1i(u("uD"), 5);
     gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, texRamp);
     gl.uniform1i(u("uRamp"), 3);
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, texRampFrac);
@@ -1484,11 +1506,12 @@
     initGL();
     texRamp = makeRampTexture(E.ramp, gl.TEXTURE3);
     texRampFrac = makeRampTexture(E.rampFrac, gl.TEXTURE4);
-    const [a, b, cTex] = await Promise.all([
+    const [a, b, cTex, , dTex] = await Promise.all([
       loadTexture("textures/tex1.png", 0), loadTexture("textures/tex2.png", 1),
       loadTexture("textures/tex3.png", 2), loadAdminIds(),
+      loadTexture("textures/tex4.png", 5),
     ]);
-    texA = a.tex; texB = b.tex; texC = cTex.tex;
+    texA = a.tex; texB = b.tex; texC = cTex.tex; texD = dTex.tex;
     cpu = decodeToCPU(a.bmp, b.bmp, cTex.bmp);
     $("loading").remove();
     buildSample();
@@ -1506,8 +1529,20 @@
       });
     } else {
       cq.disabled = true;
-      $("overlay-group").classList.add("hidden");
     }
+    // Mafic outcrop. Deliberately separate from the quarry overlay: quarries are
+    // a real but very unevenly complete inventory (three national registers and
+    // OSM), so outside those countries the absence of a dot says nothing. Outcrop
+    // is global and answers "is there mafic rock near here at all".
+    $("chk-mafic").addEventListener("change", (e) => {
+      showMafic = e.target.checked; refresh();
+    });
+    $("mafic-hint").innerHTML =
+      `<span style="color:#8c7a63">\u25a0</span> GLiM mafic and ultramafic ` +
+      `outcrop, drawn on and off cropland. Where quarry coverage is thin this is ` +
+      `the better guide to whether feedstock is nearby \u2014 but outcrop is not ` +
+      `a quarry, and says nothing about whether the rock is permitted, crushed ` +
+      `or for sale.`;
     $("btn-reset").onclick = () => {
       CRIT.forEach((c) => { termExp[c.key] = 1; }); refresh();
     };
