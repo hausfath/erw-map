@@ -644,25 +644,46 @@
   }
 
   /* Shrinking-core dissolution, mirroring the shader exactly. One definition each
-     for the width slice and the fraction; gate 14 asserts they agree with Python. */
+     for the width slice and the fraction; gate 14 asserts they agree with Python.
+
+     MEMOISED, and it matters more than it looks. The slice depends on psd.width
+     alone, but fracOf() called it on every invocation, and fracOf() runs once per
+     sampled cell in cdrOfRow() plus once per year in the cost screen's 10-year
+     loop -- around 14 calls per cell across updateStability() and globalGt(). At
+     ~45k sampled cells that was ~630k rebuilds of a 64-element Float32Array per
+     refresh, which was the whole of a 1.4 s slider response. Nothing about the
+     numbers changes: same table, same interpolation, computed once per width. */
+  let gsCache = null, gsKey = NaN;
   function gSlice() {
+    if (gsCache && gsKey === psd.width) return gsCache;
     const D = E.dissolution, ws = D.widthGrid;
     let j = 0;
     while (j < ws.length - 2 && psd.width > ws[j + 1]) j++;
     const f = clamp(0, (psd.width - ws[j]) / (ws[j + 1] - ws[j]), 1);
     const a = D.table[j], b = D.table[j + 1];
-    return Float32Array.from(a, (v, i) => v + (b[i] - v) * f);
+    gsCache = Float32Array.from(a, (v, i) => v + (b[i] - v) * f);
+    gsKey = psd.width;
+    return gsCache;
+  }
+
+  /* Interpolate the slice at a given log10(u). Split out from fracOf() so the
+     multi-year cost screen can hoist the logarithm: u scales linearly in t, so
+     log10(u_t) = log10(u_1) + log10(t) and the ten years cost one log instead of
+     ten. Exact arithmetic, not an approximation. */
+  function fracAtLog10u(l10u, g, D) {
+    if (!(l10u > -Infinity)) return 0;               // X <= 0, or NaN
+    const t = (l10u - D.uLog.lo) / (D.uLog.hi - D.uLog.lo) * (g.length - 1);
+    if (!(t > 0)) return 0;
+    if (t >= g.length - 1) return g[g.length - 1];
+    const i = t | 0;
+    return g[i] + (g[i + 1] - g[i]) * (t - i);
   }
 
   function fracOf(X, years) {
     const D = E.dissolution, g = gSlice();
     const u = (D.deltaRefUm / psd.d50) * X * (years === undefined ? 1 : years);
     if (!(u > 0)) return 0;
-    const t = (Math.log10(u) - D.uLog.lo) / (D.uLog.hi - D.uLog.lo) * (g.length - 1);
-    if (t <= 0) return 0;
-    if (t >= g.length - 1) return g[g.length - 1];
-    const i = Math.floor(t);
-    return g[i] + (g[i + 1] - g[i]) * (t - i);
+    return fracAtLog10u(Math.log10(u), g, D);
   }
 
   /* tex2.b holds log10(ceiling / cdrPerFrac), so the arid tail keeps resolution.
@@ -1030,25 +1051,41 @@
     const rate = E.feedstock.rateTHaYr, fl = E.cost ? E.cost.floor : 1;
     const YRS = (E.cost && E.cost.screenYears) || 1;
     const DR = (E.cost && E.cost.screenDiscount) || 0;
+    // Everything constant across cells and years, hoisted out of a ~45k x 10 loop.
+    // pow[] is stored and DIVIDED by rather than pre-inverted and multiplied, so
+    // the arithmetic stays bit-identical to the un-hoisted version and no cell
+    // sitting exactly on the screen threshold can flip.
+    const D = E.dissolution, g = gSlice(), kU = D.deltaRefUm / psd.d50;
+    const CPF = E.cdrPerFrac;
+    const pow = new Float64Array(YRS + 1), l10t = new Float64Array(YRS + 1);
+    for (let t = 1; t <= YRS; t++) { pow[t] = Math.pow(1 + DR, t); l10t[t] = Math.log10(t); }
     let num = 0, den = 0, kept = 0;
     for (const r of sample) {
-      const cdr = cdrOfRow(r, exps);
+      // X and eta_DIC were computed twice per row, once in cdrOfRow() and again in
+      // the screening block. Once each now; cdr is derived from them here rather
+      // than via cdrOfRow(), which this reproduces exactly.
+      const X = xOfRow(r, exps), eDic = eDicOfRow(r, exps);
+      const l10u1 = X > 0 ? Math.log10(kU * X) : -Infinity;
+      // Constant in t, so it comes out of the year loop -- it was costing ten
+      // Math.pow calls per cell inside decodeCeil().
+      const ceil = (FC.on && r[5] !== undefined) ? decodeCeil(r[5]) : Infinity;
+      let cdr = fracAtLog10u(l10u1, g, D) * eDic * CPF;
+      if (cdr > ceil) cdr = ceil;
       if (screening) {
         const usdT = costUsdT(fl + rawByte(r[4] === undefined ? 255 : r[4]) * (1 - fl));
         // DISCOUNTED CARBON FROM ONE APPLICATION OVER screenYears, not year one.
         // The rock keeps weathering; dividing a one-off cost by a single year's
         // removal overstated $/tCO2 by ~3.2x. Retreat accumulates linearly in
         // time, so cumulative Fw is G(u*t) and year t delivers the increment.
-        const X = xOfRow(r, exps), eDic = eDicOfRow(r, exps);
         let tonnes = 0, prev = 0;
         for (let t = 1; t <= YRS; t++) {
-          const cum = fracOf(X, t);
-          let yr = (cum - prev) * eDic * E.cdrPerFrac;
+          const cum = fracAtLog10u(l10u1 + l10t[t], g, D);
+          let yr = (cum - prev) * eDic * CPF;
           prev = cum;
           // The ceiling bounds EXPORT each year, so it must be applied per year
           // rather than to the total -- extra years buy much less under it.
-          if (FC.on && r[5] !== undefined) yr = Math.min(yr, decodeCeil(r[5]));
-          tonnes += yr / Math.pow(1 + DR, t);
+          if (yr > ceil) yr = ceil;
+          tonnes += yr / pow[t];
         }
         if (!(tonnes > 0) || usdT === null
             || usdT * rate / tonnes >= E.cost.screenUsdPerTco2) { den += r[3]; continue; }
@@ -1065,47 +1102,76 @@
     return (num / den) * gha;                              // t/ha/yr x Gha -> Gt
   }
 
-  function deciles(nw) {
-    const rows = sample.map((r) => [scoreOf(r, nw), r[3]]).sort((a, b) => a[0] - b[0]);
-    const tot = rows.reduce((a, r) => a + r[1], 0);
+  /* Area-weighted decile edges from a precomputed score array, aligned with
+     `sample`. Takes scores rather than exponents so the neutral baseline's scores
+     can be computed once and reused by both the edges and the comparison loop.
+     Sorts an Int32Array of indices instead of building 45k two-element arrays. */
+  function edgesFrom(scores) {
+    const n = scores.length;
+    const idx = new Int32Array(n);
+    for (let i = 0; i < n; i++) idx[i] = i;
+    idx.sort((a, b) => scores[a] - scores[b]);
+    let tot = 0;
+    for (let i = 0; i < n; i++) tot += sample[i][3];
     const edges = []; let acc = 0, next = 1;
-    for (const r of rows) {
-      acc += r[1];
-      while (next < 10 && acc / tot >= next / 10) { edges.push(r[0]); next++; }
+    for (let k = 0; k < n; k++) {
+      acc += sample[idx[k]][3];
+      while (next < 10 && acc / tot >= next / 10) { edges.push(scores[idx[k]]); next++; }
     }
-    return { rows, edges };
+    return edges;
   }
 
-  // The neutral baseline's decile edges depend on the grind and the cost
-  // exponent but NOT on the term exponents, so they are cached and invalidated
-  // on exactly those two. The old code cached them and never invalidated, which
-  // is why moving the grind slider produced spurious instability.
-  let baseDec = null, baseKey = null;
-  function neutralEdges() {
+  function scoresFor(exps) {
+    const out = new Float64Array(sample.length);
+    for (let i = 0; i < sample.length; i++) out[i] = scoreOf(sample[i], exps);
+    return out;
+  }
+
+  // The neutral baseline depends on the grind and the cost exponent but NOT on the
+  // term exponents, so its SCORES and its edges are cached and invalidated on
+  // exactly those two. The old code cached them and never invalidated, which is why
+  // moving the grind slider produced spurious instability. Caching the scores as
+  // well as the edges is what lets updateStability() do one pass instead of two.
+  let baseScores = null, baseEdges = null, baseKey = null;
+  function neutralBase() {
     const key = ssaShift().toFixed(6) + "|" + econ.costExp;
-    if (baseKey !== key) { baseDec = deciles(CRIT.map(() => 1)); baseKey = key; }
-    return baseDec.edges;
+    if (baseKey !== key || !baseScores) {
+      baseScores = scoresFor(CRIT.map(() => 1));
+      baseEdges = edgesFrom(baseScores);
+      baseKey = key;
+    }
+    return {scores: baseScores, edges: baseEdges};
   }
 
   function updateStability() {
     if (!sample) return;
-    const neutral = CRIT.map(() => 1);
+    const atDefault = CRIT.every((c) => Math.abs(termExp[c.key] - 1) < 1e-9);
+    // AT THE DEFAULTS THE ANSWER IS ZERO BY CONSTRUCTION, so say so without
+    // touching the sample. Both settings are then the same exponents digitised
+    // against the same edges, so every cell lands in the same decile and `moved`
+    // is exactly 0. Computing it anyway cost ~170 ms per slider event -- three
+    // passes over 45k cells and a sort -- to rediscover an identity, which was the
+    // bulk of the map's sluggishness on the grind and economics controls.
+    if (atDefault) {
+      $("stability").textContent = "At the physical defaults.";
+      return;
+    }
     const nw = CRIT.map((c) => termExp[c.key]);
     // Each setting is digitised against ITS OWN area-weighted decile edges, so
     // this is a rank statistic: a monotone change (level shift, common exponent)
     // moves nothing, and only genuine re-ranking counts. An earlier version
     // compared both settings against the baseline's edges, which reported pure
     // level changes as instability -- a x2 level shift read as "85% moved".
-    const eN = neutralEdges();
-    const atDefault = CRIT.every((c) => Math.abs(termExp[c.key] - 1) < 1e-9);
-    const eW = atDefault ? eN : deciles(nw).edges;
+    const base = neutralBase();
+    const eN = base.edges, sN = base.scores;
+    const sW = scoresFor(nw);
+    const eW = edgesFrom(sW);
     const dec = (v, edges) => { let d = 0; while (d < edges.length && v >= edges[d]) d++; return d; };
     let moved = 0, tot = 0;
-    for (const r of sample) {
-      const a = dec(scoreOf(r, neutral), eN);
-      const b = dec(scoreOf(r, nw), eW);
-      tot += r[3];
-      if (a !== b) moved += r[3];
+    for (let i = 0; i < sample.length; i++) {
+      const w = sample[i][3];
+      tot += w;
+      if (dec(sN[i], eN) !== dec(sW[i], eW)) moved += w;
     }
     const pct = tot ? moved / tot : 0;
     $("stability").textContent =
@@ -1395,12 +1461,35 @@
         + (FC.on ? "" : ", drainage limit not applied");
   }
 
-  function refresh() {
-    syncSliders(); syncPsd(); syncEcon(); renderLegend(); updateStability(); draw();
+  /* The two whole-sample statistics -- the stability sentence and the footer total
+     -- are the only expensive things in a refresh. The map itself draws in ~4 ms,
+     so they are debounced off the input path rather than run inline: dragging a
+     slider now redraws every frame and the two numbers settle once, shortly after
+     you stop. The delay is short enough to read as instant for a single click and
+     long enough that a drag never queues a second pass.
+
+     They are NOT approximations and nothing about them changes -- this is purely
+     when they run. flushStats() runs them synchronously, which is what the first
+     paint uses so the footer never shows its placeholder on load. */
+  const STATS_DEBOUNCE_MS = 80;
+  let statsTimer = null;
+  function flushStats() {
+    if (statsTimer !== null) { clearTimeout(statsTimer); statsTimer = null; }
+    updateStability();
     updateHeadline();
+  }
+  function scheduleStats() {
+    if (statsTimer !== null) clearTimeout(statsTimer);
+    statsTimer = setTimeout(() => { statsTimer = null; flushStats(); }, STATS_DEBOUNCE_MS);
+  }
+
+  function refresh() {
+    syncSliders(); syncPsd(); syncEcon(); renderLegend();
+    draw();
     // Keep the readout consistent with what is drawn. A pinned box in particular
-    // has no mousemove to bring it up to date.
+    // has no mousemove to bring it up to date. Cheap, so it stays inline.
     renderReadout();
+    scheduleStats();
   }
 
   function setMode(m) {
@@ -1565,6 +1654,10 @@
 
     clampView();
     setMode("score");
+    // First paint takes the statistics synchronously: the debounce exists to keep a
+    // DRAG smooth, and on load there is nothing to keep smooth. Letting the timer
+    // handle it would show the footer's placeholder for 80 ms on every visit.
+    flushStats();
   }
 
   main().catch((err) => {
