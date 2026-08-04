@@ -374,7 +374,7 @@ def flux_ceiling_check(rows: list[dict]) -> None:
     print(f"  {'deployment':14} {'t/ha':>6} {'q mm/yr':>8} {'CDR/yr':>7} "
           f"{'implied':>8} {'ceiling':>8} {'over':>6} {'exact?':>7}")
     print(f"  {'':14} {'':>6} {'':>8} {'tCO2/ha':>7} {'mmol/L':>8} {'mmol/L':>8}")
-    worst, exact_ratios = 0.0, []
+    worst, exact_ratios, all_ratios = 0.0, [], []
     for r in rows:
         if r["lat"] is None:
             continue
@@ -386,16 +386,27 @@ def flux_ceiling_check(rows: list[dict]) -> None:
         implied = per_yr * 1e6 / C.M_CO2_G_MOL / max(q * 1e7, 1e-9)
         ratio = implied / alk
         worst = max(worst, ratio)
+        all_ratios.append(ratio)
         if r["cdr_exact"] == "yes":
             exact_ratios.append(ratio)
         print(f"  {r['deployment']:14} {r['rate_t_ha']:6.1f} {q * 1000:8.0f} "
               f"{per_yr:7.2f} {implied * 1e3:8.1f} {alk * 1e3:8.2f} "
-              f"{ratio:5.0f}x {r['cdr_exact']:>7}")
+              f"{ratio:5.1f}x {r['cdr_exact']:>7}")
     print()
-    print(f"  EVERY deployment exceeds its own drainage-concentration ceiling.")
+    # Counted, not asserted. This read "EVERY deployment exceeds its own ceiling"
+    # while the ratio column rounded to whole multiples, so when the drainage
+    # variable changed to total runoff and one deployment dropped to 0.6x the claim
+    # went stale and the table still printed it as "1x".
+    n_over = sum(1 for v in all_ratios if v > 1.0)
+    print(f"  {n_over} of {len(all_ratios)} deployments exceed their own "
+          f"drainage-concentration ceiling, by {min(all_ratios):.1f}x to "
+          f"{max(all_ratios):.1f}x.")
+    if n_over < len(all_ratios):
+        print(f"  {len(all_ratios) - n_over} sits BELOW it, i.e. its reported CDR is "
+              f"carryable in its own drainage water.")
     if exact_ratios:
         print(f"  Restricting to the INDEPENDENTLY MEASURED rows, where CDR is exact and")
-        print(f"  not algebra on fw: {min(exact_ratios):.0f}x to {max(exact_ratios):.0f}x over.")
+        print(f"  not algebra on fw: {min(exact_ratios):.1f}x to {max(exact_ratios):.1f}x.")
     print()
     print("  READ THIS CAREFULLY -- it is not an over-crediting finding. These are")
     print("  DISSOLUTION-BASED figures: the fixture's own header says so, and section 1")

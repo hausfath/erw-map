@@ -299,10 +299,15 @@ observationally. That ratio is the argument to put to operators.
   capped global total for 50% more rock.) So conclusions that rest on the ceiling are
   nearly unaffected by the rate change; conclusions
   that rest on comparing absolute tonnages to trials are not, and need matched rates.
-- **All eight verified deliveries report CDR/ha above their own drainage-
-  concentration ceiling, by 1–8×** (1–4× restricting to the three independently
-  measured rows; 3–19× and 5–19× on the recharge-based drainage used until
-  August 2026). Reported by section 11 of `analyse_deployments.py`. This is *not*
+- **Seven of the eight verified deliveries report CDR/ha above their own drainage-
+  concentration ceiling, by 0.6–7.8×** (1.3–3.9× restricting to the three
+  independently measured rows). The eighth is the wettest site in the set and its
+  reported CDR *is* carryable in its own drainage. On the recharge-based drainage
+  used until August 2026 the range was 3–19×, and all eight exceeded — so the
+  qualitative claim weakened when the drainage variable was corrected, and
+  `analyse_deployments.py` asserted "EVERY deployment exceeds" for one build until
+  the count was made computed. Its exceedance column also rounded to whole
+  multiples, printing the 0.6× row as "1x". Reported by section 11 of `analyse_deployments.py`. This is *not*
   an over-crediting finding: those figures are dissolution-based, so the comparison
   is "how much rock dissolved" against "how much carbon the water could carry", and
   both can hold at once. What it establishes is that **dissolution-based CDR/ha

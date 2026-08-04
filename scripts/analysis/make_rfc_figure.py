@@ -152,7 +152,7 @@ for yy, u, c in zip(y, u_med, c_med):
     axB.plot([c, u], [yy, yy], color=GRID, lw=2.6, solid_capstyle="round", zorder=2)
     axB.plot([u], [yy], "o", ms=8.5, color=BLUE, mec="#fcfcfb", mew=1.5, zorder=4)
     axB.plot([c], [yy], "o", ms=8.5, color=ORANGE, mec="#fcfcfb", mew=1.5, zorder=4)
-    axB.text(u * 1.16, yy, f"{u / c:.0f}×", va="center", ha="left",
+    axB.text(u * 1.16, yy, f"{u / c:.1f}×", va="center", ha="left",
              fontsize=8.8, color=INK, zorder=5)
 
 axB.set_yticks(y)
@@ -180,9 +180,13 @@ axB.legend(handles=[
 ], loc="lower left", bbox_to_anchor=(0.0, 1.005), ncol=2, frameon=False,
     fontsize=8.8, handletextpad=0.4, columnspacing=1.6)
 wc_u, wc_c = u_med[-1] / u_med[0], c_med[-1] / c_med[0]
+# The verb follows the number. On groundwater recharge wc_c was 0.91, so "removes"
+# was right; on total runoff it is 1.41 and the gradient survives, much diminished.
+_verb = ("reverses" if wc_c < 1.0
+         else "removes most of" if wc_c < 0.5 * wc_u else "reduces")
 axB.set_title(
     f"B   The ceiling falls with warming while the rate law rises, so imposing it\n"
-    f"     removes the warm-climate gradient: warmest/coolest {wc_u:.2f}× → {wc_c:.2f}×",
+    f"     {_verb} the warm-climate gradient: warmest/coolest {wc_u:.2f}× → {wc_c:.2f}×",
     fontsize=11, color=INK, loc="left", pad=30, fontweight="bold")
 
 fig.savefig(OUT, bbox_inches="tight", facecolor="#fcfcfb")
