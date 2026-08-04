@@ -1051,8 +1051,23 @@ DAMKOHLER_TAU_SOURCE = (
 #     verified deliveries, since that is a finding about the deliveries and not a
 #     setting of this model
 #
-# The one thing to know if you re-enable: gate 2b will then report the global total
-# BELOW its pre-registered 0.5-4.0 band. That is expected and is discussed there.
+# WHAT THIS FLAG NOW CONTROLS. Since 2026-08-04 the viewer carries a runtime
+# toggle for the ceiling under Advanced ("Apply the drainage limit"), because the
+# bound is written to tex2.b whether or not it is applied and the shader can
+# therefore switch it live. So this constant sets the SHIPPED DEFAULT -- the state
+# the map lands in -- rather than being the only way to turn the bound on. The
+# Python side still follows it exactly: build_v0's `cdr` array, gate 12 and the
+# cost screen all key off this flag, so a reader who wants the bound applied in
+# the DERIVED PRODUCTS, not just in the browser, still flips it here and rebuilds.
+#
+# Keep it False while the bound is out for review. Flipping it to True makes an
+# unreviewed bound the headline figure, which is the thing the review exists to
+# avoid; the toggle lets anyone see the consequence without that.
+#
+# The one thing to know if you re-enable: gate 2b now reports the global total
+# INSIDE its pre-registered 0.5-4.0 band (0.910 GtCO2/yr). It was below the band
+# until the drainage variable was corrected to total runoff -- see
+# DRAINAGE_VARIABLE, which moved the bounded total 2.5x.
 FLUX_CEILING_ON = False
 FLUX_CEILING_OMEGA = 10.0                  # shipped default, kinetically inhibited
 FLUX_CEILING_OMEGA_STRICT = 1.0            # thermodynamic reading, reported alongside

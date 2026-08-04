@@ -5,6 +5,92 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## The drainage limit is a toggle, and the controls stopped being sluggish
+
+TWO CHANGES, and the second is why the first is usable.
+
+THE DRAINAGE-CONCENTRATION CEILING IS NOW A LIVE CONTROL, under Advanced ->
+"Apply the drainage limit". This needed no new data: the bound has always been
+written to tex2.b whether or not it is applied, precisely so the shader could
+recompute CDR live without walking it back through the bound. So the switch was
+already latent in the format and this exposes it.
+
+Everything downstream follows the toggle, which was the actual work -- twelve
+call sites read the flag, and half a map applying a bound is worse than none:
+the footer total and its "drainage limit not applied" suffix, the
+limiting-factor layer's own colour class and its legend row, the hover box's
+"without the drainage limit" row, and the Methods panel's conditional text
+(rebuilt on change, since it is generated once at load and would otherwise
+describe the other setting).
+
+It reproduces the Python build exactly: 0.91 GtCO2/yr with the ceiling on
+against the build's 0.910, and 2.49 against 2.488 off. That is also a check on
+the tex2.b encoding, since the browser reaches the ceiling through an 8-bit log
+channel and Python does not.
+
+`constants.FLUX_CEILING_ON` now sets the SHIPPED DEFAULT rather than being the
+only way in. It stays False: the bound is out for review, and flipping it would
+make an unreviewed bound the headline figure, which is the thing the review
+exists to avoid. The derived products -- the `cdr` array, gate 12, the cost
+screen -- still follow the constant, so applying the bound outside the browser
+is still a rebuild.
+
+Advanced now stays open in every layer and only the term-exponent block is
+mode-specific. The drainage toggle has to be reachable from the limiting-factor
+layer above all, because that layer gives the ceiling its own colour when it
+binds -- hiding the switch would hide the control for a class the legend is
+showing. The distribution-width slider comes along, which is right: grind feeds
+`frac`, so it moves what binds.
+
+Caught while wiring it: the neutral baseline's decile cache keyed on grind and
+cost exponent but not on the ceiling, so toggling it would have left the
+stability baseline scored under the other setting. Same class of bug the comment
+above that cache already warns about. Also fixed a stale summary tag -- the
+at-defaults short-circuit added below returned before setting it, so it read
+"Down-weighted" after a Reset to physics.
+
+## The controls stopped being sluggish, and it was never the rendering
+
+The map felt slow on the grain-size slider and the toggles. Profiled rather than
+guessed: the GPU draw was 4 ms of a 1,400 ms slider event. All the rest was two
+CPU statistics passes over the 45,155-cell decimated sample, run inline on every
+input event -- updateStability() at ~170 ms and the footer's globalGt() at ~88 ms.
+
+    slider input, mean per event      1,400 ms -> 2.5 ms   (max 5.8)
+    mode switch                                  -> 1-3 ms
+    quarry / mafic / drainage toggle              -> 4-17 ms
+
+Nothing about resolution, the shader, or any number changed:
+
+- gSlice() memoised on psd.width. It rebuilt a 64-element Float32Array on EVERY
+  fracOf() call, and fracOf() runs once per sampled cell plus once per year in
+  the cost screen's ten-year loop -- about 630k rebuilds per refresh. 5.4x alone.
+- updateStability() returns immediately at the term defaults, where the answer is
+  zero by construction: same exponents, same edges, so every cell lands in the
+  same decile. It was spending three passes and a 45k sort to rediscover an
+  identity -- and the defaults are the landing state and where anyone touching
+  only the grind or the economics toggle sits.
+- The neutral baseline's per-cell scores are cached beside its edges, so the
+  non-default path does one pass instead of two. edgesFrom() sorts an Int32Array
+  of indices rather than building 45k two-element arrays.
+- globalGt() hoists what was constant: X and eta_DIC once per row rather than
+  twice, the ceiling out of the year loop (constant in t, and costing ten
+  Math.pow calls per cell inside decodeCeil), and log10(u_t) as
+  log10(u_1) + log10(t). Discount factors are stored as pow[] and DIVIDED by
+  rather than pre-inverted and multiplied, so the arithmetic stays bit-identical
+  and no cell on the screen threshold can flip.
+
+The two statistics are then debounced 80 ms off the input path, so a drag redraws
+every frame and the numbers settle once after it stops. First paint calls
+flushStats() synchronously so the footer never shows its placeholder.
+
+VERIFIED BIT-IDENTICAL. Extracted the numeric core verbatim from both the old and
+new src/app.js into a Node harness, fed both the same 45,155-row sample decoded
+from the shipped textures in Python, and compared globalGt to 15 significant
+figures, the kept-area fraction and the stability sentence across 120 settings
+(4 grain sizes x 3 widths x 5 term-exponent combinations x economics on/off).
+Zero mismatches.
+
 ## Drainage is total runoff, not groundwater recharge, August 2026
 
 Found by looking at the map. Dark blobs over the Mekong Delta turned out to be cells

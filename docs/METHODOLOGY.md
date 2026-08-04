@@ -186,10 +186,20 @@ is a first-order open item, not a units nicety.
 
 ## 2b. The drainage-concentration ceiling — COMPUTED BUT NOT APPLIED
 
-> **Status, 2026-08-03: switched OFF pending review by the wider ERW community.**
+> **Status: switched OFF by default, pending review by the wider ERW community.**
 > Everything below is implemented, gated and shipped; it is simply not applied to
-> the CO₂ layer. `constants.FLUX_CEILING_ON = False` is the whole switch, and
-> flipping it to `True` and rebuilding restores every behaviour described here.
+> the CO₂ layer by default.
+>
+> **In the viewer** the bound is a live toggle — Advanced → *Apply the drainage
+> limit*. The ceiling is written to `tex2.b` whether or not it is applied, so the
+> shader switches it without a rebuild, and every dependent readout follows: the
+> footer total, the limiting-factor class, the hover box's "without the drainage
+> limit" row, the legend and the Methods text. Turning it on live reproduces the
+> build's own figure to the digit (0.91 GtCO₂/yr against the build's 0.910).
+>
+> **In the derived products** — the `cdr` array, gate 12, the cost screen —
+> `constants.FLUX_CEILING_ON = False` remains the switch; flip it to `True` and
+> rebuild to apply the bound outside the browser too.
 > While it is off, the map's CO₂ figures are **above this bound on 93.0% of
 > cropland, by a median factor of 2.9×**, so they should be read as an upper bound
 > on dissolution rather than as carbon that can be shown to leave the field. Gate 12

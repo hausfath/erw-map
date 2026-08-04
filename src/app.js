@@ -59,6 +59,17 @@
   // previous behaviour rather than throwing on load.
   const FC = E.fluxCeiling || {on: false, enc: {lo: -4, hi: 0.3}};
 
+  /* Whether the drainage-concentration ceiling is APPLIED, at runtime. The bound
+     is computed in the build and shipped in tex2.b either way -- that separation
+     is what makes this a toggle rather than a rebuild -- and constants.FLUX_CEILING_ON
+     sets where the control starts. It is off by default because the bound is out
+     for review by the ERW community (docs/rfc_flux_reconciliation.tex), not because
+     it is cheap to compute.
+
+     Read through this variable, never FC.on, or half the map applies the bound and
+     half does not. FC.enc and FC.omega stay on FC: those are data, not the switch. */
+  let ceilOn = !!FC.on;
+
   // Data extent, from the generated grid constants.
   const DATA = {
     north: G.north, south: G.north - G.height * G.dlat,
@@ -491,7 +502,7 @@
     gl.uniform1i(u("uMode"), mode === "score" ? 0 : (mode === "limiting" ? 1 : 2));
     gl.uniform2f(u("uL1Enc"), E.l1Enc.lo, E.l1Enc.hi);
     gl.uniform2f(u("uCeilEnc"), FC.enc.lo, FC.enc.hi);
-    gl.uniform1i(u("uCeilOn"), FC.on ? 1 : 0);
+    gl.uniform1i(u("uCeilOn"), ceilOn ? 1 : 0);
     const gslice = gSlice();
     gl.uniform1fv(u("uG[0]"), gslice);
     gl.uniform2f(u("uGLogU"), E.dissolution.uLog.lo, E.dissolution.uLog.hi);
@@ -611,10 +622,10 @@
     // unbounded and cdr is capped. Mirrors the shader exactly; gate 8 in
     // test_kinetics.py asserts both read the same generated constants.
     const uncapped = frac * Math.exp(ld) * E.cdrPerFrac;
-    const capped = (FC.on && ceil !== undefined) ? Math.min(uncapped, ceil)
+    const capped = (ceilOn && ceil !== undefined) ? Math.min(uncapped, ceil)
                                                  : uncapped;
     return {cdr: capped, cdrUncapped: uncapped, ceil, frac,
-            ceilBinds: FC.on && ceil !== undefined && ceil < uncapped,
+            ceilBinds: ceilOn && ceil !== undefined && ceil < uncapped,
             contrib: [lr, ld, lt]};
   }
 
@@ -813,6 +824,28 @@
         + "unrestricted.";
   }
 
+  /* The drainage-limit control's caption. States what the bound is, that it is
+     under review rather than settled, and where to watch its effect -- the footer
+     total recomputes live, so the size of the change is shown rather than asserted
+     here. No number is hardcoded in this text. */
+  function syncFlux() {
+    const om = FC.omega ?? "—";
+    $("flux-hint").innerHTML = ceilOn
+      ? `<b>On.</b> Gross CO₂ is capped at q·[HCO₃⁻]<sub>max</sub>·44 — `
+        + `the carbon has to leave dissolved in the water that leaves, so it is `
+        + `bounded by carbonate saturation (calcite Ω = ${om}) no matter how fast `
+        + `the rock dissolves. <i>Fraction weathered</i> stays uncapped on purpose: `
+        + `rock can dissolve without the carbon being exported. Watch the total below. `
+        + `<b>This bound is out for review by the ERW community and is not a settled `
+        + `part of the model</b> — see Methods.`
+      : `<b>Off — the shipped default.</b> Nothing bounds the reported carbon by `
+        + `the water available to carry it, so the CO₂ layer is an upper limit on `
+        + `dissolution rather than carbon shown to leave the field. Turning this on `
+        + `applies the drainage-concentration ceiling; it cuts the level several-fold `
+        + `and changes which term limits most cropland. Held off pending outside `
+        + `review — see Methods.`;
+  }
+
   function syncSliders() {
     CRIT.forEach((c) => {
       const inp = $("s-" + c.key);
@@ -945,7 +978,7 @@
         `<span class="lbl">${c.label}</span></div>`);
       // The ceiling is a bound, not a term, so it is listed last and only when
       // it is actually in force.
-      if (FC.on) rows.push(
+      if (ceilOn) rows.push(
         `<div class="lrow"><span class="sw" style="background:${FACTOR_COLORS[3]}"></span>` +
         `<span class="lbl">${CEIL_LABEL}</span></div>`);
       L.innerHTML = rows.join("") + eligRows();
@@ -1024,7 +1057,7 @@
     // Same ceiling as the shader and the hover readout. Without it here the
     // stability metric and the decile edges would be computed on a different
     // model from the one being drawn.
-    if (FC.on && row[5] !== undefined) cdr = Math.min(cdr, decodeCeil(row[5]));
+    if (ceilOn && row[5] !== undefined) cdr = Math.min(cdr, decodeCeil(row[5]));
     return cdr;
   }
 
@@ -1068,7 +1101,7 @@
       const l10u1 = X > 0 ? Math.log10(kU * X) : -Infinity;
       // Constant in t, so it comes out of the year loop -- it was costing ten
       // Math.pow calls per cell inside decodeCeil().
-      const ceil = (FC.on && r[5] !== undefined) ? decodeCeil(r[5]) : Infinity;
+      const ceil = (ceilOn && r[5] !== undefined) ? decodeCeil(r[5]) : Infinity;
       let cdr = fracAtLog10u(l10u1, g, D) * eDic * CPF;
       if (cdr > ceil) cdr = ceil;
       if (screening) {
@@ -1127,14 +1160,16 @@
     return out;
   }
 
-  // The neutral baseline depends on the grind and the cost exponent but NOT on the
-  // term exponents, so its SCORES and its edges are cached and invalidated on
-  // exactly those two. The old code cached them and never invalidated, which is why
-  // moving the grind slider produced spurious instability. Caching the scores as
-  // well as the edges is what lets updateStability() do one pass instead of two.
+  // The neutral baseline depends on the grind, the cost exponent and whether the
+  // drainage ceiling is applied, but NOT on the term exponents, so its SCORES and
+  // its edges are cached and invalidated on exactly those three. The old code cached
+  // them and never invalidated, which is why moving the grind slider produced
+  // spurious instability -- so the ceiling toggle belongs in this key too, or
+  // switching it would leave the baseline scored under the other setting. Caching
+  // the scores as well as the edges is what lets updateStability() do one pass.
   let baseScores = null, baseEdges = null, baseKey = null;
   function neutralBase() {
-    const key = ssaShift().toFixed(6) + "|" + econ.costExp;
+    const key = ssaShift().toFixed(6) + "|" + econ.costExp + "|" + (ceilOn ? 1 : 0);
     if (baseKey !== key || !baseScores) {
       baseScores = scoresFor(CRIT.map(() => 1));
       baseEdges = edgesFrom(baseScores);
@@ -1154,6 +1189,9 @@
     // bulk of the map's sluggishness on the grind and economics controls.
     if (atDefault) {
       $("stability").textContent = "At the physical defaults.";
+      // Set the tag on this path too. The early return skipped it at first, which
+      // left the summary reading "Down-weighted" after a Reset to physics.
+      $("weight-tag").textContent = "Physics";
       return;
     }
     const nw = CRIT.map((c) => termExp[c.key]);
@@ -1210,7 +1248,7 @@
       <b>Limiting factor</b>, the term that costs each cell the most; and
       <b>Weathered in year&nbsp;1</b>, the fraction of applied rock predicted to
       dissolve — the quantity field trials can measure.</p>
-      <p>Read the limiting-factor layer with ${FC.on ? "two caveats. First, " +
+      <p>Read the limiting-factor layer with ${ceilOn ? "two caveats. First, " +
       "<b>&ldquo;drainage cannot carry it&rdquo; is a bound, not a term</b>: where " +
       "the drainage-concentration ceiling binds it outranks all three factors, " +
       "because no rate can push more carbon out than the water can hold. That is " +
@@ -1223,7 +1261,7 @@
       an absolute ranking of mechanisms.</p>
       <p>It is a screening map, not a site-selection tool: zoom is capped on
       purpose, and every CO₂ figure is gross removal.
-      ${FC.on
+      ${ceilOn
         ? "Carbonate saturation enters only as an upper bound on what the drainage " +
           "can carry, not as a modelled precipitation loss; cation retention in the " +
           "soil, riverine re-release and strong-acid competition are all still " +
@@ -1308,7 +1346,7 @@
           ${E.cost.tortuosity} road tortuosity</td></tr>
         <tr><td>D_w (transport limitation)</td><td>${p.dw ? p.dw.value : "?"} m/yr
           (published range ${p.dw ? p.dw.range.join("–") : "?"})</td></tr>
-        <tr><td>Drainage ceiling, calcite Ω${FC.on ? "" : " (not applied)"}</td><td>${FC.omega ?? "—"}
+        <tr><td>Drainage ceiling, calcite Ω${ceilOn ? "" : " (not applied)"}</td><td>${FC.omega ?? "—"}
           (strict case ${FC.omegaStrict ?? "—"}; precipitation is negligible below
           Ω&nbsp;≈&nbsp;10, so the shipped value is the generous one)</td></tr>
         <tr><td>Ca share of divalent charge</td><td>${FC.fCa ?? "—"}
@@ -1326,7 +1364,7 @@
       against the trials that have measured drainage chemistry directly. Modelled
       export lag times reach 5–22 years (Kanzaki et al. 2025). This is the largest
       missing term and it is blocked on data, not effort.</p></div>
-      ${FC.on ? `<p><b>The carbon is bounded by the water that carries it.</b>
+      ${ceilOn ? `<p><b>The carbon is bounded by the water that carries it.</b>
       Gross CO₂ removal is capped at what the drainage can hold as bicarbonate
       without carbonate precipitating — around ${FC.medianTco2HaYr ? FC.medianTco2HaYr.toFixed(2) : "0.22"}
       tCO₂/ha/yr at the median cell. The cap binds on
@@ -1364,7 +1402,7 @@
       basalt from an independent laboratory; Cascade's ${E.kinetics.cascadeEaKJ}
       has the same problem, so it is wrong for a reason we share. This inflates
       the tropics-versus-temperate contrast by roughly 2×.
-      ${FC.on
+      ${ceilOn
         ? "It no longer propagates to the CO₂ layer over most of the map, though: " +
           "the drainage ceiling above binds first and does not reward warmth, so the " +
           "tropical tilt now shows up in &ldquo;weathered in year 1&rdquo; rather " +
@@ -1458,7 +1496,7 @@
             + `$${E.cost.screenUsdPerTco2}/tCO\u2082 over ${E.cost.screenYears} yr `
             + `at ${(E.cost.screenDiscount * 100).toFixed(0)}%, on ${gha.toFixed(2)} Gha`
           : `gross removal over ${gha.toFixed(2)} Gha of cropland`)
-        + (FC.on ? "" : ", drainage limit not applied");
+        + (ceilOn ? "" : ", drainage limit not applied");
   }
 
   /* The two whole-sample statistics -- the stability sentence and the footer total
@@ -1501,7 +1539,14 @@
     // on the fraction-weathered layer too. Economics does not: fraction weathered
     // is a physical prediction, and discounting it by haul cost would be a
     // category error.
-    $("weights-group").classList.toggle("hidden", m === "limiting");
+    //
+    // Advanced itself now stays open in every mode, and only the TERM-EXPONENT
+    // block is mode-specific. The drainage limit lives in Advanced and has to be
+    // reachable from the limiting-factor layer above all -- that layer gives the
+    // ceiling its own colour when it binds, so hiding the switch would hide the
+    // control for a class the legend is showing. The distribution-width slider
+    // comes along, which is right: grind feeds `frac`, so it moves what binds.
+    $("term-sensitivity").classList.toggle("hidden", m === "limiting");
     $("psd-group").classList.toggle("hidden", false);
     $("econ-group").classList.toggle("hidden", m !== "score" || !E.cost);
     refresh();
@@ -1638,6 +1683,22 @@
       `the better guide to whether feedstock is nearby \u2014 but outcrop is not ` +
       `a quarry, and says nothing about whether the rock is permitted, crushed ` +
       `or for sale.`;
+    // Drainage limit. The bound is shipped in the texture whether or not it is
+    // applied, so this is a real switch rather than a request for a rebuild. It is
+    // an Advanced control on purpose: it moves the absolute level several-fold and
+    // it is the one term in the model that is out for external review.
+    const fx = $("chk-flux");
+    fx.checked = ceilOn;
+    fx.addEventListener("change", (e) => {
+      ceilOn = e.target.checked;
+      // The Methods panel's text is ceiling-conditional and is built once at load,
+      // so it has to be regenerated or it describes the other setting.
+      $("method-body").innerHTML = methodsHTML();
+      syncFlux();
+      refresh();
+    });
+    syncFlux();
+
     $("btn-reset").onclick = () => {
       CRIT.forEach((c) => { termExp[c.key] = 1; }); refresh();
     };

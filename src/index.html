@@ -65,14 +65,21 @@
       <details id="advanced">
         <summary>Advanced <span class="tag" id="weight-tag">Physics</span></summary>
         <div id="adv-psd-slider"></div>
-        <p class="hint" style="margin-top:14px">Lower a term&rsquo;s exponent to
-          see how much of the map depends on trusting it. At 1.00 the score is
-          the unmodified physical product.</p>
-        <div id="sliders"></div>
-        <div class="btn-row">
-          <button class="mini" id="btn-reset">Reset to physics</button>
+        <div id="flux-block" style="margin-top:14px">
+          <label class="check"><input type="checkbox" id="chk-flux">
+            <span>Apply the drainage limit</span></label>
+          <p class="hint" id="flux-hint"></p>
         </div>
-        <p class="hint stability" id="stability"></p>
+        <div id="term-sensitivity">
+          <p class="hint" style="margin-top:14px">Lower a term&rsquo;s exponent to
+            see how much of the map depends on trusting it. At 1.00 the score is
+            the unmodified physical product.</p>
+          <div id="sliders"></div>
+          <div class="btn-row">
+            <button class="mini" id="btn-reset">Reset to physics</button>
+          </div>
+          <p class="hint stability" id="stability"></p>
+        </div>
       </details>
     </section>
 

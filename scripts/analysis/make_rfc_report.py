@@ -394,6 +394,11 @@ alongside them: {binds * 100:.1f}\% of cropland area exceeds the bound by a medi
 {ex50:.1f}$\times$, so the unbounded figures should be read as an upper limit on
 dissolution rather than as carbon shown to leave the field.
 
+\textbf{{You can switch it on yourself.}} The interactive map carries the bound as a
+live toggle, so every figure in this note can be checked against its unbounded
+counterpart without rebuilding anything --- including which term limits each region,
+which is the result in \S6 we would most like attacked.
+
 On external consistency: unbounded, our global total is
 {g_unc:.2f}\,Gt\,\cotwo{{}}\,yr$^{{-1}}$; bounded, {g_cap:.2f}. Both sit inside the 0.5--4
 range of published global ERW estimates, and we do not read that as support. Those

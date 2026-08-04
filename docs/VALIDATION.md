@@ -245,8 +245,10 @@ observationally. That ratio is the argument to put to operators.
   groundwater recharge to total runoff in August 2026 — the ceiling scales with `q`,
   so a larger water flux raises the bound faster than it raises the rate. On
   recharge it was 98.9% of area at 6.2×.) This is a deliberate, reported state, not an oversight: gate 12
-  prints the exceedance on every build, the Methods panel carries a flagbox, and
-  `FLUX_CEILING_ON = True` restores enforcement in one line. The reason to hold it
+  prints the exceedance on every build, the Methods panel carries a flagbox, the
+  viewer exposes the bound as a live toggle under Advanced so a reader can see its
+  consequence without a rebuild, and `FLUX_CEILING_ON = True` restores enforcement
+  in the derived products in one line. The reason to hold it
   is that it moves the absolute level several-fold and that judgement is worth
   outside scrutiny — but while it is off, **no absolute CO₂ figure from this map
   should be quoted without that caveat.**
