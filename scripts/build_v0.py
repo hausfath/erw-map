@@ -868,7 +868,10 @@ _WIDTH_GRID = _grid_through(*C.PSD_WIDTH_SLIDER_RANGE, C.PSD_REF_WIDTH, 13, 3)
 # The WIDTH axis is interpolated in JS, not in the shader: the width slider is a
 # single global value, so the browser only ever needs one 64-element slice at a
 # time. That keeps the shader uniform to 64 floats instead of 832.
-_U_LOG = (-5.0, np.log10(12.0))
+# Top extended from 12 to 100 so the cost screen can run the same table out to
+# 10 years at the finest grind (max u needed is ~55). Costs 0.0003 in worst-case
+# interpolation error, which is still well under the 8-bit step.
+_U_LOG = (-5.0, 2.0)
 _U_GRID = np.logspace(*_U_LOG, 64)
 _G_TABLE = [[round(float(v), 5) for v in K.dissolved_fraction(_U_GRID, n)]
             for n in _WIDTH_GRID]
@@ -999,6 +1002,8 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
                             "lo": -2.0, "hi": 2.0},
         "phEncoding": {"lo": 3.0, "hi": 10.0},
         "cost": {"screenUsdPerTco2": C.COST_SCREEN_USD_PER_TCO2,
+                 "screenYears": C.COST_SCREEN_YEARS,
+                 "screenDiscount": C.COST_SCREEN_DISCOUNT_RATE,
                  "floor": C.COST_FLOOR, "expDefault": C.COST_EXPONENT_DEFAULT,
                  "haulScaleUsdT": C.HAUL_PENALTY_SCALE_USD_T,
                  "tco2PerT": round(C.DELIVERED_BASALT_TCO2_PER_T, 3),

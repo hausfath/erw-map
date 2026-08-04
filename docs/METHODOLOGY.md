@@ -261,6 +261,33 @@ than tolerance-fudged; it is the standing justification for field-data ask #6.
 Gates: **12** in `build_v0.py` (nothing may report more carbon than its drainage can
 carry), **13/13b/13c** in `test_kinetics.py`.
 
+### What "per year" means, and why the year-one figure is the right one
+
+The application rate is stated per year, but the CDR layer is the **first year's
+removal from one application**. Those are only the same thing if you reapply every
+year, and you cannot: a field takes a multi-year break between applications.
+
+The two errors happen to cancel, and it is worth showing why rather than relying on
+it. Run the shrinking-core model forward and the median cell weathers 15% in year
+one but 70% by year ten, so one application eventually delivers ~4.5× its year-one
+carbon. Under a reapplication interval of *k* years the steady-state annual removal
+is (rate / k) × eventual yield:
+
+| reapplication interval | average t/ha/yr | steady-state tCO₂/ha/yr |
+|---|---|---|
+| every year | 30.0 | 6.04 |
+| every 2 years | 15.0 | 3.02 |
+| every 3 years | 10.0 | 2.01 |
+| **every 5 years** | **6.0** | **1.21** |
+| every 7 years | 4.3 | 0.86 |
+| every 10 years | 3.0 | 0.60 |
+
+The map shows **1.27** tCO₂/ha/yr, which sits almost exactly on the five-year
+interval. So the year-one framing is not merely conservative — it approximates a
+realistic operational cadence at steady state, which annual reapplication (6.04)
+would badly overstate. Stated here because the "/yr" label otherwise invites reading
+it as a sustainable annual rate from annual application, which it is not.
+
 ### Cells with no climate input
 
 695 cropland cells (0.35 Mha, 0.03% of cropland area, almost all high-latitude
@@ -292,7 +319,7 @@ showing numbers derived from the NaN fallback.
 | Quarry gate cost | $10/t | operator-reported quarry-fines prices |
 | Truck haul | $0.12/t-km × 1.35 tortuosity | US trade-association rate; **not verified outside the US** |
 | Haul penalty scale S | $100/t | editorial choice, stated as such |
-| Headline cost screen | **$200/tCO₂ delivered** | applies to the footer total when economics is on; acquisition and haul only, not a levelised cost |
+| Headline cost screen | **$100/tCO₂**, 10 yr at 5% | applies to the footer total when economics is on; acquisition and haul only, not a levelised cost |
 | SOC exclusion | 5 wt%, P > 0.9 | Puro.earth rule 3.9.1(c) |
 
 ### Choices that are not forced by physics

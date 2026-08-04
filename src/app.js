@@ -632,9 +632,9 @@
     return Float32Array.from(a, (v, i) => v + (b[i] - v) * f);
   }
 
-  function fracOf(X) {
+  function fracOf(X, years) {
     const D = E.dissolution, g = gSlice();
-    const u = (D.deltaRefUm / psd.d50) * X;
+    const u = (D.deltaRefUm / psd.d50) * X * (years === undefined ? 1 : years);
     if (!(u > 0)) return 0;
     const t = (Math.log10(u) - D.uLog.lo) / (D.uLog.hi - D.uLog.lo) * (g.length - 1);
     if (t <= 0) return 0;
@@ -761,7 +761,9 @@
     // $/tCO2 screen. Say both.
     const scr = E.cost && E.cost.screenUsdPerTco2;
     $("econ-readout").textContent = on
-      ? (scr ? `Total below restricted to cells under $${scr}/tCO\u2082 delivered. `
+      ? (scr ? `Total below restricted to cells under $${scr}/tCO\u2082, costed over `
+              + `${E.cost.screenYears} years of weathering at `
+              + `${(E.cost.screenDiscount * 100).toFixed(0)}% discount. `
              : "")
         + "Hover the map for cost per tonne of rock and per tCO\u2082."
       : "Off: the map shows physical potential only, and the total below is "
@@ -965,11 +967,16 @@
   /* Gross CDR for one sampled cell. One definition, used by the suitability score,
      the decile edges and the global total in the footer, so those three can never
      disagree about what is being drawn. */
-  function cdrOfRow(row, exps) {
+  function xOfRow(row, exps) {
     const rel = Math.pow(10, E.l1Enc.lo + rawByte(row[0]) * (E.l1Enc.hi - E.l1Enc.lo));
-    const X = Math.exp(exps[0] * Math.log(Math.max(rel, 1e-12))
-                     + exps[2] * Math.log(Math.max(rawByte(row[2]), 1e-12)));
-    const eDic = Math.pow(Math.max(rawByte(row[1]), 1e-12), exps[1]);
+    return Math.exp(exps[0] * Math.log(Math.max(rel, 1e-12))
+                  + exps[2] * Math.log(Math.max(rawByte(row[2]), 1e-12)));
+  }
+  const eDicOfRow = (row, exps) =>
+    Math.pow(Math.max(rawByte(row[1]), 1e-12), exps[1]);
+
+  function cdrOfRow(row, exps) {
+    const X = xOfRow(row, exps), eDic = eDicOfRow(row, exps);
     let cdr = fracOf(X) * eDic * E.cdrPerFrac;
     // Same ceiling as the shader and the hover readout. Without it here the
     // stability metric and the decile edges would be computed on a different
@@ -999,13 +1006,30 @@
     // produce enough carbon to justify the haul.
     const screening = econ.costExp > 0 && E.cost && E.cost.screenUsdPerTco2;
     const rate = E.feedstock.rateTHaYr, fl = E.cost ? E.cost.floor : 1;
+    const YRS = (E.cost && E.cost.screenYears) || 1;
+    const DR = (E.cost && E.cost.screenDiscount) || 0;
     let num = 0, den = 0, kept = 0;
     for (const r of sample) {
       const cdr = cdrOfRow(r, exps);
       if (screening) {
         const usdT = costUsdT(fl + rawByte(r[4] === undefined ? 255 : r[4]) * (1 - fl));
-        if (!(cdr > 0) || usdT === null
-            || usdT * rate / cdr >= E.cost.screenUsdPerTco2) { den += r[3]; continue; }
+        // DISCOUNTED CARBON FROM ONE APPLICATION OVER screenYears, not year one.
+        // The rock keeps weathering; dividing a one-off cost by a single year's
+        // removal overstated $/tCO2 by ~3.2x. Retreat accumulates linearly in
+        // time, so cumulative Fw is G(u*t) and year t delivers the increment.
+        const X = xOfRow(r, exps), eDic = eDicOfRow(r, exps);
+        let tonnes = 0, prev = 0;
+        for (let t = 1; t <= YRS; t++) {
+          const cum = fracOf(X, t);
+          let yr = (cum - prev) * eDic * E.cdrPerFrac;
+          prev = cum;
+          // The ceiling bounds EXPORT each year, so it must be applied per year
+          // rather than to the total -- extra years buy much less under it.
+          if (FC.on && r[5] !== undefined) yr = Math.min(yr, decodeCeil(r[5]));
+          tonnes += yr / Math.pow(1 + DR, t);
+        }
+        if (!(tonnes > 0) || usdT === null
+            || usdT * rate / tonnes >= E.cost.screenUsdPerTco2) { den += r[3]; continue; }
         kept += r[3];
       }
       num += cdr * r[3]; den += r[3];
@@ -1336,8 +1360,9 @@
     $("stat-label").textContent = gt === null
       ? "cropland in scope"
       : (scr
-          ? `gross removal under $${E.cost.screenUsdPerTco2}/tCO\u2082 delivered, `
-            + `on ${gha.toFixed(2)} Gha`
+          ? `gross removal where delivered rock costs under `
+            + `$${E.cost.screenUsdPerTco2}/tCO\u2082 over ${E.cost.screenYears} yr `
+            + `at ${(E.cost.screenDiscount * 100).toFixed(0)}%, on ${gha.toFixed(2)} Gha`
           : `gross removal over ${gha.toFixed(2)} Gha of cropland`)
         + (FC.on ? "" : ", drainage limit not applied");
   }

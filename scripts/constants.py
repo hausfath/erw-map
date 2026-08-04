@@ -1128,7 +1128,36 @@ COST_FLOOR = 0.05
 #
 # It bounds ACQUISITION AND TRANSPORT ONLY. It is not a levelised cost and must not
 # be read as one.
-COST_SCREEN_USD_PER_TCO2 = 200.0
+# Basis, corrected 2026-08. The screen used to divide a ONE-OFF rock cost by ONE
+# YEAR of CDR, which overstates cost by ~3.2x because the rock keeps weathering.
+# It now uses the discounted carbon a single application delivers over 10 years,
+# run through the same shrinking-core model the map draws: retreat accumulates
+# linearly with time, so cumulative Fw = G(u*t) and year t delivers the increment.
+#
+#   cost at t = 0; tonnes at the end of years 1..10, discounted at (1+r)^-t
+#
+# Effect at the median cell: $946/tCO2 on the old basis, $299 on this one.
+#
+# THE DISCOUNT RATE BARELY MATTERS; THE HORIZON DOES. Across 0-12% the median moves
+# $253-$367 and the qualifying total only -21%. Across horizons at 5% it moves
+# $993 (1 yr) -> $488 (3) -> $380 (5) -> $299 (10). So the decision that mattered
+# was using any multi-year window at all, not which rate.
+#
+# Discounting physical carbon is a convention, not a fact: it is equivalent to
+# discounting the revenue a buyer receives, which is right for cost-effectiveness,
+# but a tonne in ten years is not physically worth less than a tonne today.
+#
+# OPTIMISTIC IN ONE RESPECT. Shrinking core captures the geometric slowdown as
+# particles shrink but NOT surface passivation, secondary-mineral armouring or
+# depletion of the most reactive phases, so real multi-year yields decline faster
+# than the 70%-by-year-10 this implies.
+#
+# AND IT INTERACTS WITH THE DRAINAGE CEILING. With the ceiling on, each year's
+# EXPORT is capped, so extra years buy much less: median $953/tCO2 at 5% and only
+# 6.8% of area under $200. The screen follows FLUX_CEILING_ON for that reason.
+COST_SCREEN_USD_PER_TCO2 = 100.0
+COST_SCREEN_YEARS = 10
+COST_SCREEN_DISCOUNT_RATE = 0.05
 
 
 def cost_value(cost_usd_t):

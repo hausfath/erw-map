@@ -5,6 +5,55 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## The cost screen is costed over ten years, not one, August 2026
+
+The $/tCO2 screen divided a ONE-OFF rock cost by ONE YEAR of removal. The rock keeps
+weathering, so that overstated cost by about 3.2x. It now uses the discounted carbon
+a single application delivers over ten years, through the same shrinking-core model
+the map draws: retreat accumulates linearly in time, so cumulative Fw = G(u*t) and
+year t delivers the increment. Cost at t=0, tonnes at the end of years 1..10,
+discounted at 5%. Threshold set to $100/tCO2.
+
+    median $/tCO2, old basis (year 1 only)     946
+    median $/tCO2, 10 years at 5%              299
+
+    headline with economics ON   0.50 GtCO2/yr on 0.17 Gha  (<$100, 10 yr, 5%)
+    previously                   0.50 GtCO2/yr on 0.12 Gha  (<$200, year 1)
+
+The total barely moves but the SELECTION changes: a stricter threshold on a fairer
+basis keeps 13.9% of area rather than 10.1%, and different cells.
+
+THE DISCOUNT RATE BARELY MATTERS; THE HORIZON DOES. Across 0-12% the median moves
+$253-$367 and the qualifying total only -21%. Across horizons at 5% it moves $993
+(1 yr) -> $488 (3) -> $380 (5) -> $299 (10). Using any multi-year window was the
+decision that mattered.
+
+Two honest limits. Shrinking core captures the geometric slowdown as particles
+shrink but NOT passivation, secondary-mineral armouring or depletion of the most
+reactive phases, so real ten-year yields decline faster than the 70% this implies.
+And it interacts with the drainage ceiling: with the ceiling on, each year's EXPORT
+is capped, so extra years buy far less -- median $953/tCO2 and only 6.8% of area
+under $200. The screen applies the ceiling per year, not to the total, and follows
+FLUX_CEILING_ON.
+
+WHY THE YEAR-ONE HEADLINE IS STILL THE RIGHT ONE. The rate is stated per year while
+the CDR layer is the first year from one application, which only coincide under
+annual reapplication -- and a field takes a multi-year break. Both errors cancel,
+and it is worth showing rather than assuming. Steady-state annual removal at a
+reapplication interval of k years is (rate/k) x eventual yield:
+
+    every 1 yr   6.04 tCO2/ha/yr        every 5 yr   1.21
+    every 2 yr   3.02                   every 7 yr   0.86
+    every 3 yr   2.01                   every 10 yr  0.60
+
+The map shows 1.27, which sits almost exactly on a five-year interval. So the
+year-one framing approximates a realistic cadence at steady state; annual
+reapplication (6.04) would badly overstate it. Now documented, because the "/yr"
+label otherwise invites exactly that misreading.
+
+The dissolution table's u range went from 12 to 100 so the same lookup can run ten
+years at the finest grind. Costs 0.0004 in worst-case interpolation error.
+
 ## The headline total responds to the economics toggle, August 2026
 
 With economics ON the footer total is now restricted to cells whose delivered
