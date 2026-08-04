@@ -159,7 +159,7 @@ TEXT = rf"""
 
 \title{{\vspace{{-1.5cm}}A drainage-concentration ceiling on enhanced rock weathering\\
 \large Request for comment on a bound we have implemented but not shipped}}
-\author{{Zeke Hausfather\\\small ERW Atlas project}}
+\author{{Zeke Hausfather\\\small Stripe / Frontier}}
 \date{{\today}}
 
 \begin{{document}}
