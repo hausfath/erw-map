@@ -25,6 +25,7 @@ fail.** The count is close to meaningless without the breakdown:
 | Internal consistency | 6c, 8, 10 | Two parts of our own code agree with each other |
 | Literature reproduction | 1, 2, 2b, 2c, 4, 4b, 6 | We transcribed a published constant correctly |
 | Invariants | 5, 9, 10 | The functions behave monotonically where physics requires |
+| **Physical impossibility** | 2c (build) | No cell receiving more than a metre of rain a year drains less than a millimetre. Installed August 2026 after groundwater recharge was found to be exactly zero across three major river deltas. |
 | Arithmetic self-check | 6b, 7 | A constant was not fat-fingered |
 
 Gate 7 deserves singling out because it used to be presented as evidence:
@@ -52,6 +53,7 @@ changes only this file and says why.
 | Drainage-concentration ceiling | hard bound, no tolerance — **currently NOT enforced**, see §5 | gate 12 (build) |
 | Ceiling vs open-system calcite benchmark | 0.85–1.05 mmol/L, pH 8.0–8.4 | gate 13 |
 | Ceiling inside measured drainage anchors | envelope of five anchors, drained cells only | gate 13b |
+| Wet-but-undrained cropland | **0.05% of area** (precip > 1,000 mm/yr and q < 1 mm/yr) | gate 2c (build) |
 
 ### What is frozen alongside the 0.5-log tolerance
 
@@ -237,18 +239,33 @@ observationally. That ratio is the argument to put to operators.
 ## 5. Known asymmetries and open audit items
 
 - **The drainage-concentration ceiling is OFF pending external review (2026-08-03),
-  so the shipped map violates a bound this repo computes and documents.** On 98.9%
+  so the shipped map violates a bound this repo computes and documents.** On 93.0%
   of cropland area the CO₂ layer exceeds what the drainage could carry, by a median
-  factor of 6.2×. This is a deliberate, reported state, not an oversight: gate 12
+  factor of 2.9×. (Both figures fell when the drainage variable changed from
+  groundwater recharge to total runoff in August 2026 — the ceiling scales with `q`,
+  so a larger water flux raises the bound faster than it raises the rate. On
+  recharge it was 98.9% of area at 6.2×.) This is a deliberate, reported state, not an oversight: gate 12
   prints the exceedance on every build, the Methods panel carries a flagbox, and
   `FLUX_CEILING_ON = True` restores enforcement in one line. The reason to hold it
   is that it moves the absolute level several-fold and that judgement is worth
   outside scrutiny — but while it is off, **no absolute CO₂ figure from this map
   should be quoted without that caveat.**
-- **If the ceiling is re-enabled, the global gross total sits BELOW its own
-  pre-registered Tier 2 band, and the band should not be widened.** With the ceiling
-  imposed, global gross removal is **0.360 GtCO₂/yr** against a pre-registered
-  0.5–4.0; with it off, 2.209, which is inside the band. Reported by gate 2b in the build, not enforced.
+- **The ceiling-on total now sits INSIDE its pre-registered Tier 2 band, and the
+  band was never widened to achieve that.** With the ceiling imposed, global gross
+  removal is **0.910 GtCO₂/yr** against a pre-registered 0.5–4.0; with it off, 2.488,
+  also inside. Reported by gate 2b in the build, not enforced.
+
+  This is a reversal worth stating plainly. Through 2026-08-03 the ceiling-on total
+  was **0.360 GtCO₂/yr**, below the band, and this document argued at length that
+  falling below was the expected consequence of imposing a bound the comparison
+  literature lacks. That argument still holds on its own terms, but the specific
+  shortfall was substantially an artefact of using groundwater recharge for `q`:
+  the ceiling is `q · [HCO₃⁻]_max · 44`, so understating the water understated the
+  bound directly. Correcting the drainage variable moved the ceiling-on total 2.5×,
+  into the band, without touching the ceiling itself. Two lessons: a pre-registered
+  band did its job by surviving un-widened, and a result that reads as a deep
+  finding can still be carrying an input error.
+
   Widening the band to fit would defeat the purpose of pre-registering it. The
   substantive point is in §2's own wording — the published range is "Consistency,
   NOT validation… several estimates descend from the same rate-law and surface-area
@@ -274,13 +291,18 @@ observationally. That ratio is the argument to put to operators.
   per-tonne efficiency is **sublinear** in application rate, so rescaling any trial
   to the map's rate by a simple ratio manufactures agreement that does not exist. In
   either direction. The one comparison that is rate-insensitive here is the flux
-  ceiling itself — the map's capped median is **0.220 tCO₂/ha/yr at both 20 and
-  30 t/ha**, because the ceiling does not scale with how much rock is applied. So
-  conclusions that rest on the ceiling are unaffected by the rate change; conclusions
+  ceiling itself — the map's capped median moves only **0.478 → 0.510 tCO₂/ha/yr
+  from 20 to 30 t/ha**, because the ceiling does not scale with how much rock is
+  applied. (It was flat at 0.220 for both rates until the drainage variable was
+  corrected in August 2026; total runoff raises the ceiling, so it now binds on 93.0%
+  of area rather than 98.9% and leaves the rate a little room. Still an 8.6% gain in
+  capped global total for 50% more rock.) So conclusions that rest on the ceiling are
+  nearly unaffected by the rate change; conclusions
   that rest on comparing absolute tonnages to trials are not, and need matched rates.
 - **All eight verified deliveries report CDR/ha above their own drainage-
-  concentration ceiling, by 3–19×** (5–19× restricting to the three independently
-  measured rows). Reported by section 11 of `analyse_deployments.py`. This is *not*
+  concentration ceiling, by 1–8×** (1–4× restricting to the three independently
+  measured rows; 3–19× and 5–19× on the recharge-based drainage used until
+  August 2026). Reported by section 11 of `analyse_deployments.py`. This is *not*
   an over-crediting finding: those figures are dissolution-based, so the comparison
   is "how much rock dissolved" against "how much carbon the water could carry", and
   both can hold at once. What it establishes is that **dissolution-based CDR/ha
@@ -296,7 +318,7 @@ observationally. That ratio is the argument to put to operators.
   the loosest part of the term, so it constrains those cells least. Standing
   justification for field-data ask #6.
 - **Ω = 10 versus Ω = 1 is a real order-of-magnitude-adjacent choice, not a
-  detail.** It moves the cropland median from 0.102 to 0.220 tCO₂/ha/yr. Both are
+  detail.** It moves the cropland median from 0.240 to 0.510 tCO₂/ha/yr. Both are
   reported by the build, and the shipped value is the *generous* one, so the level
   is conservative toward the model rather than against it. There is no measurement
   that discriminates between them in an amended agricultural soil.

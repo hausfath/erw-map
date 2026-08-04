@@ -865,6 +865,81 @@ DAMKOHLER_DW_M_YR = 0.03
 DAMKOHLER_DW_RANGE = (0.001, 0.3)
 DAMKOHLER_SOURCE = "Maher & Chamberlain 2014, Science 343, 1502 (Fig. 2 contours)"
 
+# ---------------------------------------------------------------------------
+# WHICH WATER FLUX IS q? Measured, not assumed. See
+# scripts/analysis/drainage_variable.py, which produced every number below.
+#
+# WaterGAP2-2e publishes four candidates and they differ by a factor of 5 over
+# cropland (area-weighted median, mm/yr):
+#
+#   qr    groundwater recharge      74.8   water reaching the AQUIFER
+#   qsb   subsurface runoff         75.2   reached the stream through the soil
+#   qs    surface runoff            83.7   fast component
+#   qtot  total runoff = qs + qsb  177.8   catchment discharge per unit area
+#
+# THE MAP USED qr THROUGH 2026-08-03, AND IT HAD A VISIBLE DEFECT. qr is
+# EXACTLY ZERO on 0.10% of cropland area, concentrated in river deltas -- the
+# Mekong (23% of its cropland area rendered "negligible"), the Red River (24%),
+# the middle Yangtze (4%). In a delta the water table is at the surface, so
+# nothing percolates to an aquifer and WaterGAP correctly reports zero recharge;
+# but field drainage still leaves laterally to canals, carrying its bicarbonate
+# with it. Zero recharge is not zero drainage, and the map was reading it as
+# "no ERW potential" in some of the wettest cropland on Earth.
+#
+# qsb IS NOT THE FIX, though it looks like the obvious one. In WaterGAP, recharge
+# feeds the groundwater store and that store discharges as baseflow, so over a
+# 30-year mean qsb is very nearly qr relabelled: global land medians 33.5 vs 32.6
+# mm/yr, ratio 1.00 at the median over cropland, log-log correlation 0.81. It
+# does clear the delta zeros, but it introduces WORSE ones of its own where
+# groundwater is heavily pumped -- 26% of the Indo-Gangetic Plain and 4% of the
+# US Corn Belt go dark, taking the global dark class from 0.79% to 6.60% of
+# cropland area. Trading deltas for the Indo-Gangetic Plain is a bad trade.
+#
+# qtot IS THE DEFAULT, for two reasons that agree:
+#  1. CONSISTENCY. Maher & Chamberlain fit D_w against the Gaillardet river
+#     dataset, i.e. against catchment discharge per unit area, which IS qtot.
+#     Driving a qtot-calibrated D_w with recharge is a units-of-water mismatch
+#     that penalises the flux twice -- the same double-penalty logic that
+#     governs DAMKOHLER_TAU_APPLIED_IN_ETA above.
+#  2. IT FIXES THE DEFECT WITHOUT CREATING ANOTHER. Dark class 0.79% -> 0.10%
+#     of cropland area; every delta clears; NO region gets worse; and the
+#     implausible-dissolution tail (>90% weathered in year 1) only moves
+#     0.63% -> 0.77% of area, so it does not undo the shrinking-core fix.
+#
+# THE HONEST CAVEAT, which is why qr stays as a documented sensitivity rather
+# than being deleted: surface runoff has little contact time with topsoil rock,
+# so qtot credits water that arguably weathered nothing. The counter is that
+# D_w is an EFFECTIVE parameter fit at catchment scale, where nearly all runoff
+# has passed through regolith, so it already absorbs that. Treat qr and qtot as
+# a bracket: 2.149 vs 2.488 GtCO2/yr global gross, a 16% spread, small next to
+# the map's other uncertainties and reported as such.
+#
+# WHERE THE CHANGE LANDS -- broad, not a delta patch. +7% to +30% by latitude
+# band, largest in the irrigated subtropics: the Indo-Gangetic Plain and
+# Pakistan (15-30N, 65-80E) account for the biggest absolute gains, which is
+# exactly the case eta_transport's docstring already flagged when it said "q
+# must include irrigation return flow on irrigated cells".
+#
+# To switch back, change DRAINAGE_VARIABLE to "qr" and rebuild. Nothing else.
+# ---------------------------------------------------------------------------
+DRAINAGE_VARIABLE = "qtot"
+DRAINAGE_SOURCES = {                       # variable -> data/interim filename
+    "qr":   "drainage_recharge_mmyr.tif",
+    "qsb":  "drainage_qsb_mmyr.tif",
+    "qs":   "drainage_qs_mmyr.tif",
+    "qtot": "drainage_qtot_mmyr.tif",
+}
+DRAINAGE_LABELS = {
+    "qr":   "WaterGAP2-2e groundwater recharge",
+    "qsb":  "WaterGAP2-2e subsurface runoff (qtot - qs)",
+    "qs":   "WaterGAP2-2e surface runoff",
+    "qtot": "WaterGAP2-2e total runoff",
+}
+DRAINAGE_SENSITIVITY = "qr"                # the conservative bound, for the band
+# Area-weighted cropland medians, mm/yr, from drainage_variable.py. Recorded so a
+# future change to the reduction is caught rather than absorbed.
+DRAINAGE_MEDIAN_MM_YR = {"qr": 74.8, "qsb": 75.2, "qs": 83.7, "qtot": 177.8}
+
 # Explicitly separate, explicitly not the default. Use only with the
 # surface-area argument stated alongside any result that depends on it.
 DW_ERW_ENHANCED_SENSITIVITY = (0.3, 1.0)
@@ -1261,6 +1336,17 @@ GATES = {
     # lambda < 1 is below geometric and unphysical; > 100 means the kinetics are
     # wrong rather than the surface area.
     "lambda_range": (1.0, 100.0),
+    # A cell that receives more than a metre of rain a year cannot drain a
+    # millimetre. This is not a tuned tolerance, it is an impossibility: any
+    # water flux failing it is a defect in the drainage VARIABLE, not a dry
+    # climate. Installed after groundwater recharge (qr) was found to be exactly
+    # zero across the Mekong, Red River and middle Yangtze deltas -- 0.10% of
+    # cropland area drawn as "no ERW potential" in some of the wettest cropland
+    # on Earth. The allowance is for 0.5-deg cells that straddle a wet/arid
+    # boundary, not for whole regions. See DRAINAGE_VARIABLE.
+    "wet_but_undrained_area_frac": 0.0005,      # 0.05% of cropland area
+    "wet_precip_mm_yr": 1000.0,
+    "undrained_q_mm_yr": 1.0,
 }
 
 # The scaling constant is fitted to field trials ONLY, never to the global

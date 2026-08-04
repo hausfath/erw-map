@@ -23,7 +23,7 @@ window.ERW = {
     {
       "key": "drainage",
       "label": "Drainage / transport",
-      "hint": "q/(q+Dw) on WaterGAP recharge; low where water residence limits export"
+      "hint": "q/(q+Dw) on WaterGAP2-2e total runoff; low where water residence limits export"
     }
   ],
   "epsQuantize": 0.02,
@@ -165,12 +165,12 @@ window.ERW = {
         0.75
       ]
     },
-    "bindsAreaFrac": 0.9913,
-    "medianTco2HaYr": 0.2202,
-    "warmCoolUncapped": 3.75,
-    "warmCoolCeiling": 0.91,
-    "exceedMedian": 6.43,
-    "realisedShareOfStoich": 0.0253
+    "bindsAreaFrac": 0.9299,
+    "medianTco2HaYr": 0.5171,
+    "warmCoolUncapped": 3.95,
+    "warmCoolCeiling": 1.41,
+    "exceedMedian": 2.93,
+    "realisedShareOfStoich": 0.0595
   },
   "dissolution": {
     "model": "shrinking_core",
@@ -1547,14 +1547,14 @@ window.ERW = {
   "stats": {
     "croplandGha": 1.215,
     "evaluatedGha": 1.21,
-    "cdrMedian": 1.27,
+    "cdrMedian": 1.59,
     "quarryPoints": 5295
   },
   "provenance": {
     "soil": "SoilGrids v2.0 via ISRIC WCS (pH 0-15 cm, SOC 0-5 cm + quantiles)",
     "climate": "Lembrechts monthly soil T (5-15 cm) + TerraClimate moisture",
     "cropland": "Potapov et al. 2022 percent-cropland, 3 km",
-    "drainage": "WaterGAP2-2e groundwater recharge via ISIMIP3a, 0.5 deg",
+    "drainage": "WaterGAP2-2e total runoff (qtot) via ISIMIP3a, 0.5 deg",
     "paddy": "GRPI Landsat inundation months x SPAM2010 irrigated rice",
     "feedstock": "GLiM full-resolution basic igneous outcrop + USGS MRDS mafic-hosted stone producers, ANM SIGMINE titles (Brazil) and OSM quarries; truck-only haul, not routed",
     "substitutions": [

@@ -228,7 +228,7 @@ deliveries) also showed our own 20% annual-dissolution cap was falsified by data
 
 | Was | Now |
 |---|---|
-| Drainage was a fixed 0.35 runoff coefficient on precipitation, giving η ≈ 0.32 almost everywhere | **WaterGAP2-2e groundwater recharge** — the water percolating below the root zone, with simulated irrigation return flow. Median η 0.71 with real spread 0.21–0.88 |
+| Drainage was a fixed 0.35 runoff coefficient on precipitation, giving η ≈ 0.32 almost everywhere | **WaterGAP2-2e total runoff** (`qtot`) via ISIMIP3a, with simulated irrigation return flow. Median η_transport **0.86**, spread 0.51–0.95, on a median drainage of **178 mm/yr**. Groundwater recharge (`qr`) was used until August 2026 and is retained as the conservative bound — see [Which water flux is q?](#which-water-flux-is-q) |
 | `D_w` defaulted to 0.5 m/yr with a 0.1–2.0 range | **0.03 m/yr, range 0.001–0.3.** The old default was *above* Maher & Chamberlain's stated global maximum, and the range sat almost entirely outside the published one. Both errors suppressed η and partly cancelled |
 | Drainage limited nearly all cropland | Recomputed from the shipped layers: drainage limits **59.3%**, reactivity **34.0%**, alkalinity retention **6.7%**. The 19.5%/74.6% split previously stated here does not reproduce and has been withdrawn — the map is still majority drainage-limited, and that share is itself contingent on the reference condition the dissolution term is measured against |
 | No paddy mask, so the headline paddy prediction could not appear at all | **Soil pCO₂ interpolated continuously** from flooded fraction of cell-time: GRPI Landsat inundation months × SPAM irrigated-rice sub-cell area. 7.6% of cropland area has >5% flooded cell-time |
@@ -335,7 +335,7 @@ letting the trade-off be judged in units that mean something.
 Cost is compensatory with a floor, not annihilating: expensive rock is bad, not
 impossible. It is **on by default** as of August 2026. It used to be off, so that
 the landing map was a statement about physical potential — but the unscreened map
-implies 2.15 GtCO₂/yr across essentially all cropland, and almost none of that is
+implies 2.49 GtCO₂/yr across essentially all cropland, and almost none of that is
 deployable at a price anyone would pay. Leading with the physical figure put the
 less useful number in front. The toggle still switches it off, and the footer states
 its basis either way.
@@ -358,6 +358,61 @@ Mediterranean cropland comes out *below* 1 (Andalusia 0.85, Central Valley 0.93)
 where annual means flatter a site whose warm and wet seasons never coincide;
 monsoon and continental come out above (Punjab 1.19, Iowa 1.18); the wet tropics
 sit at ~1.
+
+### Which water flux is q?
+
+The transport term needs the water flux through the weathering zone, and
+WaterGAP2-2e publishes four candidates that differ by a factor of five over
+cropland (area-weighted median, mm/yr):
+
+| variable | median | what it is |
+|---|---|---|
+| `qr` | 74.8 | diffuse groundwater recharge — water reaching the aquifer |
+| `qsb` | 75.2 | subsurface runoff — reached the stream through the soil |
+| `qs` | 83.7 | surface runoff |
+| **`qtot`** | **177.8** | **total runoff = `qs` + `qsb`** |
+
+The map used `qr` until August 2026, and it had a visible defect. `qr` is *exactly
+zero* on 0.10% of cropland area, concentrated in river deltas — 23% of the Mekong
+Delta's cropland area, 24% of the Red River delta, 4% of the middle Yangtze
+rendered as "negligible ERW potential" in some of the wettest cropland on Earth.
+In a delta the water table is at the surface, so nothing percolates to an aquifer
+and WaterGAP correctly reports zero recharge; field drainage still leaves
+laterally to canals, carrying its bicarbonate with it. **Zero recharge is not zero
+drainage.**
+
+`qsb` looks like the obvious fix and is not. In WaterGAP, recharge feeds the
+groundwater store and that store discharges as baseflow, so over a 30-year mean
+`qsb` is very nearly `qr` relabelled — global land medians 33.5 vs 32.6 mm/yr,
+ratio 1.00 at the cropland median. It clears the delta zeros but introduces worse
+ones where groundwater is heavily pumped: **26% of the Indo-Gangetic Plain** and 4%
+of the US Corn Belt go dark, taking the global negligible class from 0.79% to
+6.60% of cropland area. Trading deltas for the Indo-Gangetic Plain is a bad trade.
+
+`qtot` is the default, for two reasons that agree. Maher & Chamberlain fit `D_w`
+against the Gaillardet river dataset — catchment discharge per unit area, which
+*is* `qtot` — so driving a `qtot`-calibrated `D_w` with recharge penalises the flux
+twice. And it fixes the defect without creating another: the negligible class falls
+to 0.10% of area, every delta clears, no region gets worse, and the
+implausible-dissolution tail (>90% weathered in year one) only moves 0.63% → 0.77%
+of area.
+
+**The honest caveat**, which is why `qr` is retained as a documented sensitivity
+rather than deleted: surface runoff has little contact time with topsoil rock, so
+`qtot` credits water that arguably weathered nothing. The counter is that `D_w` is
+an *effective* parameter fit at catchment scale, where nearly all runoff has passed
+through regolith, so it already absorbs that. Treat the two as a bracket —
+**2.15 (`qr`) to 2.49 (`qtot`) GtCO₂/yr** global gross, a 16% spread that the build
+prints every run as gate 2d.
+
+The change is broad, not a delta patch: +7% to +30% by latitude band, largest in
+the irrigated subtropics, with the Indo-Gangetic Plain and Pakistan accounting for
+the biggest absolute gains. That is exactly the case `eta_transport`'s docstring
+already flagged when it said *q* must include irrigation return flow.
+
+Gate 2c now asserts the impossibility directly: a cell receiving more than a metre
+of rain a year cannot drain less than a millimetre. Run
+`scripts/analysis/drainage_variable.py` to reproduce every figure above.
 
 ### Still not fixed
 

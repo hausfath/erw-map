@@ -69,15 +69,30 @@ fi
 
 # Discard the superseded probability layer if a previous run left it behind.
 rm -f data/raw/glad_crop_prob.tif data/raw/glad_crop_prob.tif.gz
-echo "4/7 WaterGAP2-2e groundwater recharge via ISIMIP3a (263 MB)"
-# Recharge, not total runoff: we want water percolating below the root zone
-# carrying dissolved bicarbonate, not overland flow. The histsoc scenario
-# simulates irrigation return flow, which matters on irrigated cropland.
-# Units are kg m-2 s-1 (= mm/s), calendar 365_day, so mm/yr = value * 31536000.
-if [ ! -s data/raw/watergap_qr.nc ] && [ ! -s data/interim/drainage_recharge_mmyr.tif ]; then
-  curl -sSfL --max-time 2400 -o data/raw/watergap_qr.nc \
-    "https://files.isimip.org/ISIMIP3a/OutputData/water_global/WaterGAP2-2e/gswp3-w5e5/historical/watergap2-2e_gswp3-w5e5_obsclim_histsoc_default_qr_global_monthly_1901_2019.nc"
-fi
+echo "4/7 WaterGAP2-2e water fluxes via ISIMIP3a (885 MB, reduced then deleted)"
+# THREE fluxes, not one, because which of them is "the water that weathers the
+# rock" is a real open question and we would rather measure the spread than pick:
+#   qr    groundwater recharge -- water reaching the AQUIFER. Exactly zero in
+#         river deltas, where the water table is at the surface and drainage
+#         leaves laterally to canals. Was the sole input through 2026-08-03.
+#   qtot  total runoff -- the catchment-scale quantity Maher & Chamberlain
+#         actually fit D_w against, so it is the internally consistent choice.
+#   qs    surface runoff, so prep_layers can derive qsb = qtot - qs.
+# The histsoc scenario simulates irrigation return flow, which matters on
+# irrigated cropland. Units are kg m-2 s-1 (= mm/s), calendar 365_day, so
+# mm/yr = value * 31536000.
+WATERGAP_BASE="https://files.isimip.org/ISIMIP3a/OutputData/water_global/WaterGAP2-2e/gswp3-w5e5/historical"
+for wg_var in qr qtot qs; do
+  case "$wg_var" in
+    qr)   wg_out=data/interim/drainage_recharge_mmyr.tif ;;
+    qtot) wg_out=data/interim/drainage_qtot_mmyr.tif ;;
+    qs)   wg_out=data/interim/drainage_qs_mmyr.tif ;;
+  esac
+  if [ ! -s "data/raw/watergap_${wg_var}.nc" ] && [ ! -s "$wg_out" ]; then
+    curl -sSfL --max-time 3600 -o "data/raw/watergap_${wg_var}.nc" \
+      "${WATERGAP_BASE}/watergap2-2e_gswp3-w5e5_obsclim_histsoc_default_${wg_var}_global_monthly_1901_2019.nc"
+  fi
+done
 
 echo "5/7 GRPI rice-paddy inundation, 0.1 deg monthly (4 MB)"
 # Note: this record publishes only the CH4 emission field, not the paddy area

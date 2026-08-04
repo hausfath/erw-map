@@ -5,6 +5,111 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Drainage is total runoff, not groundwater recharge, August 2026
+
+Found by looking at the map. Dark blobs over the Mekong Delta turned out to be cells
+where the drainage water flux `q` was **exactly zero**, so `eta_transport = q/(q+D_w)`
+was zero and gross CDR was zero, which renders as the "negligible" swatch. Zero
+drainage across 1,570 mm/yr of rain is not a dry climate, it is a wrong variable.
+
+`q` came from WaterGAP2-2e `qr`, **diffuse groundwater recharge**. In a delta the
+water table is at the surface, so nothing percolates to an aquifer and WaterGAP
+correctly reports zero; field drainage still leaves laterally to canals with its
+bicarbonate in it. **Zero recharge is not zero drainage.** The defect covered 0.10%
+of cropland area, 57% of it the Mekong Delta, then the Red River delta and the middle
+Yangtze — every cluster a delta or lake floodplain, which is the signature you would
+expect.
+
+THE OBVIOUS FIX FAILS, AND THAT IS THE USEFUL PART. `qtot - qs` = subsurface runoff
+`qsb` is "water that reached the stream through the soil", which sounds exactly right.
+But in WaterGAP, recharge feeds the groundwater store and that store discharges as
+baseflow, so over a 30-year mean `qsb` is `qr` relabelled: global land medians 33.5
+vs 32.6 mm/yr, ratio 1.00 at the cropland median, log-log correlation 0.81. It clears
+the delta zeros and creates worse ones where groundwater is pumped — **26% of the
+Indo-Gangetic Plain** and 4% of the US Corn Belt go dark, taking the global negligible
+class from 0.79% to 6.60% of cropland area. Trading deltas for the Indo-Gangetic
+Plain is a bad trade. This was predicted from WaterGAP's structure before the 622 MB
+of downloads, then measured; both are recorded because the prediction is the reason
+`qsb` is not the shipped answer.
+
+`qtot` (total runoff) is the new default, for two reasons that agree. Maher &
+Chamberlain fit `D_w` against the Gaillardet river dataset — catchment discharge per
+unit area, which IS `qtot` — so driving a `qtot`-calibrated `D_w` with recharge
+penalises the flux twice, the same double-counting logic as
+`DAMKOHLER_TAU_APPLIED_IN_ETA`. And it fixes the defect without creating another.
+
+    area-weighted cropland medians      qr 74.8   qsb 75.2   qs 83.7   qtot 177.8 mm/yr
+    eta_transport, median               0.71 -> 0.86
+    global gross, unbounded             2.149 -> 2.488 GtCO2/yr   (+15.8%)
+    median gross CDR                    1.268 -> 1.589 tCO2/ha/yr (+25.3%)
+    negligible class                    0.79% -> 0.10% of cropland area
+    wet-but-undrained (gate 2c)         0.124% -> 0.022% of area
+    >90% weathered in year one          0.63% -> 0.77% of area
+    headline under the $100 screen      0.50 -> 0.60 GtCO2/yr on 0.17 -> 0.19 Gha
+
+The change is broad, not a delta patch: +7% to +30% by latitude band, biggest in the
+irrigated subtropics, with the Indo-Gangetic Plain and Pakistan taking the largest
+absolute gains. That is the case `eta_transport`'s own docstring already flagged when
+it said q must include irrigation return flow.
+
+The honest caveat, and why `qr` stays as a reported sensitivity rather than being
+deleted: surface runoff has little contact time with topsoil rock, so `qtot` credits
+water that arguably weathered nothing. The counter is that `D_w` is an effective
+parameter fit at catchment scale where nearly all runoff has passed through regolith.
+Read them as a bracket, 2.15 to 2.49 GtCO2/yr, printed every build as gate 2d.
+
+IT ALSO REVERSED TWO THINGS WE HAD WRITTEN DOWN AS FINDINGS.
+
+The ceiling is `q x [HCO3-]max x 44`, so understating the water understated the bound
+in direct proportion. With the flux ceiling on, the global total goes **0.360 ->
+0.910 GtCO2/yr**, which moves it from BELOW its pre-registered 0.5-4.0 band to inside
+it — without the band being widened. `docs/VALIDATION.md` had argued at length that
+falling below was the expected consequence of imposing a bound the comparison
+literature lacks. That argument still holds on its own terms, but the specific
+shortfall was substantially an input error. A result that reads as a deep finding can
+still be carrying one.
+
+And the warm-climate result weakened. The ceiling took the warmest/coolest ratio from
+4.37x to **0.91x** on recharge, i.e. it reversed the gradient; on total runoff it goes
+3.95x to **1.41x**, strongly reduced but not reversed. The direction is robust, the
+reversal is not, and the RFC note now says so and tells earlier readers not to quote
+it. Deployment-level exceedances fell the same way, 3-19x to 1-8x.
+
+NEW GATE 2c, the one that would have caught this: a cell receiving more than a metre
+of rain a year cannot drain less than a millimetre. That is an impossibility rather
+than a tuned tolerance, so the 0.05%-of-area allowance is for 0.5-degree cells
+straddling a wet/arid boundary, not for regions. Gate 2d reports the qr-vs-qtot
+bracket on every build so the choice stays visible instead of settling into a default.
+
+THREE UNRELATED DEFECTS FOUND WHILE PROPAGATING THE NUMBERS, all pre-existing:
+
+- The RFC note shipped **"the global total from nan to nan"**. The 695 cropland cells
+  with no climate input carry NaN CDR, which poisoned the area-weighted SUMS while
+  leaving every percentile intact, so it survived review. Now `nan_to_num`, matching
+  what gate 2b in the build already did.
+- `docs/METHODOLOGY.md` and the RFC both said field trials achieve **"5-10x below"**
+  the ceiling. Computed against the median ceiling of 6.65 mmol/L it is **9-60x**.
+  Arithmetic error, not a stale number — the ceiling concentration does not depend on
+  the drainage variable. Correcting it strengthens the argument it appears in: trials
+  sit further below the bound, so the bound explains even less of the level. Now
+  computed in the generator rather than asserted.
+- The Methods panel still described dissolution as **`1 - exp(-k*X)`** and the anchor
+  as the "midpoint" of verified deliveries. Both were superseded when shrinking core
+  landed and when the anchor was corrected to the median. The panel now describes the
+  shrinking-core integral and reads the drainage source from provenance, so it cannot
+  drift from the build again.
+
+The reapplication-cadence check moved too, and not in the comfortable direction. The
+map's year-one figure used to sit on a five-year interval; it now sits on **four**
+(1.59 tCO2/ha/yr against 1.59 for k=4). Most of that is drainage — the year-one
+weathered fraction went 14.9% to 18.7% — and the rest is a construction fix: the old
+table multiplied the stoichiometric maximum by the *median* 10-year fraction, mixing
+percentiles from different cells and overstating the yield ~6%. A field on a rotation
+longer than four years removes less than the map shows.
+
+Reproduce all of it with `scripts/analysis/drainage_variable.py`. Revert with one
+constant, `DRAINAGE_VARIABLE = "qr"`, and a rebuild.
+
 ## Economics on by default, and a mafic-outcrop overlay
 
 ECONOMICS DEFAULTS TO ON. It was off, on the argument that the landing map should

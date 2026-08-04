@@ -7,7 +7,10 @@ Exists so that `build_v0.py` never has to open a 263 MB NetCDF, and so the raw
 downloads can be deleted per the project's download -> derive -> delete rule.
 Outputs land in data/interim/ and are a few hundred kB each.
 
-  drainage_recharge_mmyr.tif   WaterGAP2-2e groundwater recharge, 30-yr mean
+  drainage_recharge_mmyr.tif   WaterGAP2-2e groundwater recharge (qr), 30-yr mean
+  drainage_qtot_mmyr.tif       WaterGAP2-2e total runoff (qs + qsb)
+  drainage_qs_mmyr.tif         WaterGAP2-2e surface runoff
+  drainage_qsb_mmyr.tif        subsurface runoff, derived as qtot - qs
   paddy_months_flooded.tif     GRPI months per year with rice-paddy inundation
   paddy_area_frac.tif          SPAM2010 irrigated-rice area fraction of cell
   soc_p_exceed.tif             P(SOC > 5 wt%), computed fine then averaged
@@ -64,27 +67,44 @@ def orient_north_down(arr: np.ndarray, lat: np.ndarray):
 
 
 # ---------------------------------------------------------------------------
-def prep_drainage() -> bool:
-    """WaterGAP2-2e total groundwater recharge -> long-term mean, mm/yr.
+# WaterGAP2-2e water-flux variables we reduce, and where each one lands.
+#
+# WHY MORE THAN ONE. The transport term needs the water flux through the
+# weathering zone, and WaterGAP publishes four candidates that differ by an order
+# of magnitude over cropland:
+#
+#   qr    diffuse groundwater recharge -- water reaching the AQUIFER
+#   qs    surface runoff              -- fast component, incl. soil-routed
+#                                        lateral flow WaterGAP cannot separate
+#   qtot  total runoff = qs + qsb     -- the catchment-scale quantity Maher &
+#                                        Chamberlain fit D_w against
+#   qsb   subsurface runoff (derived here as qtot - qs)
+#
+# qr alone is EXACTLY ZERO on 0.10% of cropland area, concentrated in river
+# deltas -- the Mekong, the Red River, the middle Yangtze -- where the water
+# table is at the surface and drainage leaves laterally to canals rather than
+# percolating to an aquifer. Those cells rendered as "negligible ERW potential"
+# in some of the wettest cropland on Earth. Carrying all of them lets the
+# variable choice be a measured sensitivity instead of an assumption.
+WATERGAP_FLUXES = {
+    # var: (output filename, human label)
+    "qr":   ("drainage_recharge_mmyr.tif", "groundwater recharge"),
+    "qtot": ("drainage_qtot_mmyr.tif", "total runoff"),
+    "qs":   ("drainage_qs_mmyr.tif", "surface runoff"),
+}
 
-    Recharge, not total runoff: we want the water that percolates below the root
-    zone carrying dissolved bicarbonate, not overland flow that never reacted
-    with soil. The histsoc scenario runs with historically evolving irrigated
-    area and withdrawals, so irrigation return flow is simulated and folded in --
-    which matters for the Indo-Gangetic Plain and other irrigated regions.
+
+def _watergap_mean(src: Path, var: str):
+    """Long-term mean of a WaterGAP flux, mm/yr, north-down.
+
+    Returns (mmyr, north, dlat, dlon, nyr).
     """
     import netCDF4 as nc
 
-    src = RAW / "watergap_qr.nc"
-    if not src.exists():
-        print("  SKIP drainage: data/raw/watergap_qr.nc missing (see fetch_v0.sh)")
-        return False
-    print("drainage: WaterGAP2-2e groundwater recharge")
     d = nc.Dataset(src)
-    q = d["qr"]
+    q = d[var]
     n = q.shape[0]
-    months = CLIMATOLOGY_YEARS * 12
-    start = max(0, n - months)
+    start = max(0, n - CLIMATOLOGY_YEARS * 12)
 
     # Mean over whole years, accumulated in chunks so we never hold the array.
     acc = np.zeros(q.shape[1:], dtype="float64")
@@ -95,23 +115,66 @@ def prep_drainage() -> bool:
         with np.errstate(invalid="ignore"):
             acc += np.nanmean(yr, axis=0)
         nyr += 1
-    mean_rate = acc / max(nyr, 1)
 
     # kg m-2 s-1 is mm/s for water. Calendar is 365_day.
     # q [mm/yr] = value * 365 * 86400 = value * 31,536,000
-    mmyr = mean_rate * 31_536_000.0
+    mmyr = (acc / max(nyr, 1)) * 31_536_000.0
     lat = np.asarray(d["lat"][:])
+    lon = np.asarray(d["lon"][:])
     mmyr, north, dlat = orient_north_down(mmyr.astype("float32"), lat)
-
-    v = mmyr[np.isfinite(mmyr) & (mmyr > 0)]
-    print(f"  {nyr}-year mean, mm/yr over land: p10 {np.percentile(v, 10):.0f}  "
-          f"p50 {np.percentile(v, 50):.0f}  p90 {np.percentile(v, 90):.0f}")
-    print(f"  the placeholder it replaces (0.35 x precip) gave ~350 mm/yr, "
-          f"~{350 / np.percentile(v, 50):.0f}x too high at the median")
-    write_tif(INTERIM / "drainage_recharge_mmyr.tif", mmyr, -180.0, north,
-              abs(float(np.asarray(d["lon"][:])[1] - np.asarray(d["lon"][:])[0])), dlat)
+    dlon = abs(float(lon[1] - lon[0]))
     d.close()
-    return True
+    return mmyr, north, dlat, dlon, nyr
+
+
+def prep_drainage() -> bool:
+    """Reduce every available WaterGAP2-2e water flux to a 30-yr mean, mm/yr.
+
+    Only qr is REQUIRED -- it is what the shipped build reads, so a run with just
+    watergap_qr.nc present still succeeds. qtot and qs are reduced when present
+    and let build_v0 select the drainage variable; qsb is derived as qtot - qs
+    rather than downloaded, since it is a further 340 MB for a difference we
+    already have both terms of.
+
+    The histsoc scenario runs with historically evolving irrigated area and
+    withdrawals, so irrigation return flow is simulated and folded into all of
+    these -- which matters for the Indo-Gangetic Plain and other irrigated
+    regions.
+    """
+    got = {}
+    for var, (out, label) in WATERGAP_FLUXES.items():
+        src = RAW / f"watergap_{var}.nc"
+        if not src.exists():
+            if (INTERIM / out).exists():
+                print(f"  drainage {var}: raw absent, keeping existing {out}")
+                got[var] = None       # already derived, nothing to recompute
+                continue
+            lvl = "SKIP" if var == "qr" else "absent"
+            print(f"  {lvl} drainage {var} ({label}): "
+                  f"data/raw/watergap_{var}.nc missing (see fetch_v0.sh)")
+            continue
+        print(f"drainage: WaterGAP2-2e {label} ({var})")
+        mmyr, north, dlat, dlon, nyr = _watergap_mean(src, var)
+        v = mmyr[np.isfinite(mmyr) & (mmyr > 0)]
+        print(f"  {nyr}-year mean, mm/yr over land: p10 {np.percentile(v, 10):.0f}  "
+              f"p50 {np.percentile(v, 50):.0f}  p90 {np.percentile(v, 90):.0f}")
+        write_tif(INTERIM / out, mmyr, -180.0, north, dlon, dlat)
+        got[var] = (mmyr, north, dlat, dlon)
+
+    # qsb = qtot - qs, the water that reached the stream THROUGH the soil column.
+    # Clipped at zero: the two means are independent reductions of the same run
+    # and tiny negative residuals are rounding, not physics.
+    if got.get("qtot") is not None and got.get("qs") is not None:
+        (tot, north, dlat, dlon), (sur, *_) = got["qtot"], got["qs"]
+        sub = np.clip(tot - sur, 0.0, None)
+        sub = np.where(np.isfinite(tot) & np.isfinite(sur), sub, np.nan)
+        v = sub[np.isfinite(sub) & (sub > 0)]
+        print("drainage: subsurface runoff (qsb), derived as qtot - qs")
+        print(f"  mm/yr over land: p10 {np.percentile(v, 10):.0f}  "
+              f"p50 {np.percentile(v, 50):.0f}  p90 {np.percentile(v, 90):.0f}")
+        write_tif(INTERIM / "drainage_qsb_mmyr.tif", sub, -180.0, north, dlon, dlat)
+
+    return "qr" in got
 
 
 def prep_paddy_months() -> bool:
@@ -276,7 +339,8 @@ def main() -> int:
     made = [prep_drainage(), prep_paddy_months(), prep_paddy_area(),
             prep_soc_exceedance()]
     if "--delete-raw" in sys.argv and all(made):
-        for f in ("watergap_qr.nc", "grpi_paddy.nc",
+        for f in ("watergap_qr.nc", "watergap_qtot.nc", "watergap_qs.nc",
+                  "grpi_paddy.nc",
                   "spam2010V2r0_global_A_RICE_I.tif",
                   "soc_fine_q05.tif", "soc_fine_q50.tif", "soc_fine_q95.tif"):
             p = RAW / f

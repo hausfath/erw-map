@@ -25,9 +25,9 @@
 \textbf{What we are asking.} We have built a global gridded ERW suitability model.
 While auditing it we found it reports carbon that could not physically leave the
 field dissolved in the field's own drainage water. We implemented a bound, and it
-changes the map a great deal --- including reversing a headline result. Before we
+changes the map a great deal --- including most of a headline result. Before we
 ship it we would like the ERW community to tell us whether the bound is right, and
-in particular whether the four questions in \S\ref{sec:questions} have answers we
+in particular whether the questions in \S\ref{sec:questions} have answers we
 have missed. The bound is currently switched \emph{off} in the published map.
 \end{tcolorbox}
 
@@ -40,7 +40,7 @@ resulting carbon to be carryable at a chemically possible bicarbonate concentrat
 Dividing our own \cotwo{} flux by our own water flux, area-weighted over global
 cropland at 30\,t\,ha$^{-1}$\,yr$^{-1}$ of basalt, the
 model implies a drainage \hco{} concentration of
-\textbf{15\,/\,41\,/\,140\,mmol\,L$^{-1}$} at p10\,/\,p50\,/\,p90.
+\textbf{8\,/\,20\,/\,74\,mmol\,L$^{-1}$} at p10\,/\,p50\,/\,p90.
 For scale, world rivers run 0.5--4\,mmol\,L$^{-1}$.
 
 This is not specific to our model. Beerling et al.\ (2024) report a CDR$_{\rm pot}$
@@ -51,6 +51,43 @@ experiment: measured cation release over measured drainage requires
 21.1\,mmol\,L$^{-1}$, while measured leachate alkalinity was
 1.10\,$\pm$\,0.147\,mmol\,L$^{-1}$ and statistically indistinguishable from control
 --- a 19$\times$ shortfall measured on both sides.
+
+\section{Which water flux is $q$?}
+\label{sec:drainage}
+
+The bound is $q \cdot [\mathrm{HCO_3^-}]_{\max} \cdot 44$, so it is linear in the
+water flux, and the choice of flux is as load-bearing as the chemistry. We flag it
+here because it changed our numbers substantially \emph{after} the first draft of
+this note, and because we would like it checked alongside the chemistry.
+
+WaterGAP2-2e publishes four candidates, and over global cropland they differ by a
+factor of five (area-weighted median, mm\,yr$^{-1}$): groundwater recharge $q_r$
+75, subsurface runoff $q_{sb}$ 75, surface runoff $q_s$
+84, total runoff $q_{tot}$ 178.
+
+We used $q_r$ initially, reasoning that ERW needs water percolating below the root
+zone rather than overland flow. That was wrong in a way worth reporting: $q_r$ is
+\emph{exactly zero} over 0.10\% of cropland area, concentrated in river deltas ---
+23\% of the Mekong Delta's cropland, 24\% of the Red River delta --- where the water
+table is at the surface. WaterGAP is right that nothing recharges an aquifer there;
+field drainage still leaves laterally to canals with its bicarbonate in it. Those
+cells rendered as zero ERW potential in some of the wettest cropland on Earth.
+
+$q_{sb}$ is not the fix, though it looks like it. In WaterGAP recharge feeds the
+groundwater store and that store discharges as baseflow, so a 30-year mean $q_{sb}$
+is close to $q_r$ relabelled (global land medians 33.5 vs 32.6\,mm\,yr$^{-1}$). It
+clears the deltas and creates worse zeros where groundwater is pumped: 26\% of the
+Indo-Gangetic Plain.
+
+We now use $q_{tot}$, on the argument that Maher \& Chamberlain fit $D_w$ against
+catchment discharge per unit area --- which \emph{is} total runoff --- so driving a
+$q_{tot}$-calibrated $D_w$ with recharge penalises the flux twice. The
+counter-argument we cannot dismiss is that surface runoff has little contact time
+with topsoil rock, so $q_{tot}$ credits water that may have weathered nothing; our
+reply is that an effective catchment-scale $D_w$ already absorbs that. Treat the two
+as a bracket: unbounded global gross 2.49 on $q_{tot}$ against 2.15 on $q_r$,
+and bounded 0.91 against 0.36. \textbf{This is question 5 in
+\S\ref{sec:questions}.}
 
 \section{A wrong first answer, because it is instructive}
 
@@ -133,7 +170,7 @@ Carbonate-terrain streams (Meybeck) & 3.15 \\
 
 The closed form lands inside all four bounds, and straddles the most relevant one
 (agricultural tile drainage). Note the last row: measured ERW trials \emph{achieve}
-5--10$\times$ \emph{below} the ceiling, which matters for \S\ref{sec:notexplain}.
+9--60$\times$ \emph{below} the ceiling, which matters for \S\ref{sec:notexplain}.
 
 \begin{figure}[t]
 \centering
@@ -148,10 +185,10 @@ global cropland at 30\,t\,ha$^{-1}$\,yr$^{-1}$.}
 
 \section{Consequences}
 
-The ceiling binds on \textbf{98.9\% of cropland area}. Median gross CDR
-falls from 1.189 to 0.220\,t\,\cotwo{}\,ha$^{-1}$\,yr$^{-1}$; the global
-total from nan to nan\,Gt\,\cotwo{}\,yr$^{-1}$. The $\Omega$ choice
-spans 0.102 ($\Omega = 1$) to 0.220 ($\Omega = 10$) at
+The ceiling binds on \textbf{93.0\% of cropland area}. Median gross CDR
+falls from 1.589 to 0.510\,t\,\cotwo{}\,ha$^{-1}$\,yr$^{-1}$; the global
+total from 2.488 to 0.910\,Gt\,\cotwo{}\,yr$^{-1}$. The $\Omega$ choice
+spans 0.240 ($\Omega = 1$) to 0.510 ($\Omega = 10$) at
 the median, and that spread is the honest uncertainty on the level.
 
 \textbf{But the level is not the interesting part.} $C_{\rm eq}$ \emph{falls} with
@@ -163,25 +200,31 @@ while the rate law rises steeply, so the exceedance is monotonic in temperature:
 \toprule
 Mean soil T (\textdegree C) & \% of area & Unbounded & Ceiling & Exceedance \\
 \midrule
-0--10 & 28.3 & 0.599 & 0.221 & 2.7$\times$ \\
-10--15 & 19.0 & 0.828 & 0.265 & 3.1$\times$ \\
-15--20 & 15.2 & 1.180 & 0.139 & 8.5$\times$ \\
-20--25 & 15.5 & 2.661 & 0.253 & 10.5$\times$ \\
-25--45 & 21.9 & 2.617 & 0.202 & 13.0$\times$ \\
+0--10 & 28.3 & 0.777 & 0.410 & 1.9$\times$ \\
+10--15 & 19.0 & 1.058 & 0.600 & 1.8$\times$ \\
+15--20 & 15.2 & 1.566 & 0.447 & 3.5$\times$ \\
+20--25 & 15.5 & 3.037 & 0.711 & 4.3$\times$ \\
+25--45 & 21.9 & 3.067 & 0.578 & 5.3$\times$ \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \noindent The warmest-to-coolest ratio of the median goes from
-\textbf{4.37$\times$ unbounded to 0.91$\times$ at the ceiling}. Imposing the
-bound therefore \emph{removes} the warm-climate advantage an unbounded rate law
-produces. That is the most consequential and least intuitive result here, and the
-one we would most like checked.
+\textbf{3.95$\times$ unbounded to 1.41$\times$ at the ceiling}. Imposing the
+bound therefore largely \emph{removes} the warm-climate advantage: most of the 3.95$\times$ advantage an unbounded rate law produces is not supported by the water. That is the
+most consequential and least intuitive result here, and the one we would most like
+checked.
+
+For anyone who saw an earlier draft: this ratio was 0.91$\times$ when the model was
+driven by WaterGAP groundwater recharge, i.e.\ the bound then \emph{reversed} the
+gradient rather than shrinking it. Correcting the water flux to total runoff
+(\S\ref{sec:drainage}) moved it to 1.41$\times$. The direction of the effect is
+robust; its strength is not, and the reversal claim should not be quoted.
 
 \textbf{It also decouples carbon from application rate.} The ceiling depends on
 drainage and carbonate chemistry, not on how much rock is on the field. Raising our
 nominal rate from 20 to 30\,t\,ha$^{-1}$ raised the
-unbounded median 50\% and the bounded global total by 1.8\%. Past the point where
+unbounded median 50\% and the bounded global total by 8.6\%. Past the point where
 drainage saturates, extra feedstock raises the transport-limited share of the map
 rather than the tonnage.
 
@@ -199,7 +242,7 @@ decade off without $\tau$.
 \textbf{Consequently all cropland is on the low-$q$ limb.} $\tau D_w$ is
 222\,mm\,yr$^{-1}$ at $D_w = 0.03$ and
 2,217 at $D_w = 0.3$, both at or above the p90 of cropland drainage
-(229\,mm\,yr$^{-1}$). On that limb the flux is $C_{\rm eq}q$ and kinetics drop
+(613\,mm\,yr$^{-1}$). On that limb the flux is $C_{\rm eq}q$ and kinetics drop
 out --- Maher (2010, p.~104): beyond $L_{\rm eq}$ the flux ``conveys no information
 on the actual weathering kinetics or available surface area.'' Godsey et al.\ (2009)
 measure near-chemostatic concentration--discharge slopes of $-0.05$ to $-0.15$
@@ -210,7 +253,7 @@ across 59 catchments, which is the same statement empirically.
 
 The ceiling is not why modelled ERW rates exceed measured ones. Field trials achieve
 0.11--0.75\,mmol\,L$^{-1}$,
-i.e.\ 5--10$\times$ \emph{below} this bound, because cations are retained in secondary
+i.e.\ 9--60$\times$ \emph{below} this bound, because cations are retained in secondary
 phases rather than exported: 10--50$\times$ more retained than exported in a
 greenhouse study across four soils and thirteen feedstocks at
 $>$2{,}000\,mm\,yr$^{-1}$ irrigation (Hammes et al.\ 2025), retarded fractions of
@@ -222,14 +265,24 @@ level is a retention-and-lag problem plus the lab-to-field rate discrepancy.
 
 Implemented, gated and documented, and currently \textbf{switched off} in the
 published map pending this review --- a one-line flag. While it is off, our build
-reports on every run that 98.9\% of cropland area exceeds the bound by a
-median 6.2$\times$, so the finding does not disappear with the cap.
+reports on every run that 93.0\% of cropland area exceeds the bound by a
+median 2.9$\times$, so the finding does not disappear with the cap.
 
-One uncomfortable observation: with the ceiling \emph{off}, our global total
-(nan\,Gt\,\cotwo{}\,yr$^{-1}$) sits inside the 0.5--4 range of published
-global ERW estimates. With it \emph{on} (nan) it falls below. But those
-published estimates are not transport-bounded either, so agreement with them is not
-evidence of anything.
+On external consistency: with the ceiling \emph{off} our global total is
+2.49\,Gt\,\cotwo{}\,yr$^{-1}$ and with it \emph{on} 0.91, both inside
+the 0.5--4 range of published global ERW estimates. We do not read that as support.
+Those published estimates are not transport-bounded either, so agreement with them
+is not evidence about this term.
+
+We flag one thing against ourselves here. Until August 2026 the bounded total was
+0.36\,Gt\,\cotwo{}\,yr$^{-1}$, \emph{below} the published range, and we argued
+that falling below was the expected consequence of imposing a bound the comparison
+literature lacks. The argument stands, but the specific shortfall was largely an
+input error: we were driving $q$ with WaterGAP groundwater recharge rather than
+total runoff, and since the ceiling is $q \cdot [\mathrm{HCO_3^-}]_{\max} \cdot 44$,
+understating the water understated the bound in direct proportion. Correcting the
+water flux moved the bounded total 2.5$\times$ without touching the ceiling. Readers
+who saw an earlier draft of this note should use the numbers in this version.
 
 \section{Questions we would like answered}
 \label{sec:questions}
@@ -240,13 +293,20 @@ is bounded by clay equilibrium, but alkalinity is not --- observed
 \hco{}:SiO$_2$ ratios of 2.1--9.3 say the two are decoupled by incongruent
 weathering. This is the load-bearing step and we would most like it attacked.
 \item \textbf{Is $\Omega = 10$ defensible in soil, or should it be $\Omega = 1$?} That
-pair spans 0.102--0.220\,t\,\cotwo{}\,ha$^{-1}$\,yr$^{-1}$ at the median and we
+pair spans 0.240--0.510\,t\,\cotwo{}\,ha$^{-1}$\,yr$^{-1}$ at the median and we
 know of no measurement that discriminates in an amended agricultural soil.
 \item \textbf{Is capping the carbon while leaving fraction weathered unbounded the
 right separation?}
 \item \textbf{Does the temperature dependence survive scrutiny?} It is what collapses
-the warm/cool ratio from 4.37$\times$ to 0.91$\times$, and it is the result
+the warm/cool ratio from 3.95$\times$ to 1.41$\times$, and it is the result
 we are least confident about.
+\item \textbf{Which water flux should drive the bound (\S\ref{sec:drainage})?} We
+switched from groundwater recharge to total runoff, which moved the bounded global
+total 2.5$\times$. Recharge gave zero drainage across major river deltas, so it cannot
+be right as-is; but total runoff credits surface flow that had little contact with
+the applied rock. If there is field evidence on what fraction of agricultural runoff
+carries weathering products --- tile-drain versus overland partitioning of alkalinity
+export --- that would settle the largest single uncertainty in this note.
 \end{enumerate}
 
 A fifth, if anyone has data: the bound is unvalidated on flooded/paddy soils, where

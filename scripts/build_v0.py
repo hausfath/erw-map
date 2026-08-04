@@ -204,19 +204,46 @@ def main() -> int:
     # Fallback wetness proxy, used only if the monthly stack is absent.
     wet = np.clip(precip / 1200.0, 0.0, 1.0)
 
-    # ---- Drainage: real groundwater recharge, replacing the 0.35 x precip
-    # placeholder. Nearest-neighbour from 0.5 deg so the coarseness stays
-    # VISIBLE rather than being interpolated into a smooth field that does not
-    # exist -- the effective-resolution policy in docs/METHODOLOGY.md.
-    rech = INTERIM / "drainage_recharge_mmyr.tif"
-    if rech.exists():
-        q = onto_grid(rech, transform, w, h, crs,
+    # ---- Drainage: a real WaterGAP2-2e water flux, replacing the 0.35 x precip
+    # placeholder. WHICH flux is a measured choice, not a default -- see the
+    # DRAINAGE_VARIABLE block in constants.py and scripts/analysis/
+    # drainage_variable.py. qtot (total runoff) is the internally consistent
+    # match to the D_w calibration and is the only candidate that does not leave
+    # some major cropland region with zero drainage.
+    #
+    # Nearest-neighbour from 0.5 deg so the coarseness stays VISIBLE rather than
+    # being interpolated into a smooth field that does not exist -- the
+    # effective-resolution policy in docs/METHODOLOGY.md.
+    def _load_drainage(var):
+        p = INTERIM / C.DRAINAGE_SOURCES[var]
+        if not p.exists():
+            return None
+        v = onto_grid(p, transform, w, h, crs,
                       resampling=Resampling.nearest) / 1000.0     # mm/yr -> m/yr
-        q = np.clip(np.nan_to_num(q, nan=0.0), 0.0, None)
-        q_source = "WaterGAP2-2e recharge"
+        return np.clip(np.nan_to_num(v, nan=0.0), 0.0, None)
+
+    q = _load_drainage(C.DRAINAGE_VARIABLE)
+    if q is not None:
+        q_source = C.DRAINAGE_LABELS[C.DRAINAGE_VARIABLE]
     else:
+        # Fall back to whatever IS on disk rather than silently dropping to the
+        # placeholder: a stale checkout with only the old recharge tif should
+        # still build, loudly labelled.
+        for alt in ("qr", "qsb", "qs", "qtot"):
+            q = _load_drainage(alt)
+            if q is not None:
+                q_source = (f"FALLBACK {C.DRAINAGE_LABELS[alt]} -- "
+                            f"{C.DRAINAGE_VARIABLE} tif missing, run prep_layers.py")
+                print(f"    WARNING: {q_source}")
+                break
+    if q is None:
         q = np.clip(precip / 1000.0 * 0.35, 0.0, None)
         q_source = "PLACEHOLDER 0.35 x precip -- run prep_layers.py"
+
+    # The conservative bound, carried so the drainage-variable spread can be
+    # reported rather than asserted. None when the sensitivity IS the default.
+    q_sens = (None if C.DRAINAGE_SENSITIVITY == C.DRAINAGE_VARIABLE
+              else _load_drainage(C.DRAINAGE_SENSITIVITY))
 
     # ---- Paddy: flooded fraction of cell-time, from two independent halves.
     # months/12 comes from GRPI inundation presence (robust to CH4 emission
@@ -544,6 +571,37 @@ def main() -> int:
               f"bound, so this is the expected direction; see docs/VALIDATION.md "
               f"section 2 and CHANGELOG 'Flux reconciliation, August 2026'")
 
+    # ---- GATE 2c: no wet cell may be undrained. The gate that would have caught
+    # the qr delta defect. Physically impossible rather than merely unlikely, so
+    # the tolerance is an allowance for 0.5-deg wet/arid straddlers, not a knob.
+    wet_dry = (precip > C.GATES["wet_precip_mm_yr"]) & \
+              (q * 1000.0 < C.GATES["undrained_q_mm_yr"])
+    wd_frac = float((aw * wet_dry[m]).sum() / aw.sum())
+    ok2c = wd_frac <= C.GATES["wet_but_undrained_area_frac"]
+    print(f"  GATE 2c wet-but-undrained {wd_frac:.4%} of cropland area "
+          f"(precip > {C.GATES['wet_precip_mm_yr']:.0f} mm/yr but q < "
+          f"{C.GATES['undrained_q_mm_yr']:.0f} mm/yr) <= "
+          f"{C.GATES['wet_but_undrained_area_frac']:.2%}  "
+          f"[{'PASS' if ok2c else 'FAIL'}]")
+    if not ok2c:
+        print(f"    the drainage variable ({C.DRAINAGE_VARIABLE}) reports no water "
+              f"leaving cropland that receives more than a metre of rain. This is a "
+              f"variable-definition defect, not a dry climate -- see "
+              f"constants.DRAINAGE_VARIABLE")
+
+    # ---- GATE 2d: the drainage-variable spread, reported not enforced. Carries
+    # the qr-vs-qtot bracket into every build so the choice stays visible.
+    if q_sens is not None:
+        et_s = K.eta_transport(q_sens)
+        X_s = (10.0 ** L1) * et_s
+        frac_s = np.interp(np.clip(X_s, 0.0, None) * delta_ref / C.PSD_REF_D50_UM,
+                           u_grid, g_grid)
+        cdr_s = frac_s * eta * C.APPLICATION_RATE_T_HA_YR * ceil_t
+        gt_s = float((ha * np.nan_to_num(cdr_s[m])).sum() / 1e9)
+        print(f"  GATE 2d drainage-variable spread: {C.DRAINAGE_VARIABLE} "
+              f"{gt_un:.3f} vs {C.DRAINAGE_SENSITIVITY} {gt_s:.3f} GtCO2/yr "
+              f"({100.0 * (gt_un - gt_s) / max(gt_s, 1e-12):+.1f}%)  [reported]")
+
     # ---- GATE 3: stoichiometric ceiling never exceeded
     worst = float(np.nanmax(cdr) / C.APPLICATION_RATE_T_HA_YR)
     ok3 = worst <= ceil_t + 1e-9
@@ -660,6 +718,11 @@ def main() -> int:
         cascade=cascade.astype("float32"), p_soc=p_soc,
         q=q.astype("float32"), f_flood=f_flood.astype("float32"),
         pco2=pco2.astype("float32"),
+        # The conservative drainage variable alongside the one actually used, so
+        # the qr-vs-qtot bracket can be reproduced downstream without reopening
+        # the 0.5-deg tifs. All-NaN when the two are the same variable.
+        q_sens=(q_sens.astype("float32") if q_sens is not None
+                else np.full_like(q, np.nan, dtype="float32")),
         # The temperature the ceiling was evaluated at, so downstream figures bin
         # on the SAME basis the build reports. Binning on air temperature instead
         # shifted the headline warm/cool ratio from 4.37x to 4.63x.
@@ -914,7 +977,8 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
              "hint": "Carbonate-equilibrium efficiency: what share of released "
                      "alkalinity is actually held as dissolved inorganic carbon"},
             {"key": "drainage", "label": "Drainage / transport",
-             "hint": "q/(q+Dw) on WaterGAP recharge; low where water residence limits export"},
+             "hint": f"q/(q+Dw) on {C.DRAINAGE_LABELS[C.DRAINAGE_VARIABLE]}; "
+                     f"low where water residence limits export"},
         ],
         "epsQuantize": C.EPS_QUANTIZE,
         "aggP": C.AGG_P_DEFAULT,
@@ -1056,7 +1120,8 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
             "soil": "SoilGrids v2.0 via ISRIC WCS (pH 0-15 cm, SOC 0-5 cm + quantiles)",
             "climate": clim_source,
             "cropland": "Potapov et al. 2022 percent-cropland, 3 km",
-            "drainage": "WaterGAP2-2e groundwater recharge via ISIMIP3a, 0.5 deg",
+            "drainage": (f"{C.DRAINAGE_LABELS[C.DRAINAGE_VARIABLE]} "
+                         f"({C.DRAINAGE_VARIABLE}) via ISIMIP3a, 0.5 deg"),
             "paddy": "GRPI Landsat inundation months x SPAM2010 irrigated rice",
             "feedstock": ("GLiM full-resolution basic igneous outcrop + USGS MRDS "
                           "mafic-hosted stone producers, ANM SIGMINE titles "

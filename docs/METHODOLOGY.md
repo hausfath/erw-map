@@ -18,7 +18,7 @@ mapped mafic lithology (GLiM's realised average source scale is ~1:3,750,000),
 not by pixel size.
 
 The pH raster defines the master grid; everything else is reprojected onto it.
-Coarse inputs (WaterGAP recharge at 0.5°, paddy layers) use **nearest-neighbour**
+Coarse inputs (WaterGAP total runoff at 0.5°, paddy layers) use **nearest-neighbour**
 on purpose, so the blockiness is visible rather than smoothed into detail the
 source does not have.
 
@@ -73,6 +73,45 @@ soil pH, soil T, soil moisture
   weights: you cannot prefer dissolution over alkalinity retention because both
   are required multiplicatively.
 
+### Which water flux is q?
+
+`η_transport = q/(q + D_w)` needs the water flux through the weathering zone.
+WaterGAP2-2e publishes four candidates and they differ by a factor of five over
+cropland (area-weighted median, mm/yr): groundwater recharge `qr` 74.8, subsurface
+runoff `qsb` 75.2, surface runoff `qs` 83.7, **total runoff `qtot` 177.8**.
+
+The map used `qr` until August 2026. `qr` is *exactly zero* on 0.10% of cropland
+area, all of it in river deltas where the water table is at the surface — 23% of
+the Mekong Delta's cropland, 24% of the Red River delta, 4% of the middle Yangtze
+drew as "negligible potential" in some of the wettest cropland on Earth. WaterGAP
+is right that nothing percolates to an aquifer there; the water still leaves the
+field laterally to canals with its bicarbonate in it. Zero recharge is not zero
+drainage.
+
+`qsb` is not the fix. In WaterGAP, recharge feeds the groundwater store and the
+store discharges as baseflow, so a 30-year mean `qsb` is `qr` relabelled (global
+land medians 33.5 vs 32.6 mm/yr). It clears the deltas and creates worse zeros
+where groundwater is pumped: 26% of the Indo-Gangetic Plain and 4% of the US Corn
+Belt, taking the negligible class from 0.79% to 6.60% of cropland area.
+
+**`qtot` is the default.** Maher & Chamberlain fit `D_w` against catchment
+discharge per unit area, which *is* `qtot`, so driving a `qtot`-calibrated `D_w`
+with recharge penalises the flux twice — the same double-counting logic as
+`DAMKOHLER_TAU_APPLIED_IN_ETA`. It also fixes the defect without creating another:
+negligible class 0.79% → 0.10% of area, every delta clears, no region worsens, and
+the >90%-weathered tail only moves 0.63% → 0.77%.
+
+The counter-argument, which is why `qr` is kept as a reported sensitivity: surface
+runoff has little contact time with topsoil rock, so `qtot` credits water that
+arguably weathered nothing. Against it, `D_w` is an *effective* catchment-scale
+parameter that already absorbs the distinction. Read the two as a bracket —
+2.15 (`qr`) to 2.49 (`qtot`) GtCO₂/yr global gross, printed every build as gate 2d.
+
+Gate 2c enforces the impossibility that `qr` violated: a cell receiving more than
+1,000 mm/yr of rain cannot drain less than 1 mm/yr. Currently 0.024% of cropland
+area, against a 0.05% allowance for 0.5° cells straddling a wet/arid boundary.
+`scripts/analysis/drainage_variable.py` reproduces all of it.
+
 ### Monthly integration
 
 The rate is computed **each month and the rate averaged**, never the drivers.
@@ -109,11 +148,11 @@ Measured effect on the shipped map, at the reference grind:
 
 | | exponential | shrinking core |
 |---|---|---|
-| cropland area above 50% weathered | 15.6% | 13.7% |
-| above 75% | 6.4% | **3.4%** |
-| above 90% | 1.8% | **0.63%** |
-| above 99% | 0.11% | **0.01%** |
-| p50 / p90 / p99 | 13.9 / 65.0 / 94.0% | 14.9 / 58.6 / 87.1% |
+| cropland area above 50% weathered | 17.9% | 15.7% |
+| above 75% | 7.6% | **4.4%** |
+| above 90% | 2.2% | **0.77%** |
+| above 99% | 0.15% | **0.01%** |
+| p50 / p90 / p99 | 18.0 / 68.7 / 95.0% | 18.7 / 61.8 / 88.4% |
 
 The median barely moves; the extreme tail is cut by about two thirds. Note it does
 **not** make 100% unreachable — a cell with 40× the reference reactivity still gets
@@ -151,8 +190,8 @@ is a first-order open item, not a units nicety.
 > Everything below is implemented, gated and shipped; it is simply not applied to
 > the CO₂ layer. `constants.FLUX_CEILING_ON = False` is the whole switch, and
 > flipping it to `True` and rebuilding restores every behaviour described here.
-> While it is off, the map's CO₂ figures are **above this bound on 98.9% of
-> cropland, by a median factor of 6.2×**, so they should be read as an upper bound
+> While it is off, the map's CO₂ figures are **above this bound on 93.0% of
+> cropland, by a median factor of 2.9×**, so they should be read as an upper bound
 > on dissolution rather than as carbon that can be shown to leave the field. Gate 12
 > reports that exceedance on every build rather than letting it disappear with the
 > cap. The numbers quoted in this section are what the ceiling *would* impose.
@@ -161,7 +200,8 @@ is a first-order open item, not a units nicety.
 The carbon reported has to leave the field dissolved in the water that leaves the
 field. That bounds gross CO₂ removal at `q · [HCO₃⁻]_max · 44` regardless of how
 fast the rock dissolves. Before this was imposed the model implied **28.5 mmol/L**
-bicarbonate in drainage at the median cropland cell.
+bicarbonate in drainage at the median cropland cell (19.7 mmol/L on the total-runoff
+drainage the map now uses; 28.5 was the figure on groundwater recharge).
 
 **What sets `[HCO₃⁻]_max`.** Not the cell's pre-treatment pH. pH is endogenous:
 adding base cations at fixed pCO₂ raises alkalinity and pH together, which is the
@@ -184,8 +224,8 @@ the ceiling only 1.7×.
 **Ω = 10 ships; Ω = 1 is the strict reading and is reported alongside.** Carbonate
 precipitation is kinetically inhibited by DOC and phosphate — Zhang et al. 2022
 state it "is generally observed to be negligible at Ω < 10" and run their own model
-over Ω = 5–25 — and soils carry far more DOC than rivers. The pair spans 0.102 to
-0.220 tCO₂/ha/yr at the cropland median, and that spread is the honest uncertainty
+over Ω = 5–25 — and soils carry far more DOC than rivers. The pair spans 0.240 to
+0.510 tCO₂/ha/yr at the cropland median, and that spread is the honest uncertainty
 on the level.
 
 **Five independent anchors on the resulting 3.0–6.5 mmol/L**, none sharing
@@ -199,20 +239,20 @@ assumptions with the closed form:
 | Meybeck carbonate-terrain streams | 3.15 |
 | soil-pH backstop: holding 10 mmol/L needs pH 8.16 at 4,000 µatm | ~10 |
 
-**Effect, measured.** The ceiling binds on **96.5% of cropland area**; the median
-falls 0.792 → 0.220 tCO₂/ha/yr (3.6×). But the level is not the point:
+**Effect, measured.** The ceiling binds on **93.0% of cropland area**; the median
+falls 1.589 → 0.510 tCO₂/ha/yr (3.1×). But the level is not the point:
 
 | mean soil T | uncapped | ceiling | exceedance |
 |---|---|---|---|
-| 0–10 °C | 0.400 | 0.221 | 1.8× |
-| 10–15 °C | 0.552 | 0.265 | 2.1× |
-| 15–20 °C | 0.787 | 0.139 | 5.7× |
-| 20–25 °C | 1.774 | 0.253 | 7.0× |
-| 25–45 °C | 1.745 | 0.202 | 8.6× |
+| 0–10 °C | 0.777 | 0.410 | 1.9× |
+| 10–15 °C | 1.058 | 0.600 | 1.8× |
+| 15–20 °C | 1.566 | 0.447 | 3.5× |
+| 20–25 °C | 3.037 | 0.711 | 4.3× |
+| 25–45 °C | 3.067 | 0.578 | 5.3× |
 
 `C_eq` **falls** with warming while the rate law rises, so the exceedance is
 monotonic in temperature and the warmest/coolest ratio of the median goes from
-**4.37× uncapped to 0.91× at the ceiling**. Imposing the bound therefore removes
+**3.95× uncapped to 1.41× at the ceiling**. Imposing the bound therefore removes
 the map's warm-climate gradient rather than merely rescaling the level, and that is
 the most consequential thing about this term.
 
@@ -223,17 +263,25 @@ from 20 to 30 t/ha in August 2026:
 
 | | 20 t/ha | 30 t/ha |
 |---|---|---|
-| uncapped median CDR | 0.792 | 1.189 (+50%, linear in rate) |
-| **capped median CDR** | **0.220** | **0.220 (unchanged)** |
-| global gross, capped | 0.354 | **0.360 GtCO₂/yr (+1.8%)** |
-| cropland area where the cap binds | 96.5% | 98.9% |
-| realised carbon per tonne of rock, median cell | 3.8% of stoichiometric | **2.5%** |
+| uncapped median CDR | 1.059 | 1.589 (+50%, linear in rate) |
+| **capped median CDR** | **0.478** | **0.510 (+6.6%)** |
+| global gross, capped | 0.837 | **0.910 GtCO₂/yr (+8.6%)** |
+| cropland area where the cap binds | 82.3% | 93.0% |
+| realised carbon per tonne of rock, median cell | 8.3% of stoichiometric | **5.9%** |
 
-**50% more rock bought 1.8% more carbon.** Adding feedstock past the point where
+**50% more rock bought 8.6% more carbon.** Adding feedstock past the point where
 drainage saturates raises the fraction of the map that is transport-limited instead
 of raising the tonnage, and it lowers the realised efficiency per tonne. That is a
 physical result, not a modelling artefact, and it is the kind of thing an uncapped
 rate law cannot say.
+
+The sublinearity was starker on the groundwater-recharge drainage this section was
+first written against — 50% more rock bought 1.8% more carbon, and the capped median
+did not move at all. Total runoff raises the ceiling in proportion, so it binds on
+93.0% of area rather than 98.9% and leaves the rate some room. The direction is
+robust to the drainage variable; the magnitude is not, and it is worth knowing that
+the most quotable version of this result was the one on the more conservative
+water flux.
 
 Two caveats on it. The dissolved *fraction* is held at `DISSOLVED_FRAC_AT_REF`
 regardless of rate, so the uncapped layer scales linearly with rate. **Whether that
@@ -248,8 +296,12 @@ does not follow that the extra rock is wasted — it may weather and sit in the 
 which is the retention question in §6 item 1, not this one.
 
 **What it is not.** It is not why the map's level was high. Field trials achieve
-0.11–0.75 mmol/L, i.e. 5–10× *below* this ceiling, because cations are retained
-rather than exported (§6 item 1). The ceiling is a rail that makes an impossible
+0.11–0.75 mmol/L, i.e. **9–60× *below*** this ceiling (median ceiling 6.65 mmol/L),
+because cations are retained rather than exported (§6 item 1). This read "5–10×"
+until August 2026, which was an arithmetic error rather than a stale number — the
+ceiling concentration does not depend on the drainage variable. Correcting it
+strengthens the point: trials sit further below the bound than stated, so the bound
+explains even less of the level. The ceiling is a rail that makes an impossible
 claim impossible; the level is a lab-to-field rate problem and belongs to the
 kinetics work.
 
@@ -267,26 +319,37 @@ The application rate is stated per year, but the CDR layer is the **first year's
 removal from one application**. Those are only the same thing if you reapply every
 year, and you cannot: a field takes a multi-year break between applications.
 
-The two errors happen to cancel, and it is worth showing why rather than relying on
-it. Run the shrinking-core model forward and the median cell weathers 15% in year
-one but 70% by year ten, so one application eventually delivers ~4.5× its year-one
-carbon. Under a reapplication interval of *k* years the steady-state annual removal
-is (rate / k) × eventual yield:
+The two errors partly cancel, and it is worth showing how far rather than relying on
+it. Run the shrinking-core model forward and the median cell weathers **18.7% in year
+one and 78.1% by year ten**, so one application delivers ~4.2× its year-one carbon
+over a decade — a 10-year yield of **6.37 tCO₂/ha** at the median. Under a
+reapplication interval of *k* years the steady-state annual removal is that yield
+divided by *k*:
 
 | reapplication interval | average t/ha/yr | steady-state tCO₂/ha/yr |
 |---|---|---|
-| every year | 30.0 | 6.04 |
-| every 2 years | 15.0 | 3.02 |
-| every 3 years | 10.0 | 2.01 |
-| **every 5 years** | **6.0** | **1.21** |
-| every 7 years | 4.3 | 0.86 |
-| every 10 years | 3.0 | 0.60 |
+| every year | 30.0 | 6.37 |
+| every 2 years | 15.0 | 3.19 |
+| every 3 years | 10.0 | 2.12 |
+| **every 4 years** | **7.5** | **1.59** |
+| every 5 years | 6.0 | 1.27 |
+| every 7 years | 4.3 | 0.91 |
+| every 10 years | 3.0 | 0.64 |
 
-The map shows **1.27** tCO₂/ha/yr, which sits almost exactly on the five-year
-interval. So the year-one framing is not merely conservative — it approximates a
-realistic operational cadence at steady state, which annual reapplication (6.04)
-would badly overstate. Stated here because the "/yr" label otherwise invites reading
-it as a sustainable annual rate from annual application, which it is not.
+The map shows **1.59** tCO₂/ha/yr, which lands on a **four-year** interval. So the
+year-one framing still approximates a plausible operational cadence at steady state,
+and annual reapplication (6.37) would badly overstate it — but the equivalent cadence
+is shorter than the five years this section previously claimed, and a field on a
+longer rotation than four years will remove less than the map shows. Stated here
+because the "/yr" label otherwise invites reading it as a sustainable annual rate
+from annual application, which it is not.
+
+Two corrections behind the shift from five years to four. Most of it is the drainage
+variable: on groundwater recharge the year-one fraction was 14.9% and the equivalent
+interval 4.5 years. The rest is a construction fix — the earlier table multiplied the
+stoichiometric maximum by the *median* 10-year fraction, mixing percentiles from
+different cells and overstating the yield by about 6%. The figures above are the
+median of the full product, the same chain the map itself evaluates.
 
 ### Cells with no climate input
 

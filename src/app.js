@@ -299,7 +299,7 @@
     // Which term costs the most here. The ceiling gets its OWN state rather than
     // being folded into the drainage term: when it binds, the limit is not that
     // the water moves too slowly, it is that the water cannot hold the carbon at
-    // any speed -- and on 96.5% of cropland that is the operative limit, which is
+    // any speed -- and on 93.0% of cropland that is the operative limit, which is
     // exactly the thing a reader needs to be told.
     if (uMode == 1) {
       if (ceilBinds) { fragColor = withMafic(factorColor(3), mafic); return; }
@@ -1187,12 +1187,18 @@
       dissolution in very acid soil stores little carbon; this term is why. Soil
       pCO₂ is raised in rice paddies, mapped as Landsat inundation months ×
       SPAM irrigated-rice area.</li>
-      <li><b>Drainage.</b> η = q/(q + D_w) on WaterGAP2-2e groundwater recharge
+      <li><b>Drainage.</b> η = q/(q + D_w) on ${E.provenance.drainage}
       (Maher &amp; Chamberlain 2014; D_w = ${p.dw ? p.dw.value : "?"} m/yr):
-      bicarbonate must percolate below the root zone to count as exported.</li>
-      <li><b>Gross CO₂ removal.</b> The product of the terms sets the fraction of
-      rock dissolved in year one, 1 − exp(−k·X), anchored so the reference case
-      sits at the midpoint of verified field deliveries
+      bicarbonate has to leave the field in the drainage water to count as
+      exported. Total runoff rather than groundwater recharge, because recharge
+      is zero in river deltas where the water table is at the surface and
+      drainage leaves laterally.</li>
+      <li><b>Gross CO₂ removal.</b> The product of the terms sets how far each
+      particle's surface retreats, and a shrinking-core integral over the
+      grain-size distribution turns that into the fraction of rock dissolved in
+      year one — so the fine tail is spent early and coarse grains persist.
+      Anchored so the reference case sits at the median of verified field
+      deliveries
       (${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}% weathered).
       At ${E.feedstock.rateTHaYr} t/ha of basalt holding
       ${E.feedstock.tco2PerT} tCO₂/t, that fraction becomes tCO₂/ha/yr.</li>
