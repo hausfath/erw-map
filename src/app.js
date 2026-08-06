@@ -438,6 +438,49 @@
     return id ? window.ADMIN.names[id] || null : null;
   }
 
+  /* What is grown here, CPU-only for the same reason as the region lookup:
+     nothing is coloured by crop, so this never reaches the GPU. crops.png packs
+     four 6-bit fields into RGB (see build_v0.write_crop_texture):
+
+       bits 0-5 id1 | 6-11 id2 | 12-17 share1 | 18-23 share2
+
+     Optional throughout — an older build without crops.png simply omits the
+     row rather than breaking the readout. */
+  let cropIds = null;
+  async function loadCropMix() {
+    try {
+      const blob = await (await fetch("textures/crops.png")).blob();
+      const bmp = await createImageBitmap(blob, {
+        premultiplyAlpha: "none", colorSpaceConversion: "none",
+      });
+      const cv = document.createElement("canvas");
+      cv.width = G.width; cv.height = G.height;
+      const ctx = cv.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(bmp, 0, 0);
+      cropIds = ctx.getImageData(0, 0, G.width, G.height).data;
+    } catch (e) { cropIds = null; }
+  }
+
+  /* [{name, share, aggregate}, ...] largest first, or null. Shares are of the
+     cell's CROPPED area, which is not the same denominator as the cropland
+     fraction the rest of the readout uses -- said so in the label. */
+  function cropsAt(i) {
+    const CR = E.crops;
+    if (!cropIds || !CR || !CR.names) return null;
+    const word = cropIds[i] | (cropIds[i + 1] << 8) | (cropIds[i + 2] << 16);
+    const id1 = word & 63, id2 = (word >> 6) & 63;
+    if (!id1) return null;
+    const lv = CR.shareLevels || 63;
+    const out = [];
+    const push = (id, q) => {
+      const nm = CR.names[id];
+      if (id && nm) out.push({name: nm, share: q / lv});
+    };
+    push(id1, (word >> 12) & 63);
+    push(id2, (word >> 18) & 63);
+    return out.length ? out : null;
+  }
+
   /* ---------------- CPU-side copy for the readout ---------------- */
   function decodeToCPU(bmpA, bmpB, bmpC) {
     const cv = document.createElement("canvas");
@@ -924,6 +967,9 @@
     const cdr = g.cdr;
     const pe = E.phEncoding;
     const soilPh = pe.lo + (cpu.C[i + 1] / 255) * (pe.hi - pe.lo);
+    const cropList = cropsAt(i);
+    const cropRest = cropList
+      ? Math.max(0, 1 - cropList.reduce((a, c) => a + c.share, 0)) : 0;
     const usdT = costUsdT(t.vCost);
 
     let flagHtml = "";
@@ -952,6 +998,23 @@
         : ``) +
       `<tr><td class="k">Limiting factor</td><td class="v">${limLabel}</td></tr>` +
       `<tr><td class="k">Soil pH (0–15 cm)</td><td class="v">${soilPh.toFixed(1)}</td></tr>` +
+      // Context, not an input. The model reads crop identity nowhere except rice,
+      // and then only through soil pCO2 -- so this sits below the physics rows
+      // rather than among them. Two crops because one is a minority of the cell
+      // more often than not: median dominant share 46%. "of cropped area" is
+      // load-bearing wording, since SPAM's denominator is not the cropland
+      // fraction used elsewhere in this box.
+      (cropList
+        ? `<tr><td class="k">Grown here</td><td class="v">` +
+          cropList.map((c) => `${c.name} ${Math.round(c.share * 100)}%`).join(" · ") +
+          // "rest", not "other": SPAM's own vocabulary already contains
+          // "other cereals", "other oilcrops" and so on, and a row reading
+          // "other oilcrops 41% · other 44%" makes the remainder look like
+          // another crop category.
+          (cropRest >= E.crops.minShare
+            ? ` · rest ${Math.round(cropRest * 100)}%` : ``) +
+          `</td></tr>`
+        : ``) +
       (econOn && usdT !== null
         ? `<tr><td class="k">Delivered rock</td><td class="v">$${usdT.toFixed(0)}/t · $${(usdT / E.cost.tco2PerT).toFixed(0)}/tCO₂</td></tr>`
         : ``) +
@@ -1649,7 +1712,7 @@
     const [a, b, cTex, , dTex] = await Promise.all([
       loadTexture("textures/tex1.png", 0), loadTexture("textures/tex2.png", 1),
       loadTexture("textures/tex3.png", 2), loadAdminIds(),
-      loadTexture("textures/tex4.png", 5),
+      loadTexture("textures/tex4.png", 5), loadCropMix(),
     ]);
     texA = a.tex; texB = b.tex; texC = cTex.tex; texD = dTex.tex;
     cpu = decodeToCPU(a.bmp, b.bmp, cTex.bmp);

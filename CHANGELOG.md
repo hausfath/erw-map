@@ -5,6 +5,68 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## The readout says what is grown there
+
+SPAM2010 was already being downloaded in full and thrown away: fetch_v0.sh pulled
+the 143 MB all-crops physical-area archive, extracted irrigated rice for the paddy
+pCO2 pathway, and deleted the other 41. The readout now names the two largest
+crops in a cell and their share of its cropped area.
+
+TWO CROPS, NOT ONE, AND THAT WAS THE POINT OF CHECKING FIRST. Measured over the
+shipped grid, the dominant crop holds a median of only 46% of a cell's cropped
+area, and just 41.7% of cropland has any crop above half:
+
+    largest crop     p25 35%   p50 46%   p75 60%
+    largest two      p25 58%   p50 71%   p75 83%
+    largest three    p25 72%   p50 83%   p75 92%
+
+A one-word label would read "wheat" on the North China Plain, where it means
+wheat 25%, maize 23%, vegetables 16%. Two crops plus a "rest" remainder reach a
+median 71% and say plainly when a cell is mixed. Three would reach 83% and do not
+fit the encoding.
+
+The data holds up. Area is conserved to under 0.05% through the regrid, the
+global totals reproduce published physical areas (rice 113.8, wheat 199.5, maize
+151.3, soybean 97.9 Mha), and twelve regional spot-checks are agronomically
+right: Iowa maize 62% / soybean 38%, Mato Grosso soybean 68% / maize 32% (the
+safrinha double crop), Punjab wheat 46% / rice 21%, Sahel cowpea 35% / pearl
+millet 33%, Badajoz "other oilcrops" 41% for Extremadura's olives.
+
+CONTEXT, NOT AN INPUT. Crop identity feeds nothing in the model chain except rice,
+via soil pCO2. SPAM is a downscaling model rather than an observation, its
+reference year is 2010 (predating Brazilian soy expansion and Corn Belt rotation
+shifts), and its cropped area is 79% of Potapov cropland at the median cell -- so
+the row says "of cropped area", which is not the denominator the rest of the box
+uses. SPAM2010 v2.0 is nonetheless the latest GLOBAL release, verified against the
+Harvard Dataverse: the SPAM2017 and MapSPAM2020 products there are Sub-Saharan
+Africa only.
+
+Mechanically: prep_layers streams the 42 rasters out of the zip one at a time
+rather than unpacking 1.5 GB, and aggregation is area-conserving -- SPAM gives
+hectares per 5-arcmin cell, which is EXTENSIVE, so resampling it with `average`
+would silently rescale it. Storage is src/textures/crops.png, CPU-only like
+admin.png, four 6-bit fields packed into RGB with alpha held at 255 because a 2D
+canvas stores premultiplied colour. Masked to the cropland domain, since SPAM
+allocates crops to 716k cells against the map's 407k and the rest can never be
+hovered: 1.70 MB unmasked against 1.10 MB masked. The deployable site is now
+6.3 MB, and the README's "5 MB" was already stale before this.
+
+A BUG I WROTE AND THE VERIFICATION CAUGHT. The streaming top-2 update compared
+the incoming crop against a second place it had already overwritten on the line
+above, so a crop taking second place moved the VALUE but left the ID behind. Iowa
+shipped as "maize 62%" with soybean's 38% attached to id 0, and Ukraine's second
+crop came out labelled barley when it was wheat -- a wrong name, not a missing
+one, which is the worse failure. Gate 16 could not see it: it checks that the
+packing round-trips, not that the right crop went in. There is now a brute-force
+check that re-derives the top two from a full sort over all 42 crops at 50,000
+random cells and refuses to write the layer on any disagreement. It went in
+because a comment I had written claimed gate 16 already covered this, and it did
+not.
+
+Also renamed SPAM's REST category from "other crops" to "miscellaneous crops": a
+row reading "other oilcrops 41% · other 44%" made the remainder look like another
+crop category, so the remainder is now "rest".
+
 ## The drainage limit is a toggle, and the controls stopped being sluggish
 
 TWO CHANGES, and the second is why the first is usable.

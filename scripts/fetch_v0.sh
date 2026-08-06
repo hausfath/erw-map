@@ -103,12 +103,23 @@ if [ ! -s data/raw/grpi_paddy.nc ] && [ ! -s data/interim/paddy_months_flooded.t
     "https://zenodo.org/records/15210212/files/grpi_hemco.nc?download=1"
 fi
 
-echo "6/7 SPAM2010 irrigated-rice physical area (143 MB, keep one 37 MB layer)"
-if [ ! -s data/raw/spam2010V2r0_global_A_RICE_I.tif ] && [ ! -s data/interim/paddy_area_frac.tif ]; then
+echo "6/7 SPAM2010 physical area, all 42 crops (143 MB archive)"
+# THE ARCHIVE IS KEPT, not unpacked and discarded. Two layers come out of it:
+# irrigated rice for the paddy pCO2 pathway, and the two largest crops per cell
+# for the readout. prep_layers streams the 42 all-technology rasters out one at a
+# time rather than unpacking 1.5 GB, so the zip is the cheaper thing to hold on
+# to. `prep_layers.py --delete-raw` removes it once both layers are derived.
+#
+# SPAM2010 v2.0 is the latest GLOBAL release (verified 2026-08-06): the 2017 and
+# MapSPAM2020 products on the same Dataverse are Sub-Saharan Africa only.
+if [ ! -s data/raw/spam2010.zip ] \
+   && { [ ! -s data/interim/paddy_area_frac.tif ] || [ ! -s data/interim/crop_mix.tif ]; }; then
   curl -sSfL --max-time 2400 -o data/raw/spam2010.zip \
     "https://dataverse.harvard.edu/api/access/datafile/3985010"
+fi
+if [ -s data/raw/spam2010.zip ] && [ ! -s data/raw/spam2010V2r0_global_A_RICE_I.tif ] \
+   && [ ! -s data/interim/paddy_area_frac.tif ]; then
   unzip -o -q -j data/raw/spam2010.zip "*RICE_I.tif" -d data/raw/
-  rm -f data/raw/spam2010.zip
 fi
 
 echo "7/7 SoilGrids SOC quantiles at 0.025 deg, for a VALID exceedance probability"

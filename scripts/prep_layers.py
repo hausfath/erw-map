@@ -13,6 +13,7 @@ Outputs land in data/interim/ and are a few hundred kB each.
   drainage_qsb_mmyr.tif        subsurface runoff, derived as qtot - qs
   paddy_months_flooded.tif     GRPI months per year with rice-paddy inundation
   paddy_area_frac.tif          SPAM2010 irrigated-rice area fraction of cell
+  crop_mix.tif                 SPAM2010 two largest crops per cell + their shares
   soc_p_exceed.tif             P(SOC > 5 wt%), computed fine then averaged
 
 Run with --delete-raw once the outputs look right.
@@ -335,12 +336,171 @@ def prep_soc_exceedance() -> bool:
     return True
 
 
+def prep_crop_mix() -> bool:
+    """SPAM2010 -> the two largest crops in each cell, and their shares.
+
+    Descriptive only; nothing in the model chain reads it. See
+    constants.SPAM_CROP_NAMES for why two crops rather than one.
+
+    STREAMS FROM THE ZIP, one crop at a time. The archive holds 252 rasters and
+    unpacking the 42 all-technology ones costs ~1.5 GB on disk; extracting each
+    in turn and deleting it holds one 37 MB file at a time instead, per the
+    project's download -> derive -> delete rule.
+
+    AGGREGATION IS AREA-CONSERVING, which resampling hectares directly is not.
+    SPAM gives hectares per 5-arcmin cell -- an EXTENSIVE quantity, so `average`
+    onto a coarser grid would silently rescale it. Each crop is converted to a
+    fraction of its own source cell first, resampled, then multiplied back by the
+    target cell's area. Verified: rice, wheat, maize and soybean all round-trip
+    to within 0.05% of their source totals, and reproduce the published global
+    physical areas (113.8 / 199.5 / 151.3 / 97.9 Mha).
+    """
+    import zipfile
+
+    src = RAW / "spam2010.zip"
+    out = INTERIM / "crop_mix.tif"
+    if not src.exists():
+        if out.exists():
+            print("  crop mix: raw absent, keeping existing crop_mix.tif")
+            return True
+        print("  SKIP crop mix: data/raw/spam2010.zip missing (see fetch_v0.sh)")
+        return False
+
+    with rasterio.open(RAW / "ph_0_5.tif") as s:
+        transform, W, H, crs = s.transform, s.width, s.height, s.crs
+
+    def cell_ha(tr, h, w):
+        """Exact spherical cell area in hectares, constant along a row."""
+        R = C.EARTH_RADIUS_M / 1000.0
+        dlon = np.deg2rad(abs(tr.a))
+        lat_top = tr.f + np.arange(h) * tr.e
+        lat_bot = lat_top + tr.e
+        km2 = np.abs(R * R * dlon * (np.sin(np.deg2rad(lat_top))
+                                     - np.sin(np.deg2rad(lat_bot))))
+        return np.repeat((km2 * 100.0)[:, None], w, axis=1)
+
+    tgt_ha = cell_ha(transform, H, W)
+    zf = zipfile.ZipFile(src)
+    names = sorted(n for n in zf.namelist()
+                   if n.lower().endswith(".tif")
+                   and Path(n).stem.split("_")[-1].upper() == "A")
+    if not names:
+        print("  SKIP crop mix: no all-technology rasters in the archive")
+        return False
+    print(f"crop mix: SPAM2010 physical area, {len(names)} crops")
+
+    total = np.zeros((H, W), dtype="float64")
+    best = np.zeros((2, H, W), dtype="float32")     # top-2 hectares
+    bid = np.zeros((2, H, W), dtype="uint8")        # 1-based crop ids
+    codes = []
+    # Every crop's area at a fixed random sample of cells, kept so the streaming
+    # top-2 can be checked against a full sort afterwards. 50k x 42 float32 is
+    # 8 MB, which is nothing next to holding all 42 global rasters.
+    rng = np.random.default_rng(20260806)
+    pr = rng.integers(0, H, 50_000)
+    pc = rng.integers(0, W, 50_000)
+    probe = np.zeros((pr.size, len(names)), dtype="float32")
+    tmp = RAW / "_spam_tmp"
+    for k, name in enumerate(names, start=1):
+        code = Path(name).stem.split("_")[-2].upper()
+        codes.append(code)
+        zf.extract(name, tmp)
+        p = tmp / name
+        with rasterio.open(p) as s:
+            a = s.read(1).astype("float64")
+            if s.nodata is not None:
+                a[a == s.nodata] = 0.0
+            a[~np.isfinite(a)] = 0.0
+            frac = a / np.maximum(cell_ha(s.transform, s.height, s.width), 1e-9)
+            dst = np.zeros((H, W), dtype="float32")
+            reproject(source=frac.astype("float32"), destination=dst,
+                      src_transform=s.transform, src_crs=s.crs or "EPSG:4326",
+                      dst_transform=transform, dst_crs=crs,
+                      resampling=Resampling.average)
+        p.unlink()
+        cha = (np.clip(dst, 0.0, None) * tgt_ha).astype("float32")
+        total += cha
+        probe[:, k - 1] = cha[pr, pc]
+        # Running top-2. Both slots are decided against the OLD first place,
+        # captured before either is written: an earlier version compared the
+        # incoming crop against a best[1] it had already updated on the line
+        # above, so a crop taking second place moved the VALUE but left the id
+        # behind. That shipped Iowa as "maize 62%" with soybean's 38% attached to
+        # id 0, and Ukraine's second crop labelled barley when it was wheat --
+        # a wrong name, not a missing one. The brute-force check below exists
+        # because the packing gate could not see it.
+        old1, oid1 = best[0].copy(), bid[0].copy()
+        win1 = cha > old1
+        win2 = (~win1) & (cha > best[1])
+        best[1] = np.where(win1, old1, np.where(win2, cha, best[1]))
+        bid[1] = np.where(win1, oid1, np.where(win2, np.uint8(k), bid[1]))
+        best[0] = np.where(win1, cha, old1)
+        bid[0] = np.where(win1, np.uint8(k), oid1)
+    zf.close()
+
+    # ---- Brute force the same answer on a random sample and demand a match.
+    # The streaming update is the only clever thing in this function, so it is
+    # the only thing worth testing; everything else is arithmetic that fails
+    # loudly. Comparing against a full argsort over all 42 crops for these cells
+    # is an independent implementation, not a restatement of the same logic.
+    order = np.argsort(-probe, axis=1, kind="stable")
+    exp_id1 = (order[:, 0] + 1).astype("uint8")
+    exp_id2 = (order[:, 1] + 1).astype("uint8")
+    exp_v1 = probe[np.arange(probe.shape[0]), order[:, 0]]
+    exp_v2 = probe[np.arange(probe.shape[0]), order[:, 1]]
+    live = exp_v1 > 0
+    # Ties are legitimately ambiguous (two crops at identical area), so compare
+    # ids only where the two candidates actually differ in value.
+    idok1 = np.array_equal(np.where(live & (exp_v1 > exp_v2), bid[0][pr, pc], 0),
+                           np.where(live & (exp_v1 > exp_v2), exp_id1, 0))
+    v2ok = exp_v2 > 0
+    idok2 = np.array_equal(np.where(v2ok & (exp_v2 > 0), bid[1][pr, pc], 0) * v2ok,
+                           np.where(v2ok, exp_id2, 0) * v2ok)
+    vok = (np.allclose(best[0][pr, pc], exp_v1, rtol=1e-5, atol=1e-3)
+           and np.allclose(best[1][pr, pc], exp_v2, rtol=1e-5, atol=1e-3))
+    nz = int((bid[0][best[0] > 0] == 0).sum()) + int((bid[1][best[1] > 0] == 0).sum())
+    ok = idok1 and idok2 and vok and nz == 0 and bool(np.all(best[0] >= best[1]))
+    print(f"  top-2 vs brute force on {probe.shape[0]:,} random cells: "
+          f"ids {idok1 and idok2}, values {vok}, no valued slot without an id "
+          f"({nz} bad)  [{'PASS' if ok else 'FAIL'}]")
+    if not ok:
+        raise SystemExit("crop mix: streaming top-2 disagrees with brute force")
+    for d in sorted(tmp.rglob("*"), reverse=True):
+        d.rmdir() if d.is_dir() else d.unlink()
+    if tmp.exists():
+        tmp.rmdir()
+
+    share = np.zeros((2, H, W), dtype="float32")
+    with np.errstate(invalid="ignore", divide="ignore"):
+        for i in range(2):
+            share[i] = np.where(total > 0, best[i] / np.maximum(total, 1e-9), 0.0)
+    print(f"  {total.sum() / 1e6:,.0f} Mha of cropped area allocated")
+    print(f"  cells with any crop: {int((total > 0).sum()):,}")
+
+    # Four uint8 bands at full precision. The 6-bit packing happens in
+    # build_v0's texture writer; the interim keeps everything so a different
+    # encoding can be tried without re-reading 143 MB.
+    arr = np.stack([
+        bid[0], np.rint(np.clip(share[0], 0, 1) * 255).astype("uint8"),
+        bid[1], np.rint(np.clip(share[1], 0, 1) * 255).astype("uint8"),
+    ])
+    INTERIM.mkdir(parents=True, exist_ok=True)
+    with rasterio.open(out, "w", driver="GTiff", height=H, width=W, count=4,
+                       dtype="uint8", crs=crs, transform=transform,
+                       compress="deflate", predictor=2, tiled=True) as dst:
+        dst.write(arr)
+        dst.update_tags(codes=",".join(codes))
+    print(f"  wrote {out.name}  {out.stat().st_size / 1e6:.2f} MB "
+          f"(bands: id1, share1, id2, share2; codes in tags)")
+    return True
+
+
 def main() -> int:
     made = [prep_drainage(), prep_paddy_months(), prep_paddy_area(),
-            prep_soc_exceedance()]
+            prep_soc_exceedance(), prep_crop_mix()]
     if "--delete-raw" in sys.argv and all(made):
         for f in ("watergap_qr.nc", "watergap_qtot.nc", "watergap_qs.nc",
-                  "grpi_paddy.nc",
+                  "grpi_paddy.nc", "spam2010.zip",
                   "spam2010V2r0_global_A_RICE_I.tif",
                   "soc_fine_q05.tif", "soc_fine_q50.tif", "soc_fine_q95.tif"):
             p = RAW / f

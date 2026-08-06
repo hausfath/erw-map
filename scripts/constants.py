@@ -823,6 +823,67 @@ WEIGHTS_DEFAULT_SUPERSEDED = {
 CROPLAND_IS_A_WEIGHT = False
 CROPLAND_MIN_FRACTION = 0.01      # below this, drop the cell (coastal slivers)
 
+# ---------------------------------------------------------------------------
+# WHAT IS GROWN HERE. Descriptive only -- crop identity feeds NOTHING in the
+# model chain except rice, and that only through the paddy soil-pCO2 pathway
+# (see PADDY / f_flood). It is in the readout because ERW economics, agronomy
+# and protocol eligibility all differ by crop, and a reader looking at a cell
+# needs to know whether they are looking at flooded paddy or a soy rotation.
+#
+# WHY TWO CROPS AND NOT ONE. Measured over the shipped grid: the single
+# dominant crop holds a median of only 46% of a cell's cropped area, and just
+# 41.7% of cropland area has any crop above half. A one-word label would be a
+# minority of the cell more often than not -- "wheat" on the North China Plain
+# means wheat 25%, maize 23%, vegetables 16%. Two crops reach a median 71% and
+# self-document when the cell is genuinely mixed, which one label cannot.
+# Three would reach 83%, and do not fit the encoding; the remainder is shown as
+# "other" instead so the total always reads to 100%.
+#
+# SPAM2010 v2.0 is the latest GLOBAL release, verified 2026-08-06 against the
+# Harvard Dataverse: the 2017 and MapSPAM2020 products are Sub-Saharan Africa
+# only. The 2010 reference year is therefore current-best and also a real
+# limitation -- Brazilian soy expansion and Corn Belt rotation shifts postdate
+# it. PHYSICAL area, not harvested: harvested double-counts multi-cropping, so
+# shares would not sum to the land actually farmed.
+SPAM_CITATION = ("IFPRI SPAM2010 v2.0 global physical area, "
+                 "doi:10.7910/DVN/PRFF8V (latest global release)")
+SPAM_REFERENCE_YEAR = 2010
+# Shares below this are not worth a line in a readout; they are inside SPAM's
+# own allocation uncertainty and inside the 1.6% quantisation of the encoding.
+CROP_MIN_DISPLAY_SHARE = 0.05
+# Six of the 42 classes are catch-alls. Flagged so the readout can say "other
+# cereals" rather than implying a specific crop was identified.
+SPAM_AGGREGATE_CODES = ("REST", "OCER", "OOIL", "OPUL", "OFIB", "ORTS")
+# code -> display name. SPAM's own 42-crop vocabulary; names follow the
+# MapSPAM technical documentation.
+SPAM_CROP_NAMES = {
+    "ACOF": "arabica coffee", "BANA": "banana", "BARL": "barley",
+    "BEAN": "bean", "CASS": "cassava", "CHIC": "chickpea",
+    "CNUT": "coconut", "COCO": "cocoa", "COTT": "cotton",
+    "COWP": "cowpea", "GROU": "groundnut", "LENT": "lentil",
+    "MAIZ": "maize", "OCER": "other cereals", "OFIB": "other fibres",
+    "OILP": "oil palm", "OOIL": "other oilcrops", "OPUL": "other pulses",
+    "ORTS": "other roots", "PIGE": "pigeonpea", "PLNT": "plantain",
+    "PMIL": "pearl millet", "POTA": "potato", "RAPE": "rapeseed",
+    "RCOF": "robusta coffee", "REST": "miscellaneous crops", "RICE": "rice",
+    "SESA": "sesame", "SMIL": "small millet", "SORG": "sorghum",
+    "SOYB": "soybean", "SUGB": "sugarbeet", "SUGC": "sugarcane",
+    "SUNF": "sunflower", "SWPO": "sweet potato", "TEAS": "tea",
+    "TEMF": "temperate fruit", "TOBA": "tobacco", "TROF": "tropical fruit",
+    "VEGE": "vegetables", "WHEA": "wheat", "YAMS": "yam",
+}
+# Bit budget for src/textures/crops.png. The image is decoded on the CPU only
+# and never sampled by the shader, but ALPHA STAYS 255 anyway: a 2D canvas
+# stores premultiplied colour, so any alpha below 255 corrupts RGB on the
+# getImageData round trip. That leaves 24 bits for four fields.
+#   id1 6 bits (42 crops < 64), id2 6 bits, share1 6 bits, share2 6 bits
+# Shares therefore quantise to 1/63 = 1.6%, which rounds a displayed whole
+# percent by at most 0.8 points -- orders of magnitude inside SPAM's own
+# allocation uncertainty. Gate 16 asserts the round trip.
+CROP_ID_BITS = 6
+CROP_SHARE_BITS = 6
+CROP_SHARE_LEVELS = (1 << CROP_SHARE_BITS) - 1      # 63
+
 # Reference condition for L1. Published, absolute, so L1 is domain-invariant.
 # L1 is reported as log10(R / R_ref) on a diverging scale centred at zero and
 # labelled in x-reference units -- NOT as a 0-1 index, which invites reading

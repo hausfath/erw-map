@@ -54,6 +54,8 @@ changes only this file and says why.
 | Ceiling vs open-system calcite benchmark | 0.85–1.05 mmol/L, pH 8.0–8.4 | gate 13 |
 | Ceiling inside measured drainage anchors | envelope of five anchors, drained cells only | gate 13b |
 | Wet-but-undrained cropland | **0.05% of area** (precip > 1,000 mm/yr and q < 1 mm/yr) | gate 2c (build) |
+| Crop-mix packing round trip | ids exact; share error ≤ half a quantisation step (0.79 pp) | gate 16 (build) |
+| Streaming top-2 crops vs a full sort | exact on 50,000 random cells, or the layer is not written | `prep_layers.prep_crop_mix` |
 
 ### What is frozen alongside the 0.5-log tolerance
 

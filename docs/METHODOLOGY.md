@@ -361,6 +361,44 @@ stoichiometric maximum by the *median* 10-year fraction, mixing percentiles from
 different cells and overstating the yield by about 6%. The figures above are the
 median of the full product, the same chain the map itself evaluates.
 
+### What is grown here
+
+Descriptive only. Crop identity enters the model chain nowhere except rice, and
+there only through soil pCO₂ on flooded cells; the readout carries it because ERW
+economics, agronomy and protocol eligibility all differ by crop.
+
+Source is SPAM2010 v2.0 **physical** area (harvested double-counts
+multi-cropping). All 42 crops are aggregated onto the analysis grid and the two
+largest are kept per cell, with the remainder shown as "rest" so the row always
+totals 100%.
+
+**Aggregation is area-conserving.** SPAM gives hectares per 5-arcmin cell, an
+extensive quantity, so resampling it with `average` onto a coarser grid would
+silently rescale it. Each crop is converted to a fraction of its own source cell,
+resampled, then multiplied back by the target cell's area — the same pattern the
+rice layer already used. Checked: rice, wheat, maize and soybean round-trip to
+within 0.05% of their source totals and reproduce the published global physical
+areas (113.8 / 199.5 / 151.3 / 97.9 Mha).
+
+**Two crops, not one**, because the dominant crop is a median 46% of a cell's
+cropped area — see the table in the README. 99.5% of cropland area gets a named
+crop and 96.9% gets a second above the 5% display floor.
+
+Stored in `src/textures/crops.png`, which is **CPU-only** and never reaches the
+GPU, like `admin.png`. Four 6-bit fields pack into RGB — `id1 | id2 | share1 |
+share2` — with alpha held at 255 because a 2D canvas stores premultiplied colour
+and any alpha below 255 would corrupt RGB on the `getImageData` round trip. Shares
+therefore quantise to 1.6%, moving a displayed whole percent by at most 0.8
+points, which gate 16 asserts. The image is masked to the cropland domain: SPAM
+allocates crops to 716k cells against the map's 407k, and the 316k outside can
+never be hovered, which is both more honest and most of the file size (1.70 MB
+unmasked against 1.10 MB masked).
+
+Gates: **16** in `build_v0.py` (packing round trip), plus a brute-force check in
+`prep_layers.py` that re-derives the top two from a full sort over all 42 crops at
+50,000 random cells and refuses to write the layer if the streaming result
+disagrees.
+
 ### Cells with no climate input
 
 695 cropland cells (0.35 Mha, 0.03% of cropland area, almost all high-latitude

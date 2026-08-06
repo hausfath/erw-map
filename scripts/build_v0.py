@@ -733,6 +733,7 @@ def main() -> int:
           f"({(PROC / 'v0_layers.npz').stat().st_size / 1e6:.1f} MB)")
 
     # ---- Encode textures
+    crop_codes = write_crop_texture(transform, w, h, crs, m, (crop * area) * 100.0)
     write_textures(crop, p_soc, ph_warn, cdr, m,
                    cascade=cascade, ph=ph, L1=L1, eta=eta, eta_tr=eta_tr,
                    v_cost=v_cost, cost_conf=cost_conf, ceiling=ceiling,
@@ -743,6 +744,7 @@ def main() -> int:
             cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
             clim_source=clim_source, monthly=monthly, n_quarries=n_q,
             gha_eval=gha_eval, soc_excluded=excl, soc_marginal=marg,
+            crop_codes=crop_codes,
             ceiling_binds=bound, ceiling_med=wq(ceiling, (0.5,))[0],
             warm_cool=wc_ratio, exceed_med=e50)
     print()
@@ -761,6 +763,95 @@ def quantize(v, floor: float) -> np.ndarray:
     """
     x = np.clip(np.nan_to_num(v, nan=0.0), floor, 1.0)
     return (5 + np.rint((x - floor) / (1.0 - floor) * 250.0)).astype("uint8")
+
+
+def write_crop_texture(transform, w, h, crs, valid, ha_cell):
+    """src/textures/crops.png -- the two largest crops per cell, for the readout.
+
+    CPU-ONLY, like admin.png. Nothing is coloured by crop, so this never reaches
+    the GPU and never enters the shader; the viewer decodes it through a canvas
+    exactly as it does the region lookup. Returns the crop-code list in id order
+    so emit_js can ship the matching names.
+
+    ALPHA STAYS 255 even though this is not a shader texture. A 2D canvas holds
+    premultiplied colour, so any alpha below 255 corrupts RGB on the getImageData
+    round trip -- the same reason the shader textures reserve it. That leaves 24
+    bits, and four fields to fit:
+
+        bits  0-5    id1     1..42, 0 = no SPAM crop in this cell
+        bits  6-11   id2     0 when the cell has only one crop
+        bits 12-17   share1  in 1/63 steps of the cell's cropped area
+        bits 18-23   share2  same scale
+
+    Shares therefore quantise to 1.6%, which moves a displayed whole percent by
+    at most 0.8 points. That is far inside SPAM's own allocation uncertainty, and
+    gate 16 asserts the round trip stays within it.
+    """
+    from PIL import Image
+
+    src = INTERIM / "crop_mix.tif"
+    out = SRC / "textures" / "crops.png"
+    if not src.exists():
+        print("  crop mix: data/interim/crop_mix.tif missing, skipping crops.png")
+        return []
+    with rasterio.open(src) as s:
+        if (s.width, s.height) != (w, h):
+            print(f"  crop mix: grid mismatch {s.width}x{s.height} vs {w}x{h}, skipping")
+            return []
+        id1, sh1, id2, sh2 = s.read()
+        codes = (s.tags().get("codes") or "").split(",")
+
+    # MASKED TO THE CROPLAND DOMAIN. SPAM allocates crops to 716k cells against
+    # the map's 407k in-domain cropland cells, and the readout only fires inside
+    # the domain -- so 316k of them could never be hovered. Dropping them is both
+    # more honest (no crop label on land the map declines to evaluate) and most of
+    # the file: 1.70 MB unmasked against 1.08 MB masked.
+    id1 = np.where(valid, id1, 0)
+    sh1 = np.where(valid, sh1, 0)
+    id2 = np.where(valid, id2, 0)
+    sh2 = np.where(valid, sh2, 0)
+
+    lv = C.CROP_SHARE_LEVELS
+    q1 = np.rint(sh1.astype("float64") / 255.0 * lv).astype("uint32")
+    q2 = np.rint(sh2.astype("float64") / 255.0 * lv).astype("uint32")
+    # A crop id we cannot name would render as a blank label, so drop it rather
+    # than ship it. Also drop second crops below the display threshold here, so
+    # the viewer never has to decide what is worth showing.
+    keep2 = (sh2.astype("float64") / 255.0) >= C.CROP_MIN_DISPLAY_SHARE
+    i2 = np.where(keep2, id2, 0).astype("uint32")
+    q2 = np.where(keep2, q2, 0)
+    word = (id1.astype("uint32") & 63) | ((i2 & 63) << 6) | (q1 << 12) | (q2 << 18)
+    r = (word & 255).astype("uint8")
+    g = ((word >> 8) & 255).astype("uint8")
+    b = ((word >> 16) & 255).astype("uint8")
+    a = np.full((h, w), 255, dtype="uint8")
+    (SRC / "textures").mkdir(parents=True, exist_ok=True)
+    Image.fromarray(np.dstack([r, g, b, a]), "RGBA").save(out, optimize=True)
+
+    # ---- GATE 16: the packing must survive its own round trip.
+    dw = r.astype("uint32") | (g.astype("uint32") << 8) | (b.astype("uint32") << 16)
+    ok_id1 = bool(np.array_equal(dw & 63, id1.astype("uint32") & 63))
+    ok_id2 = bool(np.array_equal((dw >> 6) & 63, i2))
+    err = np.abs(((dw >> 12) & 63) / lv - sh1.astype("float64") / 255.0)
+    worst = float(err.max())
+    ok16 = ok_id1 and ok_id2 and worst <= 0.5 / lv + 1e-9
+    print(f"  GATE 16 crop packing round trip: ids exact {ok_id1 and ok_id2}, "
+          f"worst share error {worst * 100:.2f} pp <= {50.0 / lv:.2f}  "
+          f"[{'PASS' if ok16 else 'FAIL'}]")
+
+    aw = ha_cell[valid]
+    has = (id1[valid] > 0)
+    two = has & (i2[valid].astype(bool))
+    s1 = (sh1[valid].astype("float64") / 255.0)
+    print(f"  wrote {out} ({out.stat().st_size / 1e6:.2f} MB, CPU-only)")
+    print(f"    cropland area with a named crop: {100 * aw[has].sum() / aw.sum():.1f}%"
+          f"; with a second above {C.CROP_MIN_DISPLAY_SHARE:.0%}: "
+          f"{100 * aw[two].sum() / aw.sum():.1f}%")
+    o = np.argsort(s1[has]); cw = np.cumsum(aw[has][o]) / aw[has].sum()
+    p25, p50, p75 = (float(np.interp(p, cw, s1[has][o])) for p in (0.25, 0.5, 0.75))
+    print(f"    dominant-crop share p25/p50/p75: {p25:.0%} / {p50:.0%} / {p75:.0%}"
+          f"  -- why the readout shows two crops, not one")
+    return codes
 
 
 def write_textures(crop, p_soc, ph_warn, cdr, valid,
@@ -956,7 +1047,7 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
             clim_source="unknown", monthly=False, n_quarries=0,
             soc_excluded=0.0, soc_marginal=0.0,
             ceiling_binds=0.0, ceiling_med=0.0,
-            warm_cool=(None, None), exceed_med=0.0) -> None:
+            warm_cool=(None, None), exceed_med=0.0, crop_codes=()) -> None:
     if gha_eval is None:
         gha_eval = gha
     # PASS THESE IN, never reach for main()'s locals. Reading a caller local from
@@ -980,6 +1071,17 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
              "hint": f"q/(q+Dw) on {C.DRAINAGE_LABELS[C.DRAINAGE_VARIABLE]}; "
                      f"low where water residence limits export"},
         ],
+        # Crop labels for the readout. names[] is 1-based to match the packed
+        # ids, with index 0 the "no SPAM crop" slot. Descriptive only -- nothing
+        # in the model chain reads crop identity except rice, via soil pCO2.
+        "crops": {
+            "names": [""] + [C.SPAM_CROP_NAMES.get(c, c.lower()) for c in crop_codes],
+            "idBits": C.CROP_ID_BITS,
+            "shareBits": C.CROP_SHARE_BITS,
+            "shareLevels": C.CROP_SHARE_LEVELS,
+            "minShare": C.CROP_MIN_DISPLAY_SHARE,
+            "referenceYear": C.SPAM_REFERENCE_YEAR,
+        },
         "epsQuantize": C.EPS_QUANTIZE,
         "aggP": C.AGG_P_DEFAULT,
         "ramp": RAMP,
@@ -1117,6 +1219,7 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
                   "cdrMedian": round(cdr_p50, 2),
                   "quarryPoints": n_quarries},
         "provenance": {
+            "crops": C.SPAM_CITATION,
             "soil": "SoilGrids v2.0 via ISRIC WCS (pH 0-15 cm, SOC 0-5 cm + quantiles)",
             "climate": clim_source,
             "cropland": "Potapov et al. 2022 percent-cropland, 3 km",

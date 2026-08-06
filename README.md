@@ -27,9 +27,9 @@ cells in a WebGL2 fragment shader with no fetch and no server:
   field deliveries can actually check.
 
 Hovering any cell reports the suitability score, gross CO₂ removal, year-1
-weathering, limiting factor, soil pH, delivered cost when economics is on, and
-any protocol screen it fails; click to pin the readout. The whole deployable
-site is 5 MB.
+weathering, limiting factor, soil pH, what is grown there, delivered cost when
+economics is on, and any protocol screen it fails; click to pin the readout. The
+whole deployable site is 6.3 MB.
 
 Development history — what changed between preview builds, the defects found on
 the way, and why each call was made — lives in [CHANGELOG.md](CHANGELOG.md).
@@ -358,6 +358,43 @@ Mediterranean cropland comes out *below* 1 (Andalusia 0.85, Central Valley 0.93)
 where annual means flatter a site whose warm and wet seasons never coincide;
 monsoon and continental come out above (Punjab 1.19, Iowa 1.18); the wet tropics
 sit at ~1.
+
+### What is grown here
+
+The readout names the **two largest crops** in a cell and their share of its
+cropped area, from [SPAM2010
+v2.0](https://doi.org/10.7910/DVN/PRFF8V) physical area. Physical, not harvested:
+harvested double-counts multi-cropping, so shares would not sum to the land
+actually farmed.
+
+**Two crops rather than one, because one is a minority of the cell more often
+than not.** Measured over the shipped grid, the single dominant crop holds a
+median of just **46%** of a cell's cropped area, and only 41.7% of cropland area
+has any crop above half:
+
+| | p25 | **p50** | p75 |
+|---|---|---|---|
+| largest crop | 35% | **46%** | 60% |
+| largest two | 58% | **71%** | 83% |
+| largest three | 72% | **83%** | 92% |
+
+A one-word label would read "wheat" on the North China Plain, where it means
+wheat 25%, maize 23%, vegetables 16%. Two crops plus the remainder reach a median
+71% and say plainly when a cell is mixed, which one label cannot. Three would
+reach 83% and do not fit the encoding.
+
+**It is context, not an input.** Crop identity feeds nothing in the model chain
+except rice, and then only through the paddy soil-pCO₂ pathway. Three limitations
+worth stating: SPAM is a *downscaling model* that allocates subnational statistics
+onto a cropland mask, not an observation, so per-pixel crop identity carries real
+uncertainty; the reference year is **2010**, which predates Brazilian soy
+expansion and Corn Belt rotation shifts; and SPAM's cropped area is 79% of
+Potapov cropland at the median cell, so "share of cropped area" is not the same
+denominator as the cropland fraction used elsewhere in the readout.
+
+SPAM2010 v2.0 is the latest *global* release, verified against the Harvard
+Dataverse on 2026-08-06 — the SPAM2017 and MapSPAM2020 products there are
+Sub-Saharan Africa only.
 
 ### Which water flux is q?
 
