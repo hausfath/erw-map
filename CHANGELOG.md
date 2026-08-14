@@ -5,6 +5,39 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## A methodology report with the equations
+
+`scripts/analysis/make_methods_report.py` generates a ~10-page PDF setting out
+every process in the model chain as equations: the Palandri & Kharaka
+three-mechanism rate law and its two fidelity notes (the Arrhenius typo at OFR
+eqn 7, and dropping the affinity term), the charge-weighted mixture rate and why
+iron is excluded, monthly integration with rate-weighted eta_DIC, the
+Rosin-Rammler surface-area integral and why the closed form cannot be used below
+n = 1, shrinking-core dissolution, the transport term and the choice of water
+flux, the Bertagni & Porporato efficiency derivation, Plummer & Busenberg
+constants, stoichiometric potential, the carbonate-saturation ceiling and the
+instructive wrong answer that preceded it, the suitability value function,
+delivered cost and the ten-year discounted $/tCO2 screen, and the lognormal SOC
+exceedance.
+
+Built on the same discipline as the RFC note: every model parameter and every
+distributional statistic is injected from constants.py and the built grid, so the
+document cannot drift from the code. Writing it forced that to be true rather
+than merely claimed -- a first draft carried a dozen figures copied from the
+prose docs, and three of them were wrong once computed. One application delivers
+4.0x its year-one carbon over a decade, not the 4.2x carried over; the SOC screen
+flags 88% of its area north of 50N, not 96% of its cells, which is a different
+quantity; and the exponential-versus-shrinking-core tail comparison is 2.15% to
+0.77%, not 2.2%.
+
+Three LaTeX traps worth recording, since the next generated document will hit
+them. \cotwo and \hco defined as CO$_2$ toggle math mode OFF inside an equation
+and break any \left...\right pair around them -- \ensuremath fixes it. Python's
+:.1% format emits a bare %, which is a LaTeX comment that silently swallows the
+rest of the line, including a table row's \\ terminator; the generator now
+refuses to emit LaTeX containing an unescaped percent sign. And amssymb already
+defines \checkmark.
+
 ## The readout says what is grown there
 
 SPAM2010 was already being downloaded in full and thrown away: fetch_v0.sh pulled

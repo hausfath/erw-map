@@ -34,6 +34,16 @@ whole deployable site is 6.3 MB.
 Development history — what changed between preview builds, the defects found on
 the way, and why each call was made — lives in [CHANGELOG.md](CHANGELOG.md).
 
+**For the equations**, `scripts/analysis/make_methods_report.py` generates a
+~10-page methodology PDF covering every process in the chain: the three-mechanism
+rate law, the Rosin–Rammler surface-area integral, shrinking-core dissolution, the
+transport term, alkalinity-to-DIC efficiency, the carbonate-saturation ceiling,
+stoichiometry, the suitability value function, delivered cost and the discounted
+$/tCO₂ screen, and the eligibility exceedance probability. Every model parameter
+and distributional statistic in it is injected from `constants.py` and the built
+grid, so it cannot drift from the code. The `.tex` is committed; run the script to
+build the PDF (PDFs are gitignored).
+
 A like-for-like reproduction of Cascade's published formulation is retained in the
 pipeline and still backs the comparison numbers quoted below, but it is no longer a
 map layer: it answers a question about our method rather than about where to

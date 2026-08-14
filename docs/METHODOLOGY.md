@@ -4,6 +4,11 @@ The model chain, its parameters, and the choices that are not forced by physics.
 `docs/VALIDATION.md` covers the gates and the pre-registered criteria;
 `CHANGELOG.md` covers how the model got here.
 
+For the same material as **equations** rather than prose, build the methodology
+report: `python3 scripts/analysis/make_methods_report.py` writes
+`docs/methodology_report.tex` and compiles it. It is generated from the same
+constants and the same built grid as this file.
+
 Every number below is generated from `scripts/constants.py`. If this file and
 that file disagree, the code is right and this file is stale — say so in a PR.
 
