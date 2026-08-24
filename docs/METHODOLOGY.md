@@ -451,11 +451,31 @@ than tolerance-fudged; it is the standing justification for field-data ask #6.
 Gates: **12** in `build_v0.py` (nothing may report more carbon than its drainage can
 carry), **13/13b/13c** in `test_kinetics.py`.
 
-### What "per year" means, and why the year-one figure is the right one
+### What "per year" means: two bases, one per surface
 
-The application rate is stated per year, but the CDR layer is the **first year's
-removal from one application**. Those are only the same thing if you reapply every
-year, and you cannot: a field takes a multi-year break between applications.
+Since August 2026 the tool carries two time bases deliberately. The **map layers
+and hover readout are year-1** — the first year's removal from one application,
+the quantity field trials can measure. The **footer total is a steady state**:
+hold 30 t/ha of undissolved rock on each field, reapplying as the modelled
+kinetics dissolve it (renewal theory: sustainable application rate =
+min(1, u₁/I∞) applications per year, I∞ = ∫(1−Fw)du = 0.144 the mean-lifetime
+constant of the reference grind), capped at one full application per year. The
+two nearly coincide globally — 2.60 against 2.43 GtCO₂/yr, within 7% — because
+fresh rock dissolves faster per tonne while a maintained stock is continuously
+replenished, and the effects almost cancel. They differ regionally with
+weathering speed: fast tropical cells run at the annual cap (Brazil's cadence
+potential is 34% above its year-1), slow cool cells reapply every decade or two
+(Russia's is 29% below). The build prints the steady-state reference every run,
+and the footer must reproduce it to its ~0.5% sampling error. The economic
+screen moved with it: delivered cost is tested against each application's
+**discounted lifetime carbon** (5%, capped at 60 years), not a 10-year window.
+
+The rest of this section explains the year-1 basis the map layers keep.
+
+The CDR layer is the **first year's removal from one application**. Stating the
+application rate per year and drawing year-1 removal are only the same thing if
+you reapply every year, and you cannot: a field takes a multi-year break between
+applications.
 
 The two errors partly cancel, and it is worth showing how far rather than relying on
 it. Run the shrinking-core model forward and the median cell weathers **16.6% in year
@@ -558,7 +578,7 @@ showing numbers derived from the NaN fallback.
 | Quarry gate cost | $10/t | operator-reported quarry-fines prices — a **current-procurement** (byproduct) price. At scale, dedicated basalt runs $15–22/t in the US/Europe (US traprock averages $21.33/t, USGS 2023); see `docs/GATE_COST_AT_SCALE.md`. Slider spans $0–25 |
 | Truck haul | regional $/t-km (US/CA 0.10, EU 0.09, BR/LatAm 0.055, IN/S Asia 0.045, CN/SE Asia 0.07, Africa 0.11, else 0.08) on road km + 50 km fixed-trip equivalent ($2.25–5.50/t regionally), × 1.35 tortuosity | per-entry sources and vintages in `constants.TRUCK_RATE_GROUPS` and `docs/TRUCK_RATE_SOURCES.md`; only the US rate is a current primary. Live multiplier under Advanced; see §3b |
 | Haul penalty scale S | $100/t | editorial choice, stated as such |
-| Headline cost screen | **$100/tCO₂**, 10 yr at 5% | applies to the footer total when economics is on; acquisition and haul only, not a levelised cost |
+| Headline cost screen | **$100/tCO₂** against each application's discounted lifetime carbon at 5% | applies to the footer total when economics is on; acquisition and haul only, not a levelised cost. Was a 10-yr window until Aug 2026 |
 | SOC exclusion | 5 wt%, P > 0.9 | Puro.earth rule 3.9.1(c) |
 
 ### 3b. The haul model: regional rates plus a fixed per-trip trucking charge

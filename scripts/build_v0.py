@@ -633,6 +633,24 @@ def main() -> int:
               f"bound, so this is the expected direction; see docs/VALIDATION.md "
               f"section 2 and CHANGELOG 'Flux reconciliation, August 2026'")
 
+    # ---- Steady-state reference, REPORTED: the browser footer's basis since
+    # Aug 2026. Hold APPLICATION_RATE_T_HA_YR t/ha of undissolved rock, top up
+    # as it dissolves; renewal theory gives the sustainable application rate as
+    # min(1, u1/I_inf) applications per year, with I_inf = integral(1-Fw)du the
+    # mean-lifetime constant of the reference grind. The browser recomputes the
+    # same quantity from the textures, so this line is what its footer must
+    # reproduce (to ~0.5%, its sampling error). Gates 2 and 2b stay on the
+    # year-1 basis, which is what they were pre-registered against.
+    i_inf = float(np.trapezoid(1.0 - g_grid, u_grid))
+    u1_ss = delta_ref * np.clip((10.0 ** L1) * eta_tr, 0.0, None) / C.PSD_REF_D50_UM
+    cdr_ss = (np.minimum(1.0, u1_ss / i_inf) * eta
+              * C.APPLICATION_RATE_T_HA_YR * ceil_t)
+    gt_ss = float((ha * np.nan_to_num(cdr_ss[m])).sum() / 1e9)
+    gt_ss_cap = float((ha * np.nan_to_num(np.minimum(cdr_ss, ceiling)[m])).sum() / 1e9)
+    print(f"  steady-state reference (hold {C.APPLICATION_RATE_T_HA_YR:.0f} t/ha, "
+          f"I_inf {i_inf:.4f}): {gt_ss:.3f} GtCO2/yr uncapped, "
+          f"{gt_ss_cap:.3f} with the drainage limit  [reported; footer basis]")
+
     # ---- GATE 2c: no wet cell may be undrained. The gate that would have caught
     # the qr delta defect. Physically impossible rather than merely unlikely, so
     # the tolerance is an allowance for 0.5-deg wet/arid straddlers, not a knob.

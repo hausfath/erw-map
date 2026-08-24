@@ -252,6 +252,25 @@ def main() -> int:
     R = C.APPLICATION_RATE_T_HA_YR * np.minimum(1.0, 1.0 / tau)
     cad = R * eta * ct                                # tCO2/ha/yr
     cad_ceil = np.minimum(cad, ceil)
+
+    # Economic screen on the cadence basis, matching the tool's footer since
+    # Aug 2026: per-application NPV -- delivered $/t against the application's
+    # DISCOUNTED LIFETIME carbon (not a 10-year window), capped at 60 years,
+    # past which 5% discounting and the dissolved tail make increments
+    # negligible. Same three gate/haul scenarios as Table 1.
+    dpt_life = np.zeros_like(u1)
+    prev = np.zeros_like(u1)
+    for t in range(1, 61):
+        cum = np.interp(u1 * t, ug, gg)
+        dpt_life += (cum - prev) * eta * ct / (1.0 + dr) ** t
+        prev = cum
+    econ_cad = {}
+    for scn in GATE_SCENARIOS:
+        cost = gate_raster(scn) + HAUL_MULT[scn] * rate * d_eff
+        with np.errstate(divide="ignore", invalid="ignore"):
+            usd = cost / np.maximum(dpt_life, 1e-12)
+        passes = mm & (usd < C.COST_SCREEN_USD_PER_TCO2) & (dpt_life > 0)
+        econ_cad[scn] = np.where(passes, cad, 0.0)
     u90 = np.interp(0.9, gg, ug)
     with np.errstate(divide="ignore"):
         k90 = np.where(u1 > 0, u90 / np.maximum(u1, 1e-12), np.inf)
@@ -274,16 +293,19 @@ def main() -> int:
             "cad_ceil": (cad_ceil[sel] * hh).sum() / 1e6,
             "rock": (R[sel] * hh).sum() / 1e9,
             "kmed": min(kmed, 99.0),
+            **{f"ec_{s2}": (econ_cad[s2][sel] * hh).sum() / 1e6
+               for s2 in GATE_SCENARIOS},
         })
     rows2.sort(key=lambda r: -r["cad"])
-    world2 = {k: sum(r[k] for r in rows2)
-              for k in ("tech", "cad", "cad_ceil", "rock")}
+    keys2 = ("tech", "cad", "cad_ceil", "rock",
+             "ec_optimistic", "ec_central", "ec_conservative")
+    world2 = {k: sum(r[k] for r in rows2) for k in keys2}
     big2 = [r for r in rows2 if r["cad"] >= THRESHOLD_MT
             or r["tech"] >= THRESHOLD_MT]
-    rest2 = {k: world2[k] - sum(r[k] for r in big2)
-             for k in ("tech", "cad", "cad_ceil", "rock")}
+    rest2 = {k: world2[k] - sum(r[k] for r in big2) for k in keys2}
 
     hdr2 = (f"{'country':<22}{'tech y1':>9}{'cadence SS':>12}{'w/ drain':>10}"
+            f"{'econ opt':>10}{'econ ctr':>10}{'econ cons':>10}"
             f"{'rock Gt/yr':>12}{'median cadence':>16}")
     print(f"\n\nTable 2: steady state maintaining a "
           f"{C.APPLICATION_RATE_T_HA_YR:.0f} t/ha standing rock inventory")
@@ -291,13 +313,16 @@ def main() -> int:
           "application per year)\n")
     print(hdr2)
     print(f"{'':<22}{'MtCO2/yr':>9}{'MtCO2/yr':>12}{'MtCO2/yr':>10}"
+          f"{'MtCO2/yr':>10}{'MtCO2/yr':>10}{'MtCO2/yr':>10}"
           f"{'':>12}{'years':>16}")
     print("-" * len(hdr2))
 
     def line2(label, r, kmed=None):
         km = f"{r['kmed']:.1f}" if kmed is None and "kmed" in r else (kmed or "")
         print(f"{label:<22}{r['tech']:>9.0f}{r['cad']:>12.0f}"
-              f"{r['cad_ceil']:>10.0f}{r['rock']:>12.2f}{km:>16}")
+              f"{r['cad_ceil']:>10.0f}{r['ec_optimistic']:>10.0f}"
+              f"{r['ec_central']:>10.0f}{r['ec_conservative']:>10.0f}"
+              f"{r['rock']:>12.2f}{km:>16}")
 
     for r in big2:
         line2(r["name"][:21], r)

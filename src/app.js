@@ -770,6 +770,29 @@
     return gsCache;
   }
 
+  /* Mean-lifetime constant of the current grind: I_inf = integral(1 - Fw(u)) du
+     over the same u grid as gSlice(). Renewal theory turns it into the footer's
+     steady state: holding an inventory of one application, the sustainable
+     application rate is u1/I_inf applications per year (capped at 1), because
+     I_inf/u1 is the mean lifetime of applied rock. Integrated by trapezoid on
+     the log-spaced grid, plus the below-grid sliver where 1 - Fw ~ 1. Memoised
+     per width, like the slice itself. */
+  let iInfCache = NaN, iInfKey = NaN;
+  function iInfOf() {
+    if (iInfKey === psd.width && !Number.isNaN(iInfCache)) return iInfCache;
+    const D = E.dissolution, g = gSlice(), n = g.length;
+    const step = (D.uLog.hi - D.uLog.lo) / (n - 1);
+    let acc = Math.pow(10, D.uLog.lo) * (1 - g[0] / 2);
+    let uPrev = Math.pow(10, D.uLog.lo);
+    for (let i = 1; i < n; i++) {
+      const u = Math.pow(10, D.uLog.lo + i * step);
+      acc += (u - uPrev) * (1 - (g[i - 1] + g[i]) / 2);
+      uPrev = u;
+    }
+    iInfCache = acc; iInfKey = psd.width;
+    return acc;
+  }
+
   /* Interpolate the slice at a given log10(u). Split out from fracOf() so the
      multi-year cost screen can hoist the logarithm: u scales linearly in t, so
      log10(u_t) = log10(u_1) + log10(t) and the ten years cost one log instead of
@@ -1002,9 +1025,9 @@
     // $/tCO2 screen. Say both.
     const scr = E.cost && E.cost.screenUsdPerTco2;
     $("econ-readout").textContent = on
-      ? (scr ? `Total below restricted to cells under $${scr}/tCO\u2082, costed over `
-              + `${E.cost.screenYears} years of weathering at `
-              + `${(E.cost.screenDiscount * 100).toFixed(0)}% discount. `
+      ? (scr ? `Total below restricted to cells under $${scr}/tCO\u2082, costed `
+              + `against each application\u2019s discounted lifetime carbon at `
+              + `${(E.cost.screenDiscount * 100).toFixed(0)}%. `
              : "")
         + "Hover the map for cost per tonne of rock and per tCO\u2082."
       : "Off: the map shows physical potential only, and the total below is "
@@ -1290,36 +1313,42 @@
     // produce enough carbon to justify the haul.
     const screening = econ.costExp > 0 && E.cost && E.cost.screenUsdPerTco2;
     const rate = E.feedstock.rateTHaYr, fl = E.cost ? E.cost.floor : 1;
-    const YRS = (E.cost && E.cost.screenYears) || 1;
+    // THE FOOTER IS ON A STEADY-STATE BASIS (Aug 2026), not year 1: hold a
+    // standing inventory of one application (rate t/ha) of undissolved rock,
+    // topping up as it dissolves. Renewal theory makes this exact from the same
+    // cohort kinetics: the sustainable application rate is min(1, u1/I_inf)
+    // applications per year (I_inf/u1 is the mean lifetime of applied rock),
+    // and at steady state dissolved mass equals applied mass, so removal is
+    // that rate x eta_DIC x carbon per tonne. Capped at one full application
+    // per year; the drainage ceiling still bounds the flux. The map layers
+    // stay on the year-1 basis -- that is the quantity field trials measure.
     const DR = (E.cost && E.cost.screenDiscount) || 0;
-    // Everything constant across cells and years, hoisted out of a ~45k x 10 loop.
-    // pow[] is stored and DIVIDED by rather than pre-inverted and multiplied, so
-    // the arithmetic stays bit-identical to the un-hoisted version and no cell
-    // sitting exactly on the screen threshold can flip.
+    // The cost screen is a per-application NPV, which is the marginal decision
+    // an operator faces even at steady state: cost now against the
+    // application's DISCOUNTED LIFETIME carbon -- extended (Aug 2026) from a
+    // 10-year window to the application's whole weathering life, capped at
+    // TMAX years, past which 5% discounting and the dissolved tail make the
+    // increments negligible. Early-exits once the cohort is spent.
+    const TMAX = 60;
     const D = E.dissolution, g = gSlice(), kU = D.deltaRefUm / psd.d50;
-    const CPF = E.cdrPerFrac;
-    const pow = new Float64Array(YRS + 1), l10t = new Float64Array(YRS + 1);
-    for (let t = 1; t <= YRS; t++) { pow[t] = Math.pow(1 + DR, t); l10t[t] = Math.log10(t); }
+    const CPF = E.cdrPerFrac, iInf = iInfOf();
+    const pow = new Float64Array(TMAX + 1), l10t = new Float64Array(TMAX + 1);
+    for (let t = 1; t <= TMAX; t++) { pow[t] = Math.pow(1 + DR, t); l10t[t] = Math.log10(t); }
     let num = 0, den = 0, kept = 0;
     for (const r of sample) {
-      // X and eta_DIC were computed twice per row, once in cdrOfRow() and again in
-      // the screening block. Once each now; cdr is derived from them here rather
-      // than via cdrOfRow(), which this reproduces exactly.
       const X = xOfRow(r, exps), eDic = eDicOfRow(r, exps);
-      const l10u1 = X > 0 ? Math.log10(kU * X) : -Infinity;
-      // Constant in t, so it comes out of the year loop -- it was costing ten
-      // Math.pow calls per cell inside decodeCeil().
+      const u1 = kU * X;
+      const l10u1 = X > 0 ? Math.log10(u1) : -Infinity;
       const ceil = (ceilOn && r[5] !== undefined) ? decodeCeil(r[5]) : Infinity;
-      let cdr = fracAtLog10u(l10u1, g, D) * eDic * CPF;
+      // Steady-state removal, capped at one application per year and at the
+      // drainage ceiling.
+      let cdr = Math.min(1, u1 / iInf) * eDic * CPF;
+      if (!(cdr > 0)) cdr = 0;
       if (cdr > ceil) cdr = ceil;
       if (screening) {
         const usdT = costUsdT(fl + rawByte(r[4] === undefined ? 255 : r[4]) * (1 - fl));
-        // DISCOUNTED CARBON FROM ONE APPLICATION OVER screenYears, not year one.
-        // The rock keeps weathering; dividing a one-off cost by a single year's
-        // removal overstated $/tCO2 by ~3.2x. Retreat accumulates linearly in
-        // time, so cumulative Fw is G(u*t) and year t delivers the increment.
         let tonnes = 0, prev = 0;
-        for (let t = 1; t <= YRS; t++) {
+        for (let t = 1; t <= TMAX; t++) {
           const cum = fracAtLog10u(l10u1 + l10t[t], g, D);
           let yr = (cum - prev) * eDic * CPF;
           prev = cum;
@@ -1327,6 +1356,7 @@
           // rather than to the total -- extra years buy much less under it.
           if (yr > ceil) yr = ceil;
           tonnes += yr / pow[t];
+          if (cum > 0.9995) break;               // cohort spent
         }
         if (!(tonnes > 0) || usdT === null
             || usdT * rate / tonnes >= E.cost.screenUsdPerTco2) { den += r[3]; continue; }
@@ -1473,7 +1503,14 @@
       largest more often. It shows which term is furthest from its best case, not
       an absolute ranking of mechanisms.</p>
       <p>It is a screening map, not a site-selection tool: zoom is capped on
-      purpose, and every CO₂ figure is gross removal.
+      purpose, and every CO₂ figure is gross removal. Two time bases coexist:
+      the <b>map layers and hover readout are year-1</b> (the quantity field
+      trials can measure), while the <b>footer total is a steady state</b> —
+      hold ${E.feedstock.rateTHaYr} t/ha of undissolved rock on each field,
+      reapplying as the modelled kinetics dissolve it, capped at one full
+      application per year. Fast tropical cells run at the cap; slow cool cells
+      reapply every decade or two. The two bases nearly coincide globally
+      (within ~7%) but differ regionally with weathering speed.
       ${ceilOn
         ? "Carbonate saturation enters only as an upper bound on what the drainage " +
           "can carry, not as a modelled precipitation loss; cation retention in the " +
@@ -1726,19 +1763,24 @@
     // reads the 8-bit textures and a 1-in-3 decimation: about 0.5% above the exact
     // area-weighted total the build prints. Said here rather than papered over.
     $("stat-main").title = gt === null ? "" :
-      "Area-weighted over " + (E.stats.evaluatedGha ?? E.stats.croplandGha).toFixed(2) +
-      " Gha of evaluated cropland, recomputed from the grid at the current settings. " +
-      "Sampled 1 cell in 3 and read from 8-bit textures, so it sits ~0.5% above the " +
-      "exact total.";
+      "Steady state maintaining a standing rock inventory, reapplication paced " +
+      "by the modeled dissolution and capped at one application per year -- not " +
+      "the year-1 basis the map layers use. Area-weighted over " +
+      (E.stats.evaluatedGha ?? E.stats.croplandGha).toFixed(2) +
+      " Gha of evaluated cropland, recomputed from the grid at the current " +
+      "settings; sampled 1 cell in 3 from 8-bit textures.";
     const gha = (E.stats.evaluatedGha ?? E.stats.croplandGha) * lastKeptAreaFrac;
     const scr = econ.costExp > 0 && E.cost && E.cost.screenUsdPerTco2;
     $("stat-label").textContent = gt === null
       ? "cropland in scope"
       : (scr
-          ? `gross removal where delivered rock costs under `
-            + `$${E.cost.screenUsdPerTco2}/tCO\u2082 over ${E.cost.screenYears} yr `
-            + `at ${(E.cost.screenDiscount * 100).toFixed(0)}%, on ${gha.toFixed(2)} Gha`
-          : `gross removal over ${gha.toFixed(2)} Gha of cropland`)
+          ? `steady-state gross removal holding ${E.feedstock.rateTHaYr} t/ha of `
+            + `rock, where delivered rock costs under `
+            + `$${E.cost.screenUsdPerTco2}/tCO\u2082 against each application\u2019s `
+            + `lifetime carbon at ${(E.cost.screenDiscount * 100).toFixed(0)}%, `
+            + `on ${gha.toFixed(2)} Gha`
+          : `steady-state gross removal holding ${E.feedstock.rateTHaYr} t/ha of `
+            + `rock, over ${gha.toFixed(2)} Gha of cropland`)
         + (ceilOn ? "" : ", drainage limit not applied");
   }
 

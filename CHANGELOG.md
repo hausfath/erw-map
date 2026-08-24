@@ -5,6 +5,42 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## The footer moves to a steady-state basis; the map layers stay year-1
+
+The bottom-left total was the year-1 removal of a single application, stated
+per year -- defensible (METHODOLOGY documented the ~4.3-year-cadence
+equivalence) but indirect. It is now the steady state of the realistic
+operating mode: hold 30 t/ha of undissolved rock on each field, reapplying as
+the modelled kinetics dissolve it, capped at one full application per year.
+Renewal theory makes this one line from the existing cohort table: sustainable
+application rate = min(1, u1/I_inf) applications per year, with
+I_inf = integral(1 - Fw) du = 0.144 the mean-lifetime constant of the grind
+(recomputed live when the grind sliders move, memoised with the slice).
+
+The two bases nearly coincide globally -- 2.60 vs 2.43 GtCO2/yr, within 7% --
+because fresh rock dissolves faster per tonne while a maintained stock is
+continuously replenished, and the effects almost cancel. They differ regionally
+with weathering speed (Brazil +34%, Russia -29%), which is exactly why the
+footer is more honest on this basis. The MAP LAYERS and hover readout stay
+year-1 on purpose: that is the quantity field trials can measure, and the
+Methods modal now states the two-bases split explicitly.
+
+The economic screen moved with it: delivered cost is tested against each
+application's DISCOUNTED LIFETIME carbon (5%, capped at 60 years with an
+early exit once the cohort is spent), replacing the 10-year window. The
+per-year drainage-ceiling clamp inside the screen is unchanged.
+
+Verified three ways against python: footer econ-off 2.57 vs the build's new
+steady-state reference line 2.596 (within the stated ~0.5-1% sampling error);
+ceiling-on 0.87 vs 0.871; econ-on 0.93 vs the country analysis Table 2 central
+930 Mt. Table 2 in scripts/analysis/country_potential.py gained matching
+economic columns (world 732-1,216 Mt across the gate/haul scenarios, central
+930), so the tool and the offline analysis report the same quantity. The gate
+sweep in docs/GATE_COST_AT_SCALE.md was re-measured on the new basis
+($10 -> 0.93, $18 -> 0.30, $21.50 -> 0.06). Gates 2 and 2b stay on the year-1
+basis they were pre-registered against; the build prints the steady-state
+reference as a reported line beside them.
+
 ## The fixed trip charge is regional now, as a km-equivalent
 
 One-commit-old design reversed, deliberately and on a user's question. The fixed
