@@ -34,11 +34,23 @@ sum of screened tonnage, so the gate-cancellation constraint on the map's value
 function does not apply.
 
 CAVEATS that bound every number below: gross removal, not net (no spreading,
-grinding-to-spec, MRV, or downstream losses in the screen); year-1 kinetics at
-30 t/ha/yr on ALL cropland simultaneously, which at country scale exceeds any
-plausible basalt supply (see GATE_COST_AT_SCALE: 3 Mha at 30 t/ha equals the
-entire US traprock output); haul distances are great-circle x tortuosity, not
-routed.
+grinding-to-spec, MRV, or downstream losses in the screen); haul distances are
+great-circle x tortuosity, not routed; and everything is on a YEAR-1 basis,
+which understates the long-run carbon per tonne of rock. Under continued annual
+application the cohorts telescope -- removal in year N is A*eta*CT*F(N) -- so
+rock-per-carbon converges from the year-1 ~10-28 t rock/tCO2 down to the
+stoichiometric 1/(eta*CT) ~ 3.5 t/t (5.1 in Brazil, where acid Cerrado soils
+hold less of the alkalinity as bicarbonate). Sustaining India's 402 Mt/yr
+therefore needs ~1.4 Gt rock/yr at steady state, not the 4.1 Gt/yr the year-1
+framing implies. Two constraints survive the steady-state framing: supply
+(1.4 Gt/yr is still ~15x total current US traprock output) and, more
+fundamentally, the drainage ceiling, which is a per-year flux bound -- the
+stoichiometric steady state exceeds it ~10x in India (1,185 vs 122 Mt/yr), so
+if the ceiling is real it, not stoichiometry, is what annual removal converges
+to. Continued annual application also accumulates rock in soil (900 t/ha over
+30 years, roughly a third of the plough layer's mass); the realistic operating
+mode is the reapplication cadence in docs/METHODOLOGY.md, where the map's
+year-1 value is the steady state of a ~4.3-year cycle.
 """
 
 from __future__ import annotations
