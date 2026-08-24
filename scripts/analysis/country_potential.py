@@ -154,7 +154,12 @@ def write_docx(path, big2, rest2, world2, screens, i_inf, w90, us_cap):
         "haul rates x1.00; CONSERVATIVE = at-scale regional gates (US/Canada "
         "$18, Europe $17, Brazil/LatAm $12, India/S Asia $5, elsewhere $12/t) "
         "with haul x1.25. Only the US haul rate is a current primary source; "
-        "the +/-25% haul band is a judgment call, not a fitted interval.")
+        "the +/-25% haul band is a judgment call, not a fitted interval. "
+        "Ranges in Tables 2-3 are the min-max across the three scenarios; "
+        "note the scenarios vary gate structure as well as level, so the "
+        "central case (uniform $10/t gate) is not always inside the two "
+        "regional-gate cases -- for India, whose regional gates ($3 current, "
+        "$5 at-scale) are both cheaper than $10, central is the low end.")
 
     rows = big2 + [dict(rest2, name="Rest of world", kmed=None),
                    dict(world2, name="WORLD", kmed=None)]
@@ -179,20 +184,29 @@ def write_docx(path, big2, rest2, world2, screens, i_inf, w90, us_cap):
     for scr in screens:
         doc.add_heading(
             f"Table {2 if scr == screens[0] else 3}. Economic potential at "
-            f"${scr:.0f}/tCO2 (steady-state basis, MtCO2/yr)", level=1)
-        t = doc.add_table(rows=1 + len(rows), cols=5)
+            f"${scr:.0f}/tCO2 (steady-state basis)", level=1)
+        t = doc.add_table(rows=1 + len(rows), cols=3)
         t.style = "Table Grid"
-        for j, htxt in enumerate(("Country", "Optimistic", "Central",
-                                  "Conservative", "Range as % of steady state")):
+        for j, htxt in enumerate((
+                "Country",
+                "Economic potential, MtCO2/yr: central (scenario range)",
+                "Share of steady-state potential: central (range)")):
             t.rows[0].cells[j].text = htxt
         for i, r in enumerate(rows, start=1):
             c = t.rows[i].cells
             c[0].text = r["name"]
-            for j, s2 in enumerate(("optimistic", "central", "conservative")):
-                c[1 + j].text = f"{r[f'ec_{s2}_{int(scr)}']:.0f}"
+            ec = {s2: r[f"ec_{s2}_{int(scr)}"]
+                  for s2 in ("optimistic", "central", "conservative")}
+            # min-max across the three scenarios rather than (cons-opt): the
+            # scenarios vary gate STRUCTURE as well as level, so central (a
+            # uniform $10 gate) can sit outside the two regional-gate cases --
+            # it does for India, whose regional gates ($3 current, $5 at-scale)
+            # are both cheaper than $10.
+            lo, hi = min(ec.values()), max(ec.values())
+            c[1].text = f"{ec['central']:,.0f} ({lo:,.0f}–{hi:,.0f})"
             base = max(r["cad"], 1e-9)
-            c[4].text = (f"{100 * r[f'ec_conservative_{int(scr)}'] / base:.0f}"
-                         f"-{100 * r[f'ec_optimistic_{int(scr)}'] / base:.0f}%")
+            c[2].text = (f"{100 * ec['central'] / base:.0f}% "
+                         f"({100 * lo / base:.0f}–{100 * hi / base:.0f}%)")
 
     doc.add_heading("The US byproduct-fines supply cap", level=1)
     doc.add_paragraph(
