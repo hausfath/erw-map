@@ -1365,9 +1365,102 @@ ROAD_TORTUOSITY = 1.35               # great-circle -> road distance
 # endpoints are chosen to span plausible regional variation so the slider can
 # show how much of the economic layer depends on this one unsourced number.
 # Do not quote them as a confidence interval.
-TRUCK_COST_USD_T_KM = 0.12
+TRUCK_COST_USD_T_KM = 0.12    # retained as the US anchor and the uniform
+                              # FALLBACK if the country raster cannot be built;
+                              # the shipped surface uses TRUCK_RATE_GROUPS below
 TRUCK_COST_RANGE = (0.03, 0.30)
-TRUCK_COST_IS_UNSOURCED = True
+TRUCK_COST_IS_UNSOURCED = False   # sourced for the US; regional entries carry
+                                  # their own source and vintage below
+
+# ---------------------------------------------------------------------------
+# REGIONAL TRUCK RATES, USD per tonne-km, applied spatially at cost-build time
+# (prep_feedstock.py rasterises them from Natural Earth admin-0). Full source
+# table with quotes and conversion arithmetic: docs/TRUCK_RATE_SOURCES.md.
+#
+# Why regional: a single global rate is not wrong on average, it is wrong in a
+# STRUCTURED way -- $0.12 is a good current US number (USDA GTOR Q2 2026) and
+# ~2-2.5x too high for Brazil and India, the two most active ERW deployment
+# countries. Because the gate cancels out of v_cost, the truck rate is the only
+# cost parameter doing spatial work, so that bias mapped straight into
+# suitability-with-cost and penalised exactly the cropland the physics favours.
+#
+# Group membership resolves in order: explicit ISO list first, then continent,
+# then TRUCK_RATE_DEFAULT. Vintage flags matter: only the US rate is current;
+# Brazil/China/Europe rest on the World Bank's 2007 corridor prices inflated by
+# US CPI (a crude adjustment), and India on a 2021 national average. Replace
+# entries with current primaries as they are sourced, not by re-tuning.
+TRUCK_RATE_GROUPS = {
+    "US/Canada": {
+        "rate": 0.10, "iso": ["US", "CA"],
+        "source": "USDA GTOR Q2 2026: $0.120/t-km at 100 mi, $0.102 at 200 mi, "
+                  "25 t payload; midpoint of the map's haul distribution",
+        "vintage": 2026},
+    "Europe": {
+        "rate": 0.09, "continents": ["Europe"],
+        "source": "World Bank 2009 Fig 2.1: W Europe 5 c/t-km (2007) x1.55 CPI "
+                  "~0.078; CNR France cost $1.59/veh-km 2007. WEAK, dated",
+        "vintage": 2007},
+    "Brazil/Latin America": {
+        "rate": 0.055,
+        "iso": ["MX", "GT", "BZ", "HN", "SV", "NI", "CR", "PA", "CU", "DO",
+                "HT", "JM", "TT"],
+        "continents": ["South America"],
+        "source": "World Bank 2009 Fig 2.1: Brazil 3.5 c/t-km (2007) x1.55 CPI "
+                  "= 0.054. Dated; ANTT minimum-freight tables are the upgrade",
+        "vintage": 2007},
+    "India/South Asia": {
+        "rate": 0.045, "iso": ["IN", "PK", "BD", "LK", "NP", "BT"],
+        "source": "NITI Aayog/RMI 2021 Exhibit 3-1: road INR 3.6/t-km = $0.048 "
+                  "at 2021 fx; WB 2007 Pakistan 2 c/t-km corroborates the level",
+        "vintage": 2021},
+    "China/SE Asia": {
+        "rate": 0.07,
+        "iso": ["CN", "TW", "VN", "TH", "ID", "MY", "PH", "KH", "LA", "MM"],
+        "source": "World Bank 2009 Fig 2.1: China 5 c/t-km (2007) x1.55 CPI "
+                  "= 0.078, rounded down for the cheaper SE Asian members. WEAK",
+        "vintage": 2007},
+    "Africa": {
+        "rate": 0.11, "continents": ["Africa"],
+        "source": "World Bank 2009 Fig 2.1: corridor PRICES 6-11 c/t-km (2007), "
+                  "cartel-inflated above cost; mid-range x CPI. Wide spread",
+        "vintage": 2007},
+}
+# Everything unmatched: Russia, Central Asia, Middle East, Australia/NZ, Japan,
+# Korea, Oceania. 0.08 is a judgment call between the US and emerging-Asia
+# levels, NOT a sourced figure -- flagged so nobody quotes it as one.
+TRUCK_RATE_DEFAULT = 0.08
+# Pinned to the default BEFORE continent matching. Natural Earth files Russia
+# under continent "Europe", which would give it the European rate; nothing in
+# docs/TRUCK_RATE_SOURCES.md supports that, so it stays at the unresearched
+# default rather than inheriting a rate by cartographic convention.
+TRUCK_RATE_ISO_DEFAULT = ["RU"]
+TRUCK_RATE_MULT_RANGE = (0.25, 2.5)   # the Advanced slider, a global multiplier
+                                      # on the regional surface
+
+# The FIXED per-trip haul component, $/t: loading, unloading and positioning,
+# paid once regardless of distance. Decomposed from the same USDA GTOR curve:
+# the per-mile rate falls with distance because this fixed cost is spread over
+# more km ($7.53/t total at 25 mi vs $19.36 at 100 mi implies fixed $3.6-6.0/t
+# plus $0.083-0.098/t-km marginal). Consequences, both deliberate:
+#   - v_cost no longer reaches 1.0 anywhere: at zero distance the transport
+#     penalty is F/S, i.e. v_max = 1/(1 + F/S) ~ 0.952. The old rule
+#     "v = 1 exactly at the gate" is superseded -- even a farm beside the
+#     quarry pays loading and unloading.
+#   - The gate still cancels exactly. F is transport, not gate.
+HAUL_FIXED_USD_T = 5.0
+
+
+def truck_rate_for(iso_a2, continent):
+    # Regional truck rate for a country; ISO match wins over continent.
+    for _g in TRUCK_RATE_GROUPS.values():
+        if iso_a2 and iso_a2 in _g.get("iso", ()):
+            return _g["rate"]
+    if iso_a2 in TRUCK_RATE_ISO_DEFAULT:
+        return TRUCK_RATE_DEFAULT
+    for _g in TRUCK_RATE_GROUPS.values():
+        if continent and continent in _g.get("continents", ()):
+            return _g["rate"]
+    return TRUCK_RATE_DEFAULT
 FEEDSTOCK_COST_SOURCE = ("USGS crushed-stone unit values for the gate cost; "
                          "truck haul rate is an ASSUMPTION with no citation and "
                          "no validation -- see TRUCK_COST_USD_T_KM. Truck only: "
@@ -1387,10 +1480,12 @@ OUTCROP_TO_QUARRY_FACTOR = 2.0
 #
 #     v_cost = 1 / (1 + (cost - gate) / S)
 #
-# so v = 1.0 exactly at the gate cost, where there is no transport to penalise,
-# and declines from there. The gate cost is unavoidable everywhere -- you have to
-# buy and crush the rock wherever you are -- so charging a site for it is charging
-# it for something it cannot avoid and that carries no spatial information.
+# so the gate cost cancels: it is unavoidable everywhere -- you have to buy and
+# crush the rock wherever you are -- so charging a site for it would charge it
+# for something it cannot avoid and that carries no spatial information. Since
+# HAUL_FIXED_USD_T was added (Aug 2026), cost - gate = F + r*d > 0 everywhere,
+# so v tops out at 1/(1 + F/S) ~ 0.95 at zero distance rather than reaching 1:
+# even a farm beside the quarry pays loading and unloading.
 #
 # This replaces five hand-placed knots that were 1.0 at $25 but ramped hard: a
 # cell at the CROPLAND MEDIAN of $61/t lost 38%, which is a heavy penalty for a

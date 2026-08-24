@@ -556,70 +556,70 @@ showing numbers derived from the NaN fallback.
 | Soil pCO₂, flooded | 50,000 µatm | Isometric v1.2, mandated; this is the **floor** of the literature paddy range |
 | Flooded pH convergence | 6.7 | van Breemen 1987; submergence drives pH toward 6–7 |
 | Quarry gate cost | $10/t | operator-reported quarry-fines prices |
-| Truck haul | $0.12/t-km × 1.35 tortuosity | **assumption with no citation and no validation.** A previous version of this row credited it to a "US trade-association rate", which the code has never supported — `FEEDSTOCK_COST_SOURCE` has always called it an assumption. Exposed as a slider under Advanced; see §3b |
+| Truck haul | regional $/t-km (US/CA 0.10, EU 0.09, BR/LatAm 0.055, IN/S Asia 0.045, CN/SE Asia 0.07, Africa 0.11, else 0.08) + $5/t fixed, × 1.35 tortuosity | per-entry sources and vintages in `constants.TRUCK_RATE_GROUPS` and `docs/TRUCK_RATE_SOURCES.md`; only the US rate is a current primary. Live multiplier under Advanced; see §3b |
 | Haul penalty scale S | $100/t | editorial choice, stated as such |
 | Headline cost screen | **$100/tCO₂**, 10 yr at 5% | applies to the footer total when economics is on; acquisition and haul only, not a levelised cost |
 | SOC exclusion | 5 wt%, P > 0.9 | Puro.earth rule 3.9.1(c) |
 
-### 3b. How confident are we in $0.12/t-km? Not very
+### 3b. The haul model: regional rates plus a fixed loading charge
 
-This is the weakest number in the economic half of the model, and it is easy to
-mistake for a sourced parameter, so it is set out separately.
+Until August 2026 haulage was one global number, $0.12/t-km, flagged in
+`constants.py` as an assumption with no citation. Sourcing it
+(`docs/TRUCK_RATE_SOURCES.md`) produced two findings, and both are now in the
+model rather than in a caveat:
 
-**Against it:**
+**1. The rate is regional, and the old error was structured.** USDA grain-truck
+rates (Q2 2026, 25 t payload) make $0.10–0.12/t-km a genuinely good current US
+number at the map's 171-mile median haul — and NITI Aayog 2021 puts India at
+~$0.045–0.05, the World Bank's corridor survey (2007, CPI-inflated) puts Brazil
+near $0.055. So the uniform $0.12 was right in the US and ~2–2.5× high in the two
+countries with the most ERW deployment. Since the gate cancels out of `v_cost`,
+the truck rate is the only cost parameter doing spatial work: the bias mapped
+straight into suitability-with-cost, against exactly the cropland the physics
+favours. The shipped surface is now `r(region)`, rasterised from Natural Earth
+countries at cost-build time (`prep_feedstock.py --cost-only` rebuilds it without
+re-downloading the lithology archives), with per-entry sources and vintages in
+`constants.TRUCK_RATE_GROUPS`. Only the US entry is a current primary; Brazil,
+China and Europe rest on 2007 corridor prices inflated by US CPI, India on a 2021
+national average, and the `elsewhere` default of $0.08 is a judgment call, not a
+sourced figure.
 
-1. **No citation.** `FEEDSTOCK_COST_SOURCE` has always said "truck haul rate is an
-   assumption", and nothing has been done since to source it. The gate cost, by
-   contrast, is triangulated across several operator-reported prices (Lithos ~$12/t,
-   Isometric <$10/t, InPlanet ~$10/t, Brazilian *pó de pedra* R$45–50/t).
-2. **No validation anywhere.** There is no cost gate in `build_v0.py`, no cost row
-   in `docs/VALIDATION.md`, and no comparison against delivered costs in the
-   verified-delivery fixture. Every physical layer has a gate; the delivered-cost
-   surface has none.
-3. **A single global rate cannot be right.** Real haulage varies severalfold with
-   fuel price, backhaul availability, road quality, truck size limits, minimum load
-   charges, and whether the operator owns the fleet. Brazil, India and the US
-   Midwest are not one number.
-4. **The rate multiplies a modelled distance.** Haul is great-circle × 1.35, with
-   no routing, no terrain and no border crossings, over a cropland median of
-   275 road km (p90 942 km). Rate error and distance error compound.
+**2. Haul has a fixed component.** The USDA per-mile rate falls with distance —
+$0.187/t-km at 25 miles, $0.120 at 100, $0.102 at 200 — exactly the signature of
+a per-trip cost (loading, unloading, positioning) spread over more km.
+Decomposed: fixed **$3.6–6.0/t** plus $0.083–0.098/t-km marginal. The model now
+prices `cost = gate + F + r(region)·d` with `F = $5/t`. A pure `rate × distance`
+model understates short hauls and overstates long ones; this changes the shape
+independently of any regional level, and it means `v_cost` peaks at
+`1/(1 + F/S) = 0.952` at zero distance rather than 1 — even a farm beside the
+quarry pays loading and unloading. The gate still cancels exactly.
 
-**For it:** at $0.12/t-km the cropland median delivered cost is $43/t and the p90
-is $123/t, which is the right order for a $10/t product hauled a median 275 km, and
-it reproduces the standard aggregates rule of thumb that trucking doubles the
-delivered price of crushed stone within a hundred-odd kilometres. That is a
-plausibility argument, not a calibration.
+Measured on the shipped build: cropland delivered cost is **$17 / $35 / $100**
+(p10/p50/p90), against $14/$43/$123 under the old model — cheaper across the
+Global South, floored at gate + F = $15/t near quarries. Per tonne of CO₂ that is
+$52 gross at gate-plus-loading and $121 at the cropland median.
 
-**It is not weakly held in its effect.** Unlike the gate cost, this rate moves the
-map, because `v_cost` penalises the haul increment and haul is linear in the rate:
+The two Advanced controls are deliberately asymmetric and the UI says so:
 
-| truck rate | median $/t | p90 $/t | median `v_cost` |
-|---|---|---|---|
-| $0.03 | 18 | 38 | 0.924 |
-| $0.06 | 26 | 66 | 0.858 |
-| **$0.12** (shipped) | **43** | **123** | **0.752** |
-| $0.20 | 65 | 198 | 0.645 |
-| $0.30 | 92 | 292 | 0.548 |
+- **The haul-rate multiplier moves the map.** It scales the regional per-km rates
+  together (×0.25–2.5; cropland median delivered cost runs $20–65/t across it).
+  The fixed charge is *not* multiplied: a dearer trucking market does not make
+  loading a truck proportionally dearer. The multiplier range is an **exploration
+  bracket, not a confidence interval**.
+- **The gate cost does not move the map**, because `v = 1/(1 + (cost − gate)/S)`
+  is independent of the gate by construction. It moves the reported $/t and
+  $/tCO₂, and through the $/tCO₂ screen it moves the headline total.
 
-Both assumptions are therefore **live sliders under Advanced**, with the range
-$0.03–0.30/t-km. That range is an **exploration bracket, not a confidence
-interval** — the endpoints are chosen to span plausible regional variation, not
-inferred from data.
+`tests/cost_sliders.mjs` asserts: the multiplier rescale of the baked texture is
+the bit-exact identity at ×1; reported $/t at defaults reproduces the build's own
+decomposition; the gate shifts reported cost by exactly the gate delta and cannot
+touch `v_cost`; the fixed charge is multiplier-invariant; and the GLSL uses the
+same expression as the JS.
 
-The two sliders are deliberately asymmetric in effect and the UI says so:
-
-- **Truck rate moves the map.** Every score and the cost-screened headline total
-  scale with it.
-- **Gate cost does not move the map**, because `v = 1/(1 + (cost − gate)/S)` is
-  independent of the gate by construction. It moves the reported $/t and $/tCO₂,
-  and through the $/tCO₂ screen it moves the headline total — from **0.59 GtCO₂/yr
-  on 0.19 Gha** at $10/t to **0.39 GtCO₂/yr on 0.11 Gha** at $15/t. Median
-  delivered cost runs $33/t ($114/tCO₂) at a $0/t gate to $48/t ($166/tCO₂) at
-  $15/t.
-
-`tests/cost_sliders.mjs` asserts that at the default slider positions the live path
-reproduces the build's own $/t exactly, that the rescale is the identity at the
-build's rate, and that the gate cannot affect `v_cost`.
+**Still unvalidated.** There is no cost gate in `build_v0.py` and no comparison
+against delivered costs in the verified-delivery fixture — benchmarked is not
+calibrated, and the distance under the rate is still great-circle × 1.35, not
+routed.
 
 ### Choices that are not forced by physics
 
@@ -631,12 +631,15 @@ build's rate, and that the gate cannot affect `v_cost`.
   moves the mean score by ~19 points.
 - **Cost is compensatory with a floor**, unlike the physical terms. Expensive rock
   is bad, not impossible. It is the first genuinely tradeable factor in the model.
-- **The cost penalty applies to the haul increment only.** A site at the gate cost
-  takes no penalty, because every site must buy and crush rock and that carries no
-  spatial information — so the gate cost cancels out of the map. Note this
-  cancellation is only coherent while the gate cost is globally uniform;
+- **The cost penalty applies to the haul increment only.** The gate cost cancels
+  out of the map, because every site must buy and crush rock and that carries no
+  spatial information. With the fixed loading charge the increment is
+  `F + r·d > 0` everywhere, so the multiplier peaks at 0.952 rather than 1. Note
+  the cancellation is only coherent while the gate cost is globally uniform;
   regionalising it (BR $9, IN $3, US $12 are known) would make it real spatial
-  information and require revisiting the logic.
+  information and require revisiting the logic. The *truck rate* being regional
+  poses no such problem — it multiplies a distance, so it is spatial information
+  by construction.
 - **Iron is excluded from alkalinity.** Fe²⁺ release does raise alkalinity, but in
   an oxic agricultural soil re-oxidation returns the protons, so no durable carbon
   is stored. Both protocols agree. Consequence: fayalite scores zero, augite is

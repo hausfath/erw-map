@@ -202,6 +202,10 @@ try:
 except Exception:
     crop_top2_p50 = None
 
+rate_rows = "; ".join(
+    rf"{k.replace('&', chr(92) + '&')} \${g['rate']:g}"
+    for k, g in C.TRUCK_RATE_GROUPS.items())
+
 anch = C.FLUX_CEILING_ANCHORS_MMOL_L
 anchor_rows = "\n".join(
     rf"{k.replace('&', chr(92) + '&')} & {lo:g}--{hi:g} \\" if lo != hi
@@ -758,14 +762,27 @@ dissolution over alkalinity retention -- both are required multiplicatively.
 \subsection{{Delivered cost}}
 
 Truck only, at great-circle distance $\times$ a tortuosity factor, not network
-routing:
+routing, with a fixed per-trip charge and a \emph{{regional}} per-km rate:
 \begin{{equation}}
-c = c_{{\mathrm{{gate}}}} + c_{{\mathrm{{truck}}}}\cdot \tau_{{\mathrm{{road}}}}\, d_{{gc}},
+c = c_{{\mathrm{{gate}}}} + F + r(x)\cdot \tau_{{\mathrm{{road}}}}\, d_{{gc}},
 \qquad
 c_{{\mathrm{{gate}}}} = \${C.FEEDSTOCK_GATE_COST_USD_T:g}\,\mathrm{{t^{{-1}}}},\ \
-c_{{\mathrm{{truck}}}} = \${C.TRUCK_COST_USD_T_KM:g}\,\mathrm{{t^{{-1}}km^{{-1}}}},\ \
+F = \${C.HAUL_FIXED_USD_T:g}\,\mathrm{{t^{{-1}}}},\ \
 \tau_{{\mathrm{{road}}}} = {C.ROAD_TORTUOSITY:g} .
 \end{{equation}}
+$F$ is loading, unloading and positioning, paid once regardless of distance; it is
+decomposed from the USDA grain-truck rate curve, whose per-mile rate falls with
+haul length exactly as a fixed charge spread over more km predicts. $r(x)$ is a
+regional rate rasterised from Natural Earth countries
+({rate_rows}; elsewhere \${C.TRUCK_RATE_DEFAULT:g}), sourced in
+\texttt{{docs/TRUCK\_RATE\_SOURCES.md}} -- only the US entry is a current primary;
+Brazil, China and Europe rest on 2007 World Bank corridor prices inflated by US
+CPI, and India on a 2021 national average. The prior model, a single global
+\${C.TRUCK_COST_USD_T_KM:g}/t-km, was right for the US and roughly twice too high
+for Brazil and India, and because the gate cancels out of the value function the
+truck rate is the only cost parameter doing spatial work -- the error was
+regionally structured, not noise.
+
 Where a usable quarry inventory exists the distance is to a mafic-hosted quarry;
 elsewhere it is distance to mafic \emph{{outcrop}} scaled by
 $\times{C.OUTCROP_TO_QUARRY_FACTOR:g}$, the outcrop-to-quarry ratio measured where
@@ -786,6 +803,11 @@ and multiplies suitability as $v_{{\mathrm{{cost}}}}^{{\,w}}$. The physical half
 annihilates -- zero removal is zero suitability at any price -- while expensive
 rock is discounted rather than excluded, because expensive is bad, not impossible.
 The floor at {C.COST_FLOOR:g} keeps a remote cell visible as physically real.
+With the fixed charge, $c - c_{{\mathrm{{gate}}}} = F + r\,d > 0$ everywhere, so
+$v_{{\mathrm{{cost}}}}$ peaks at $1/(1+F/S) \approx
+{1 / (1 + C.HAUL_FIXED_USD_T / C.HAUL_PENALTY_SCALE_USD_T):.3f}$ at zero distance
+rather than reaching 1: even a farm beside the quarry pays loading and unloading.
+The gate still cancels exactly.
 
 \subsection{{The headline screen: multi-year, discounted}}
 

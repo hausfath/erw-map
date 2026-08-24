@@ -307,23 +307,32 @@ the limiting uncertainty in the cost surface; lithology resolution is.
 Haul is **truck only**: basalt is rarely railed for ERW today, and even where rail
 exists there is still a first- and last-mile trucking leg.
 
-**The haul rate is the weakest number in the economic model, and it is now a
-slider.** $0.12/t-km has no citation, no gate, and no comparison against real
-delivered costs — the gate cost is triangulated across five operator-reported
-prices, the haul rate is not triangulated against anything. One global rate also
-cannot hold across Brazil, India and the US Midwest, and it multiplies a modelled
-distance (great-circle × 1.35, median 275 road km). What can be said for it is that
-it puts the cropland median at $43/t, the right order for a $10/t product hauled
-275 km — a plausibility argument, not a calibration.
+**Trucking is priced regionally, with a fixed loading charge** (August 2026 —
+research in [`docs/TRUCK_RATE_SOURCES.md`](docs/TRUCK_RATE_SOURCES.md)):
+`cost = gate + $5/t + r(region) × road km`, with r from USDA grain-truck rates for
+the US/Canada ($0.10/t-km), NITI Aayog for India/South Asia ($0.045), and World
+Bank corridor prices for Brazil/Latin America ($0.055), China/SE Asia ($0.07),
+Europe ($0.09) and Africa ($0.11); $0.08 elsewhere. Only the US entry is a current
+primary; the others carry 2007–2021 vintages, flagged per entry in `constants.py`.
+The fixed $5/t is decomposed from the USDA distance curve, whose per-mile rate
+falls with haul length exactly as a fixed charge spread over more km predicts.
 
-Both cost assumptions are therefore live under **Advanced**, over $0.03–0.30/t-km
-and $0–15/t. They are asymmetric and the UI says so: the truck rate **moves the
-map** (median delivered cost runs $18/t to $92/t across the range), while the gate
-cost **cannot** move it, because the penalty applies to the haul increment only. The
-gate still moves the headline economic total through the $/tCO₂ screen — 0.59
-GtCO₂/yr on 0.19 Gha at $10/t against 0.39 on 0.11 Gha at $15/t. Full account in
-[`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) §3b; `tests/cost_sliders.mjs` asserts
-the live path reproduces the build exactly at the default positions.
+This replaced a single global $0.12/t-km — a genuinely good US number that was
+~2–2.5× too high for Brazil and India, the two most active ERW deployment
+countries. Because the gate cancels out of the cost multiplier, the truck rate is
+the only cost parameter doing spatial work, so that bias mapped straight into
+suitability-with-cost and penalised exactly the cropland the physics favours.
+Cropland median delivered cost is now **$35/t** (p10 $17, p90 $100), against
+$43/123 under the old model.
+
+Both cost assumptions are live under **Advanced**: a haul-rate multiplier
+(×0.25–2.5 on the regional baselines; median delivered cost runs $20/t to $65/t
+across it) and the gate cost ($0–15/t). They are asymmetric and the UI says so:
+the multiplier **moves the map**, while the gate **cannot**, because the penalty
+applies to the haul increment only. The gate still moves the headline economic
+total through the $/tCO₂ screen. `tests/cost_sliders.mjs` asserts the live path
+reproduces the build exactly at the default positions, that the fixed charge is
+not multiplied, and that the gate cannot touch the multiplier.
 
 **The gate cost was revised down from $25/t to $10/t, because the old figure priced
 the wrong product.** ERW does not buy graded construction aggregate; it buys quarry
@@ -343,21 +352,25 @@ overstated, without perturbing the map.
 **This reverses an earlier change, and the earlier reasoning was bad.** A rail mode
 was added because a truck-only median of $252/t "looked implausible". Two errors:
 that $252 was the median over *all land*, not cropland — cropland sits far closer
-to quarries, and its truck-only median is $43/t, which was always plausible. And
+to quarries, and its truck-only median was $43/t under that model, which was
+always plausible. And
 having misread the number, the response was to add a mechanism that made the output
 look better rather than to find out why it looked odd. The standing rule applies:
 when a number looks wrong, diagnose before changing the model.
 
-**The penalty applies to the haul increment only.** A site at the $10/t gate cost
-takes no penalty, because you must buy and crush rock wherever you are and that
-carries no spatial information. From there the multiplier declines as
-`1/(1 + (cost − gate)/S)` with S = $100/t, putting the half-penalty point at $125/t
-delivered. This replaced five hand-placed breakpoints that ramped hard enough for a
-cell at the cropland median of $43/t to lose 38%; it now loses 27%.
+**The penalty applies to the haul increment only.** The gate cost cancels — you
+must buy and crush rock wherever you are, so it carries no spatial information —
+and the multiplier declines as `1/(1 + (cost − gate)/S)` with S = $100/t, putting
+the half-penalty point at $125/t delivered. Since the fixed loading charge was
+added, the increment is `$5/t + r·d > 0` everywhere, so the multiplier peaks at
+0.952 at zero distance rather than 1: even a farm beside the quarry pays loading
+and unloading. This form replaced five hand-placed breakpoints that ramped hard
+enough for a mid-range cell to lose 38%; the cell at today's cropland median of
+$35/t loses 20%.
 
 S is an editorial choice, not a derived one, so the readout reports feedstock cost
-per tonne CO₂ alongside — **$35/tCO₂ gross at the gate, $149 at the cropland
-median** ($10 and $43 per tonne of rock divided by 0.289 tCO₂/t) —
+per tonne CO₂ alongside — **$52/tCO₂ gross at gate-plus-loading, $121 at the
+cropland median** ($15 and $35 per tonne of rock divided by 0.289 tCO₂/t) —
 letting the trade-off be judged in units that mean something.
 
 Cost is compensatory with a floor, not annihilating: expensive rock is bad, not

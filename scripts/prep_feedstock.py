@@ -2,13 +2,19 @@
 Build the feedstock-access layer: where mafic rock is, where it is actually
 quarried, and roughly what it costs to get it to a field.
 
-  python3 scripts/prep_feedstock.py [--delete-raw]
+  python3 scripts/prep_feedstock.py [--delete-raw] [--cost-only]
+
+--cost-only rebuilds ONLY feedstock_cost.tif and truck_rate.tif from the
+interim distance/confidence products already on disk, so a change to the cost
+MODEL (rates, fixed component) never forces a re-download of the raw lithology
+archives that the disk policy deletes.
 
 Writes to data/interim/:
   mafic_frac.tif            fraction of cell underlain by basic igneous rock
   mafic_km.tif              great-circle km to the nearest mafic outcrop
   quarry_km.tif             km to the nearest mafic-hosted stone quarry
-  feedstock_cost.tif        indicative delivered $/t
+  feedstock_cost.tif        indicative delivered $/t: gate + F + r(region)*d
+  truck_rate.tif            the regional $/t-km surface used in that cost
   feedstock_conf.tif        0-1 confidence that the quarry inventory is usable
 
 THE CONSTRUCT-VALIDITY PROBLEM, stated up front, because it shapes everything:
@@ -223,7 +229,152 @@ def load_stone_quarries():
     return np.array(keep)
 
 
+NE_ADMIN0_URL = ("https://naciscdn.org/naturalearth/50m/cultural/"
+                 "ne_50m_admin_0_countries.zip")
+
+
+def truck_rate_raster(transform, w, h, crs) -> np.ndarray:
+    """Regional truck rate, $/t-km per cell, from Natural Earth admin-0.
+
+    Rates and their sources live in constants.TRUCK_RATE_GROUPS; this function
+    only paints them onto the grid. Coastal cells whose centre misses every
+    polygon inherit the nearest country's rate (same trick as the admin-name
+    lookup); remaining unlabelled land gets TRUCK_RATE_DEFAULT.
+
+    FALLBACK: if geopandas or the download is unavailable, returns a uniform
+    surface at the old global TRUCK_COST_USD_T_KM, loudly -- a build should
+    degrade to the pre-regional behaviour, never silently to a wrong mix.
+    """
+    print("regional truck rates from Natural Earth admin-0")
+    try:
+        import geopandas as gpd
+    except ImportError:
+        print(f"    WARNING: geopandas unavailable; UNIFORM fallback at "
+              f"${C.TRUCK_COST_USD_T_KM}/t-km")
+        return np.full((h, w), C.TRUCK_COST_USD_T_KM, dtype="float32")
+
+    zp = RAW / "ne_50m_admin_0_countries.zip"
+    if not zp.exists():
+        import urllib.request
+        try:
+            urllib.request.urlretrieve(NE_ADMIN0_URL, zp)
+        except Exception as e:  # noqa: BLE001 -- degrade, never die, on network
+            print(f"    WARNING: Natural Earth download failed ({e}); UNIFORM "
+                  f"fallback at ${C.TRUCK_COST_USD_T_KM}/t-km")
+            return np.full((h, w), C.TRUCK_COST_USD_T_KM, dtype="float32")
+
+    ctry = gpd.read_file(f"zip://{zp}")
+    # Natural Earth quirk: ISO_A2 is "-99" for France, Norway and a few others;
+    # ISO_A2_EH ("everything held equal") carries the real code there.
+    iso_col = "ISO_A2_EH" if "ISO_A2_EH" in ctry.columns else "ISO_A2"
+    shapes = []
+    for _, row in ctry.iterrows():
+        iso = str(row.get(iso_col) or "")
+        if iso in ("-99", "nan"):
+            iso = ""
+        rate = C.truck_rate_for(iso, str(row.get("CONTINENT") or ""))
+        shapes.append((row.geometry, rate))
+
+    rate = rasterize(shapes, out_shape=(h, w), transform=transform,
+                     fill=np.nan, dtype="float32", all_touched=False)
+
+    # Nearest-country fill for coastal cells, bounded so open ocean stays NaN.
+    labelled = np.isfinite(rate)
+    dist, (iy, ix) = ndimage.distance_transform_edt(
+        ~labelled, return_indices=True)
+    near = (dist > 0) & (dist <= 3)
+    rate[near] = rate[iy[near], ix[near]]
+
+    # Report the areal mix OVER LABELLED LAND, so a bad join is visible in the
+    # build log. Reporting over the whole grid buried the signal under ocean
+    # cells, which are about to get the default painted on them harmlessly.
+    lab = np.isfinite(rate)
+    vals, counts = np.unique(np.round(rate[lab], 4), return_counts=True)
+    label_of = {round(g["rate"], 4): name
+                for name, g in C.TRUCK_RATE_GROUPS.items()}
+    label_of[round(C.TRUCK_RATE_DEFAULT, 4)] = "default/elsewhere"
+    label_of[round(C.TRUCK_COST_USD_T_KM, 4)] = "UNIFORM FALLBACK"
+    for v, n in sorted(zip(vals, counts), key=lambda t: -t[1]):
+        print(f"    ${v:.3f}/t-km  {100 * n / lab.sum():5.1f}% of labelled land  "
+              f"({label_of.get(round(float(v), 4), '??')})")
+
+    # Whatever remains unlabelled (open ocean, tiny islands beyond the fill
+    # radius) gets the default rather than NaN, so cost stays defined wherever
+    # haul is.
+    rate = np.where(lab, rate, C.TRUCK_RATE_DEFAULT)
+    return rate.astype("float32")
+
+
+def build_cost(transform, w, h, crs, mafic_km, quarry_km, conf) -> None:
+    """Delivered cost, deliberately simple and fully stated:
+
+        cost = gate + F + r(region) * road_km
+
+    F is the fixed per-trip charge (loading/unloading, USDA GTOR curve) and
+    r(region) the regional truck rate -- both new in Aug 2026, see
+    docs/TRUCK_RATE_SOURCES.md and constants.TRUCK_RATE_GROUPS. Before that the
+    model was a single global $0.12/t-km with no fixed component, which was
+    right for the US and ~2-2.5x high for Brazil and India.
+    """
+    print("indicative delivered cost")
+    haul_km = np.where(np.isfinite(quarry_km) & (conf > CONF_USABLE), quarry_km,
+                       mafic_km * C.OUTCROP_TO_QUARRY_FACTOR)
+    # Truck for the whole haul. Basalt is rarely railed for ERW today, and rail
+    # still needs a first- and last-mile truck leg, so a rail rate would flatter
+    # current practice. See constants.TRUCK_COST_USD_T_KM for why an earlier
+    # rail mode was removed.
+    road_km = C.ROAD_TORTUOSITY * haul_km
+    rate = truck_rate_raster(transform, w, h, crs)
+    cost = (C.FEEDSTOCK_GATE_COST_USD_T + C.HAUL_FIXED_USD_T + rate * road_km)
+    print(f"  truck only: ${C.HAUL_FIXED_USD_T:.0f}/t fixed + regional rate on "
+          f"{C.ROAD_TORTUOSITY}x great-circle distance")
+
+    # ROUND TRIP, fatal: the written surface must decompose back into exactly
+    # gate + F + r*d. Catches a unit slip or a misaligned rate raster here,
+    # where all three pieces are still in hand, rather than three artefacts
+    # downstream in a browser readout.
+    chk = np.isfinite(cost) & np.isfinite(road_km) & (road_km > 1.0)
+    resid = np.abs(cost[chk] - C.FEEDSTOCK_GATE_COST_USD_T - C.HAUL_FIXED_USD_T
+                   - rate[chk] * road_km[chk])
+    if chk.any() and float(resid.max()) > 1e-3:
+        raise SystemExit(f"cost round-trip failed: max residual "
+                         f"${float(resid.max()):.4f}/t")
+    print(f"  round trip gate+F+r*d: max residual ${float(resid.max()):.1e}/t "
+          f"over {int(chk.sum()):,} cells  [PASS]")
+
+    v = cost[np.isfinite(cost)]
+    print(f"  $/t delivered: p10 {np.percentile(v, 10):.0f}  "
+          f"p50 {np.percentile(v, 50):.0f}  p90 {np.percentile(v, 90):.0f}")
+    write_tif(INTERIM / "feedstock_cost.tif", cost, transform, crs, as_int=True)
+    write_tif(INTERIM / "truck_rate.tif", rate, transform, crs)
+
+
+def cost_only() -> int:
+    """Rebuild the cost (and rate) tifs from interim products already on disk."""
+    transform, w, h, crs = grid()
+
+    def rd(name):
+        with rasterio.open(INTERIM / name) as s:
+            a = s.read(1).astype("float32")
+            nod = s.nodatavals[0]
+            if nod is not None and np.isfinite(nod):
+                a[a == nod] = np.nan
+            return a
+
+    try:
+        mafic_km, quarry_km, conf = (rd(n) for n in
+                                     ("mafic_km.tif", "quarry_km.tif",
+                                      "feedstock_conf.tif"))
+    except rasterio.errors.RasterioIOError as e:
+        print(f"--cost-only needs the interim distance products: {e}")
+        return 1
+    build_cost(transform, w, h, crs, mafic_km, quarry_km, conf)
+    return 0
+
+
 def main() -> int:
+    if "--cost-only" in sys.argv:
+        return cost_only()
     transform, w, h, crs = grid()
 
     frac = mafic_fraction(transform, w, h, crs)
@@ -306,22 +457,7 @@ def main() -> int:
     write_tif(INTERIM / "quarry_km.tif", quarry_km, transform, crs, as_int=True)
     write_tif(INTERIM / "feedstock_conf.tif", conf, transform, crs)
 
-    # Indicative delivered cost. Deliberately simple and fully stated.
-    print("indicative delivered cost")
-    haul_km = np.where(np.isfinite(quarry_km) & (conf > CONF_USABLE), quarry_km,
-                       mafic_km * C.OUTCROP_TO_QUARRY_FACTOR)
-    # Truck for the whole haul. Basalt is rarely railed for ERW today, and rail
-    # still needs a first- and last-mile truck leg, so a rail rate would flatter
-    # current practice. See constants.TRUCK_COST_USD_T_KM for why an earlier
-    # rail mode was removed.
-    road_km = C.ROAD_TORTUOSITY * haul_km
-    cost = C.FEEDSTOCK_GATE_COST_USD_T + C.TRUCK_COST_USD_T_KM * road_km
-    print(f"  truck only, ${C.TRUCK_COST_USD_T_KM}/t-km on "
-          f"{C.ROAD_TORTUOSITY}x great-circle distance")
-    v = cost[np.isfinite(cost)]
-    print(f"  $/t delivered: p10 {np.percentile(v, 10):.0f}  "
-          f"p50 {np.percentile(v, 50):.0f}  p90 {np.percentile(v, 90):.0f}")
-    write_tif(INTERIM / "feedstock_cost.tif", cost, transform, crs, as_int=True)
+    build_cost(transform, w, h, crs, mafic_km, quarry_km, conf)
 
     # Point list for the map overlay. Rounded to 2 dp (~1 km), which is finer than
     # the display grid, and de-duplicated per cell so dense clusters do not bloat

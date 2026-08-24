@@ -1561,6 +1561,20 @@ window.ERW = {
     "tco2PerT": 0.289,
     "gateUsdT": 10.0,
     "truckUsdTKm": 0.12,
+    "truckRates": {
+      "US/Canada": 0.1,
+      "Europe": 0.09,
+      "Brazil/Latin America": 0.055,
+      "India/South Asia": 0.045,
+      "China/SE Asia": 0.07,
+      "Africa": 0.11
+    },
+    "truckRateDefault": 0.08,
+    "truckMultRange": [
+      0.25,
+      2.5
+    ],
+    "haulFixedUsdT": 5.0,
     "expOn": 1.0,
     "tortuosity": 1.35,
     "outcropToQuarry": 2.0,
@@ -1568,11 +1582,6 @@ window.ERW = {
       0.0,
       15.0
     ],
-    "truckRange": [
-      0.03,
-      0.3
-    ],
-    "truckUnsourced": true,
     "gateRegional": {
       "BR": 9.0,
       "IN": 3.0,

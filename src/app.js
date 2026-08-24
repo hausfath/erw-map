@@ -55,9 +55,12 @@
   const econ = {
     costExp: E.cost ? E.cost.expDefault : 0,
     // The two delivered-cost assumptions, live. Defaults are the build's own
-    // values, so the shipped view is the built view.
+    // values, so the shipped view is the built view. truckMult multiplies the
+    // REGIONAL per-km rates baked into the texture (US $0.10, Brazil $0.055,
+    // India $0.045, ...); a single $/t-km number stopped being meaningful when
+    // the rates became regional.
     gate: E.cost ? E.cost.gateUsdT : 0,
-    truck: E.cost ? E.cost.truckUsdTKm : 0,
+    truckMult: 1,
   };
 
   const CRIT = E.terms;
@@ -114,26 +117,35 @@
   const $ = (id) => document.getElementById(id);
   const clamp = (lo, v, hi) => Math.max(lo, Math.min(hi, v));
 
-  /* Truck rate as a multiple of the rate baked into tex3.b. */
+  /* Multiplier on the regional per-km rates baked into tex3.b. */
   function truckScale() {
-    if (!E.cost || !E.cost.truckUsdTKm) return 1;
-    return econ.truck / E.cost.truckUsdTKm;
+    return econ.truckMult;
   }
 
-  /* Baked v_cost -> v_cost at the current truck rate. Mirrors the shader
-     exactly; the Node harness in tests/ asserts they agree. */
+  /* F/S: the fixed per-trip haul charge over the penalty scale. */
+  function haulFixFrac() {
+    return E.cost ? E.cost.haulFixedUsdT / E.cost.haulScaleUsdT : 0;
+  }
+
+  /* Baked v_cost -> v_cost at the current rate multiplier. The slider scales
+     the per-km part only, so with a = v*(1 + F/S) the rescale is
+     v' = v / (a + m*(1 - a)) -- exact, and the bit-exact identity at m = 1.
+     Mirrors the shader; the Node harness in tests/ asserts they agree. */
   function vCostLive(vBaked) {
     const fl = E.cost ? E.cost.floor : 1;
-    const k = truckScale();
     if (!(vBaked > 0)) return fl;
-    return clamp(fl, vBaked / (k + vBaked * (1 - k)), 1);
+    // min(,1): quantisation can push a zero-distance cell one LSB above the
+    // encodable maximum 1/(1 + F/S); unguarded, the multiplier would then run
+    // BACKWARDS on it. Clamping a treats it as the zero-distance cell it is.
+    const a = Math.min(vBaked * (1 + haulFixFrac()), 1);
+    return clamp(fl, vBaked / (a + truckScale() * (1 - a)), 1);
   }
 
   /* True when both cost assumptions sit at the build's own values. */
   function econAtRef() {
     if (!E.cost) return true;
     return Math.abs(econ.gate - E.cost.gateUsdT) < 1e-9
-        && Math.abs(econ.truck - E.cost.truckUsdTKm) < 1e-12;
+        && Math.abs(econ.truckMult - 1) < 1e-12;
   }
 
   function hex2rgb(h) {
@@ -194,11 +206,14 @@
   uniform float uCx[6], uCy[6];   // suitability knots, x in log10(tCO2/ha/yr)
   uniform float uCostExp;         // exponent on the compensatory cost multiplier
   uniform float uCostFloor;
-  // Truck rate as a MULTIPLE of the rate baked into tex3.b. tex3.b stores
-  // v = 1/(1 + haul/S) at the build's rate, and haul is linear in the rate, so
-  // rescaling by k = rate/rate_baked is exact: v' = v / (k + v(1 - k)). No
-  // texture change is needed, and at k = 1 this is the identity.
-  uniform float uTruckScale;
+  // Live rescale of the baked cost value function. tex3.b stores
+  // v = 1/(1 + (F + r(region)*d)/S) at the build's regional rates and fixed
+  // per-trip charge F. The slider multiplies the PER-KM part only; with
+  // a = v*(1 + F/S) the rescale is v' = v / (a + m*(1 - a)), exact because
+  // haul is affine in the rate. Written in this form (not 1/(1 + f + m*(...)))
+  // so that m = 1 is the bit-exact identity: a + (1 - a) rounds to exactly 1.
+  uniform float uTruckScale;      // m, the multiplier on regional rates
+  uniform float uHaulFix;         // F/S, the fixed component over the scale
 
   const vec4 OUT_OF_DOMAIN = vec4(0.0, 0.0, 0.0, 0.0);
   const vec4 NEGLIGIBLE    = vec4(0.16, 0.17, 0.19, 1.0);
@@ -369,11 +384,15 @@
     float vBaked = uCostFloor
                  + clamp((cc.b * 255.0 - 5.0) / 250.0, 0.0, 1.0) * (1.0 - uCostFloor);
     // The QUARRY GATE COST DELIBERATELY DOES NOT APPEAR HERE. v_cost penalises the
-    // haul increment only -- v = 1/(1 + (cost - gate)/S) -- so the gate cancels
+    // haul increment only -- v = 1/(1 + (F + r*d)/S) -- so the gate cancels
     // out of the multiplier exactly. It moves the reported $/t and the cost
     // screen, never the colour. The UI says so, because a slider that visibly
     // does nothing otherwise reads as broken.
-    float vCost = clamp(vBaked / (uTruckScale + vBaked * (1.0 - uTruckScale)),
+    // min(,1.0): a byte one LSB above the zero-distance maximum (possible via
+    // int16 cost rounding) would otherwise flip the multiplier's direction.
+    // Physically it IS a zero-distance cell, so its per-km increment is zero.
+    float aFix = min(vBaked * (1.0 + uHaulFix), 1.0);
+    float vCost = clamp(vBaked / (aFix + uTruckScale * (1.0 - aFix)),
                         uCostFloor, 1.0);
     sc *= pow(vCost, uCostExp);
 
@@ -600,6 +619,8 @@
     gl.uniform1f(u("uCostExp"), econ.costExp);
     gl.uniform1f(u("uCostFloor"), E.cost ? E.cost.floor : 1.0);
     gl.uniform1f(u("uTruckScale"), truckScale());
+    gl.uniform1f(u("uHaulFix"),
+                 E.cost ? E.cost.haulFixedUsdT / E.cost.haulScaleUsdT : 0.0);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texA);
     gl.uniform1i(u("uA"), 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texB);
@@ -797,13 +818,17 @@
      back-interpolation the five-knot version needed. */
   function costUsdT(vBaked) {
     if (!E.cost) return null;
-    // Takes the BAKED v from tex3.b, not a rescaled one: the haul increment it
-    // encodes is at the build's truck rate, and haul is linear in the rate, so
-    // scaling here is exact. The gate is the LIVE value, which is why it moves
-    // this number while never touching the shader.
+    // Takes the BAKED v from tex3.b, not a rescaled one. The baked haul
+    // increment is F + r(region)*d; the slider multiplies only the per-km
+    // part, so haul' = F + m*(haul - F) -- exact, since haul is affine in the
+    // rate. The gate is the LIVE value, which is why it moves this number
+    // while never touching the shader.
     const v = clamp(E.cost.floor, vBaked, 1);
-    const haul = E.cost.haulScaleUsdT * (1 / v - 1) * truckScale();
-    return econ.gate + haul;
+    const F = E.cost.haulFixedUsdT;
+    const haul = E.cost.haulScaleUsdT * (1 / v - 1);
+    // max(,0) mirrors the shader's guard: a byte quantised past the
+    // zero-distance point reports gate + F, never less.
+    return econ.gate + F + truckScale() * Math.max(haul - F, 0);
   }
 
   function buildSliders() {
@@ -899,25 +924,34 @@
 
      They are deliberately NOT symmetric in effect, and the UI has to say so:
 
-       truck rate  moves the map. v_cost penalises the haul increment, and haul
-                   is linear in the rate, so every score and the cost-screened
-                   headline total scale with it.
-       gate cost   does NOT move the map. v = 1/(1 + (cost - gate)/S) is
-                   independent of the gate by construction, so the colour cannot
-                   change. It moves the reported $/t and $/tCO2, and through the
-                   $/tCO2 screen it moves the headline total.
+       rate multiplier  moves the map. It scales the regional per-km rates
+                        baked into the texture (haul = F + m*r(region)*d, so
+                        haul is affine in m), and the cost-screened headline
+                        total follows. The fixed loading charge F is NOT
+                        multiplied: a dearer trucking market does not make
+                        loading a truck proportionally dearer.
+       gate cost        does NOT move the map. v = 1/(1 + (cost - gate)/S) is
+                        independent of the gate by construction, so the colour
+                        cannot change. It moves the reported $/t and $/tCO2,
+                        and through the $/tCO2 screen the headline total.
 
      Without that caption the gate slider looks broken. */
   function buildEconAssumptionSliders() {
     const host = $("econ-assumption-sliders");
     if (!E.cost || !host) return;
     const gr = E.cost.gateRange || [0, 15];
-    const tr = E.cost.truckRange || [0.03, 0.30];
+    const tr = E.cost.truckMultRange || [0.25, 2.5];
+    const rr = E.cost.truckRates || {};
+    const rateList = Object.keys(rr)
+      .map((k) => `${k} $${rr[k]}`).join(", ");
     const rows = [
-      {k: "truck", label: "Truck haul ($/t\u00b7km)",
-       min: tr[0], max: tr[1], step: 0.005,
-       why: "Applied to great-circle distance \u00d7 " + E.cost.tortuosity +
-            " tortuosity, not a routed network. Moves the map."},
+      {k: "truckMult", label: "Haul rate \u00d7 regional baseline",
+       min: tr[0], max: tr[1], step: 0.05,
+       why: "Multiplies the regional per-km rates baked into the map (" +
+            rateList + "; elsewhere $" + (E.cost.truckRateDefault || "?") +
+            "), on great-circle distance \u00d7 " + E.cost.tortuosity +
+            " tortuosity plus a $" + E.cost.haulFixedUsdT +
+            "/t fixed loading charge. Moves the map."},
       {k: "gate", label: "Quarry gate ($/t)",
        min: gr[0], max: gr[1], step: 0.5,
        why: "Rock at the quarry before haulage. Changes the reported cost and " +
@@ -941,20 +975,20 @@
   }
 
   function syncEconAssumptions() {
-    if (!E.cost || !$("ev-truck")) return;
-    $("ev-truck").textContent = "$" + econ.truck.toFixed(3);
+    if (!E.cost || !$("ev-truckMult")) return;
+    $("ev-truckMult").textContent = "\u00d7" + econ.truckMult.toFixed(2);
     $("ev-gate").textContent = "$" + econ.gate.toFixed(0);
     const k = truckScale();
     const ref = econAtRef();
-    // At the reference, "1.00x the build's haul rate" is a tautology dressed as a
-    // measurement -- the same trap the grind readout documents. Say it plainly.
+    // At the reference, "1.00x the regional baselines" is a tautology dressed as
+    // a measurement -- the same trap the grind readout documents. Say it plainly.
     $("econ-assumption-readout").textContent = ref
       ? "The build\u2019s own assumptions, against which the map was generated"
       : (Math.abs(k - 1) < 1e-9
           ? "Gate cost changed; reported cost moves, the map does not"
           : "Haul " + (k >= 1 ? k.toFixed(2) + "\u00d7 dearer" : (1 / k).toFixed(2)
-             + "\u00d7 cheaper") + " than the build\u2019s $"
-            + E.cost.truckUsdTKm + "/t\u00b7km");
+             + "\u00d7 cheaper")
+            + " than the regional baselines (fixed charge unchanged)");
   }
 
   function syncEcon() {
@@ -965,11 +999,14 @@
     $("econ-tag").textContent = on ? "On" : "Off";
     const basis = $("econ-basis");
     if (basis) {
-      basis.innerHTML = `$${econ.gate.toFixed(0)}/t at the quarry gate plus ` +
-        `trucking at $${econ.truck.toFixed(3)}/t-km from the nearest mafic ` +
-        `quarry.` + (econAtRef() ? "" :
-          ` <b>Adjusted from the build\u2019s $${E.cost.gateUsdT}/t and ` +
-          `$${E.cost.truckUsdTKm}/t-km.</b>`);
+      basis.innerHTML = `$${econ.gate.toFixed(0)}/t at the quarry gate, a ` +
+        `$${E.cost.haulFixedUsdT}/t loading charge, plus trucking at regional ` +
+        `rates ($${E.cost.truckRates ? E.cost.truckRates["India/South Asia"] : "?"}` +
+        `\u2013$${E.cost.truckRates ? E.cost.truckRates["Africa"] : "?"}/t-km; ` +
+        `US $${E.cost.truckRates ? E.cost.truckRates["US/Canada"] : "?"}) from ` +
+        `the nearest mafic quarry.` + (econAtRef() ? "" :
+          ` <b>Adjusted from the build\u2019s $${E.cost.gateUsdT}/t gate and ` +
+          `\u00d71.00 haul.</b>`);
     }
     // Two distinct effects, and the second is easy to miss: the toggle discounts
     // the MAP by cost, and it also restricts the headline TOTAL to cells under the
@@ -1356,7 +1393,7 @@
   let baseScores = null, baseEdges = null, baseKey = null;
   function neutralBase() {
     const key = ssaShift().toFixed(6) + "|" + econ.costExp + "|" + (ceilOn ? 1 : 0)
-              + "|" + econ.gate.toFixed(4) + "|" + econ.truck.toFixed(6);
+              + "|" + econ.gate.toFixed(4) + "|" + econ.truckMult.toFixed(6);
     if (baseKey !== key || !baseScores) {
       baseScores = scoresFor(CRIT.map(() => 1));
       baseEdges = edgesFrom(baseScores);
@@ -1501,7 +1538,12 @@
       depends on trusting it; they are not importance weights, because the terms
       are not substitutable.</li>
       <li><b>Delivered cost (optional).</b> $${E.cost.gateUsdT}/t at the quarry
-      gate plus trucking at $${E.cost.truckUsdTKm}/t-km over
+      gate, a $${E.cost.haulFixedUsdT}/t fixed loading charge, plus trucking at
+      regional rates \u2014
+      ${Object.entries(E.cost.truckRates || {}).map(([k, v]) => `${k} $${v}`)
+        .join(", ")}, elsewhere $${E.cost.truckRateDefault}/t-km
+      (sources and vintages in docs/TRUCK_RATE_SOURCES.md; only the US rate is
+      current) \u2014 over
       ${E.cost.tortuosity}× great-circle distance to the nearest mafic-hosted
       quarry (US MRDS, Brazil ANM, OSM). Where no quarry inventory is usable,
       distance to mafic outcrop (GLiM) is scaled by ${E.cost.outcropToQuarry}×,
@@ -1531,7 +1573,11 @@
           deliveries (${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%)</td></tr>
         <tr><td>Quarry gate cost</td><td>$${E.cost.gateUsdT}/t, from
           operator-reported quarry-fines prices</td></tr>
-        <tr><td>Trucking</td><td>$${E.cost.truckUsdTKm}/t-km ×
+        <tr><td>Trucking</td><td>regional $/t-km (US
+          $${E.cost.truckRates ? E.cost.truckRates["US/Canada"] : "?"}, Brazil
+          $${E.cost.truckRates ? E.cost.truckRates["Brazil/Latin America"] : "?"},
+          India $${E.cost.truckRates ? E.cost.truckRates["India/South Asia"] : "?"})
+          + $${E.cost.haulFixedUsdT}/t fixed, ×
           ${E.cost.tortuosity} road tortuosity</td></tr>
         <tr><td>D_w (transport limitation)</td><td>${p.dw ? p.dw.value : "?"} m/yr
           (published range ${p.dw ? p.dw.range.join("–") : "?"})</td></tr>
@@ -1637,13 +1683,15 @@
       US and static since 2011; mining titles (Brazil) and crowd-sourced points
       overstate producing quarries. Haul distance is great-circle × tortuosity,
       not road-routed.</p>
-      <p><b>The haul rate is unsourced and unvalidated.</b> $${E.cost ? E.cost.truckUsdTKm : 0.12}/t&middot;km
-      has no citation, no gate and no comparison against real delivered costs,
-      and one global rate cannot hold across Brazil, India and the US Midwest. It
-      is the widest uncertainty in the economic layer, and it moves the map: at
-      $0.03 the median cell delivers rock at $18/t, at $0.30 it is $92/t. Both
-      cost assumptions are sliders under Advanced so the dependence is visible
-      rather than buried.</p>
+      <p><b>The haul rates are benchmarked, not calibrated.</b> Trucking is
+      priced with regional rates (only the US entry is current — USDA grain-truck
+      rates; Brazil, China and Europe rest on 2007 World Bank corridor prices
+      inflated by US CPI, India on a 2021 national average) plus a fixed
+      $${E.cost ? E.cost.haulFixedUsdT : 5}/t loading charge. Nothing validates
+      the resulting cost surface against real delivered costs, and haul distance
+      is modelled, not routed. The rate multiplier and gate cost are sliders
+      under Advanced so the dependence is visible rather than buried; sources and
+      vintages are in docs/TRUCK_RATE_SOURCES.md.</p>
       <p><b>Screening probabilities are not calibrated.</b> SoilGrids quantiles
       describe ~250 m block averages, not sampled fields, so field-scale
       threshold exceedance is understated; the SOC screen is a screening
@@ -1911,8 +1959,8 @@
     };
     $("btn-econ-reset").onclick = () => {
       if (!E.cost) return;
-      econ.gate = E.cost.gateUsdT; econ.truck = E.cost.truckUsdTKm;
-      $("es-gate").value = econ.gate; $("es-truck").value = econ.truck;
+      econ.gate = E.cost.gateUsdT; econ.truckMult = 1;
+      $("es-gate").value = econ.gate; $("es-truckMult").value = econ.truckMult;
       refresh();
     };
     $("open-method").onclick = () => $("method-modal").classList.remove("hidden");

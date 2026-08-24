@@ -111,7 +111,12 @@ warm, wet, high-CDR cropland *and* most current ERW deployment. A uniform $0.12
 systematically overstates delivered cost — and therefore understates
 suitability-with-cost — in exactly the places the physics favours.
 
-## 7. Recommendation
+## 7. Recommendation — IMPLEMENTED 2026-08-24
+
+Both items below shipped the day this note was written: `constants.TRUCK_RATE_GROUPS`
+carries the regional table with per-entry sources and vintages, `HAUL_FIXED_USD_T`
+the fixed component, and `prep_feedstock.py --cost-only` rebuilds the cost surface
+from them. The text is kept as written for the record.
 
 1. **Regionalise the rate** rather than change the global default. A short
    country-group table (US/Canada 0.10, Europe 0.09, Brazil/Latin America 0.055,

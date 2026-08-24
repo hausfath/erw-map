@@ -5,6 +5,60 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Trucking priced regionally, with a fixed loading charge
+
+The single global $0.12/t-km is gone. Delivered cost is now
+
+    cost = gate + F + r(region) x road_km
+
+with `F = $5/t` and `r` rasterised from Natural Earth countries: US/Canada $0.10
+(USDA GTOR Q2 2026, the only current primary), Europe $0.09, Brazil/Latin America
+$0.055, India/South Asia $0.045, China/SE Asia $0.07 (all World Bank 2007 corridor
+prices, CPI-inflated), Africa $0.11, elsewhere $0.08 (a judgment call, flagged as
+such). Sources and vintages per entry in `constants.TRUCK_RATE_GROUPS`; the
+research note is `docs/TRUCK_RATE_SOURCES.md`. Russia is pinned to the default
+explicitly — Natural Earth files it under continent "Europe", and inheriting a
+rate by cartographic convention is not sourcing.
+
+Why: the old uniform rate was right for the US and ~2–2.5× high for Brazil and
+India, and because the gate cancels out of `v_cost`, the truck rate is the only
+cost parameter doing spatial work — the bias fell on exactly the warm, wet
+cropland the physics favours. The fixed charge comes from the same USDA curve:
+per-mile rates fall with distance ($0.187/$0.120/$0.102 per t-km at 25/100/200
+miles), the signature of a $3.6–6/t per-trip cost spread over more km. A pure
+`rate x distance` model understated short hauls and overstated long ones.
+
+Measured: cropland delivered cost p10/p50/p90 goes $14/$43/$123 → **$17/$35/$100**.
+Physics untouched — global gross is 2.432 GtCO₂/yr before and after, since v_cost
+enters only suitability-with-cost and the screened footer total.
+
+Mechanics worth recording:
+
+- **Still no new texture.** tex3.b bakes the finished value function; the slider
+  became a multiplier on the per-km part only, and with `a = v(1 + F/S)` the
+  rescale `v' = v/(a + m(1−a))` is exact — written in that form, not as
+  `1/(1 + f + m(...))`, so ×1 is the bit-exact identity (`a + (1−a)` rounds to
+  exactly 1).
+- **The fixed charge is not multiplied.** A dearer trucking market does not make
+  loading a truck proportionally dearer. The harness asserts a zero-distance
+  cell reports gate + F at every multiplier.
+- **A zero-distance guard, found by the harness.** Bytes one LSB above the
+  encodable zero-distance maximum (possible via int16 cost rounding) would run
+  the multiplier backwards; both the shader and the JS clamp the per-km
+  increment at zero, and the harness asserts monotonicity across every
+  encodable byte.
+- **`prep_feedstock.py --cost-only`** rebuilds the cost and rate tifs from the
+  interim distance products, so a cost-model change never forces re-downloading
+  the lithology archives the disk policy deletes. A fatal round-trip check
+  decomposes the written surface back into gate + F + r·d (max residual $6e-5/t).
+- `v_cost` now peaks at 1/(1 + F/S) = 0.952 at zero distance rather than 1.0:
+  even a farm beside the quarry pays loading and unloading. The gate still
+  cancels exactly, and the old "v = 1 exactly at the gate" doc language is
+  superseded everywhere it appeared.
+
+Still unvalidated: no comparison against real delivered costs, and the distance
+is great-circle × 1.35, not routed. Benchmarked is not calibrated.
+
 ## Delivered-cost assumptions are sliders, and the haul rate is admitted to be a guess
 
 Both economic assumptions are now live under Advanced: quarry gate $0–15/t and

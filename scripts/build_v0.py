@@ -429,8 +429,9 @@ def main() -> int:
                       resampling=Resampling.nearest), nan=0.0)
         mafic_frac = np.nan_to_num(
             onto_grid(INTERIM / "mafic_frac.tif", transform, w, h, crs), nan=0.0)
-        # Penalty on the haul increment only: 1.0 at the gate cost, where there
-        # is no transport to charge for.
+        # Penalty on the haul increment only (gate cancels). With the fixed
+        # per-trip component the increment is F + r*d, so v peaks at
+        # 1/(1 + F/S) ~ 0.95 at zero distance rather than 1.0.
         v_cost = np.clip(np.nan_to_num(C.cost_value(cost_usd_t),
                                        nan=C.COST_FLOOR), C.COST_FLOOR, 1.0)
         feed_source = ("GLiM mafic outcrop + MRDS/ANM/OSM mafic-hosted "
@@ -1285,13 +1286,20 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
                  "haulScaleUsdT": C.HAUL_PENALTY_SCALE_USD_T,
                  "tco2PerT": round(C.DELIVERED_BASALT_TCO2_PER_T, 3),
                  "gateUsdT": C.FEEDSTOCK_GATE_COST_USD_T,
+                 # The regional rate surface is baked into tex3.b via
+                 # feedstock_cost.tif; the browser needs only the display table,
+                 # the fixed component, and the multiplier range. truckUsdTKm
+                 # survives as the US anchor quoted in captions.
                  "truckUsdTKm": C.TRUCK_COST_USD_T_KM,
+                 "truckRates": {k: g["rate"]
+                                for k, g in C.TRUCK_RATE_GROUPS.items()},
+                 "truckRateDefault": C.TRUCK_RATE_DEFAULT,
+                 "truckMultRange": list(C.TRUCK_RATE_MULT_RANGE),
+                 "haulFixedUsdT": C.HAUL_FIXED_USD_T,
                  "expOn": C.COST_EXPONENT_ON,
                  "tortuosity": C.ROAD_TORTUOSITY,
                  "outcropToQuarry": C.OUTCROP_TO_QUARRY_FACTOR,
                  "gateRange": list(C.FEEDSTOCK_GATE_COST_RANGE),
-                 "truckRange": list(C.TRUCK_COST_RANGE),
-                 "truckUnsourced": C.TRUCK_COST_IS_UNSOURCED,
                  "gateRegional": C.FEEDSTOCK_GATE_REGIONAL_USD_T,
                  "gateSource": C.FEEDSTOCK_GATE_SOURCE,
                  "source": C.FEEDSTOCK_COST_SOURCE},

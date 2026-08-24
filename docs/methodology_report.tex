@@ -569,14 +569,27 @@ dissolution over alkalinity retention -- both are required multiplicatively.
 \subsection{Delivered cost}
 
 Truck only, at great-circle distance $\times$ a tortuosity factor, not network
-routing:
+routing, with a fixed per-trip charge and a \emph{regional} per-km rate:
 \begin{equation}
-c = c_{\mathrm{gate}} + c_{\mathrm{truck}}\cdot \tau_{\mathrm{road}}\, d_{gc},
+c = c_{\mathrm{gate}} + F + r(x)\cdot \tau_{\mathrm{road}}\, d_{gc},
 \qquad
 c_{\mathrm{gate}} = \$10\,\mathrm{t^{-1}},\ \
-c_{\mathrm{truck}} = \$0.12\,\mathrm{t^{-1}km^{-1}},\ \
+F = \$5\,\mathrm{t^{-1}},\ \
 \tau_{\mathrm{road}} = 1.35 .
 \end{equation}
+$F$ is loading, unloading and positioning, paid once regardless of distance; it is
+decomposed from the USDA grain-truck rate curve, whose per-mile rate falls with
+haul length exactly as a fixed charge spread over more km predicts. $r(x)$ is a
+regional rate rasterised from Natural Earth countries
+(US/Canada \$0.1; Europe \$0.09; Brazil/Latin America \$0.055; India/South Asia \$0.045; China/SE Asia \$0.07; Africa \$0.11; elsewhere \$0.08), sourced in
+\texttt{docs/TRUCK\_RATE\_SOURCES.md} -- only the US entry is a current primary;
+Brazil, China and Europe rest on 2007 World Bank corridor prices inflated by US
+CPI, and India on a 2021 national average. The prior model, a single global
+\$0.12/t-km, was right for the US and roughly twice too high
+for Brazil and India, and because the gate cancels out of the value function the
+truck rate is the only cost parameter doing spatial work -- the error was
+regionally structured, not noise.
+
 Where a usable quarry inventory exists the distance is to a mafic-hosted quarry;
 elsewhere it is distance to mafic \emph{outcrop} scaled by
 $\times2$, the outcrop-to-quarry ratio measured where
@@ -597,6 +610,11 @@ and multiplies suitability as $v_{\mathrm{cost}}^{\,w}$. The physical half still
 annihilates -- zero removal is zero suitability at any price -- while expensive
 rock is discounted rather than excluded, because expensive is bad, not impossible.
 The floor at 0.05 keeps a remote cell visible as physically real.
+With the fixed charge, $c - c_{\mathrm{gate}} = F + r\,d > 0$ everywhere, so
+$v_{\mathrm{cost}}$ peaks at $1/(1+F/S) \approx
+0.952$ at zero distance
+rather than reaching 1: even a farm beside the quarry pays loading and unloading.
+The gate still cancels exactly.
 
 \subsection{The headline screen: multi-year, discounted}
 
