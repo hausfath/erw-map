@@ -230,6 +230,87 @@ def main() -> int:
     print("-" * len(hdr))
     line("WORLD", world)
 
+    # ---- Table 2: reapplication-cadence steady state -----------------------
+    # The realistic operating mode: hold a standing inventory of M = A t/ha of
+    # undissolved rock, topping up as it dissolves. Renewal theory gives the
+    # steady-state application rate R = M / tau, where tau is the mean lifetime
+    # of applied rock in that cell:
+    #
+    #   tau = integral(1 - F(t)) dt = I_inf / u1,  I_inf = integral(1 - Fw(u)) du
+    #
+    # (one PSD constant, per-cell kinetics u1). Removal = R * eta * CT, since at
+    # steady state dissolved mass equals applied mass. R is CAPPED at A (one
+    # full application per year): fast tropical cells would otherwise imply
+    # topping up faster than annually; at the cap they run the perpetual-annual
+    # steady state instead, with the standing stock below M between passes.
+    # Sensitivity: timing reapplication at F = 90% of the prior cohort instead
+    # of by mean lifetime gives the same telescoped removal with k = t90, always
+    # lower; reported as one line.
+    i_inf = np.trapezoid(1.0 - gg, ug)
+    with np.errstate(divide="ignore"):
+        tau = np.where(u1 > 0, i_inf / np.maximum(u1, 1e-12), np.inf)
+    R = C.APPLICATION_RATE_T_HA_YR * np.minimum(1.0, 1.0 / tau)
+    cad = R * eta * ct                                # tCO2/ha/yr
+    cad_ceil = np.minimum(cad, ceil)
+    u90 = np.interp(0.9, gg, ug)
+    with np.errstate(divide="ignore"):
+        k90 = np.where(u1 > 0, u90 / np.maximum(u1, 1e-12), np.inf)
+    cad90 = C.APPLICATION_RATE_T_HA_YR * np.minimum(1.0, 1.0 / k90) * eta * ct
+
+    rows2 = []
+    for i, iso in enumerate(isos, start=1):
+        sel = mm & (idx == i)
+        if not sel.any():
+            continue
+        hh = ha[sel]
+        # area-weighted median effective cadence, years (capped below at 1)
+        kc = np.maximum(tau[sel], 1.0)
+        o = np.argsort(kc)
+        kmed = np.interp(0.5, np.cumsum(hh[o]) / hh.sum(), kc[o])
+        rows2.append({
+            "iso": iso, "name": names[iso],
+            "tech": tech[sel].sum() / 1e6,
+            "cad": (cad[sel] * hh).sum() / 1e6,
+            "cad_ceil": (cad_ceil[sel] * hh).sum() / 1e6,
+            "rock": (R[sel] * hh).sum() / 1e9,
+            "kmed": min(kmed, 99.0),
+        })
+    rows2.sort(key=lambda r: -r["cad"])
+    world2 = {k: sum(r[k] for r in rows2)
+              for k in ("tech", "cad", "cad_ceil", "rock")}
+    big2 = [r for r in rows2 if r["cad"] >= THRESHOLD_MT
+            or r["tech"] >= THRESHOLD_MT]
+    rest2 = {k: world2[k] - sum(r[k] for r in big2)
+             for k in ("tech", "cad", "cad_ceil", "rock")}
+
+    hdr2 = (f"{'country':<22}{'tech y1':>9}{'cadence SS':>12}{'w/ drain':>10}"
+            f"{'rock Gt/yr':>12}{'median cadence':>16}")
+    print(f"\n\nTable 2: steady state maintaining a "
+          f"{C.APPLICATION_RATE_T_HA_YR:.0f} t/ha standing rock inventory")
+    print("(reapplication paced by modeled dissolution, capped at one full "
+          "application per year)\n")
+    print(hdr2)
+    print(f"{'':<22}{'MtCO2/yr':>9}{'MtCO2/yr':>12}{'MtCO2/yr':>10}"
+          f"{'':>12}{'years':>16}")
+    print("-" * len(hdr2))
+
+    def line2(label, r, kmed=None):
+        km = f"{r['kmed']:.1f}" if kmed is None and "kmed" in r else (kmed or "")
+        print(f"{label:<22}{r['tech']:>9.0f}{r['cad']:>12.0f}"
+              f"{r['cad_ceil']:>10.0f}{r['rock']:>12.2f}{km:>16}")
+
+    for r in big2:
+        line2(r["name"][:21], r)
+    line2("rest of world", rest2, kmed="")
+    print("-" * len(hdr2))
+    line2("WORLD", world2, kmed="")
+    w90 = (cad90 * ha)[mm].sum() / 1e6
+    print(f"\nsensitivity: timing reapplication at 90% dissolution of the prior "
+          f"cohort instead of\nmean lifetime gives a world total of "
+          f"{w90:.0f} MtCO2/yr")
+    print(f"PSD constant I_inf = {i_inf:.3f} (mean rock lifetime = "
+          f"{i_inf:.3f}/u1 years per cell)")
+
     print(f"\ncountries above threshold: {len(big)}")
     print("scenarios: optimistic = current regional byproduct gates "
           "(US 12 / BR 9 / IN 3 / else 10), haul x0.75;")
