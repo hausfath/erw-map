@@ -266,23 +266,51 @@ not — hence the Nile valley reading dry on a field that is in fact wet. Every
 irrigated cell therefore has a moisture term and a drainage term that disagree
 about how wet it is. Closing this needs an irrigation mask as a third input.
 
-### The aridity signal is still missing, and D_w is why
+### Where the aridity signal actually lives: the ceiling, not D_w
 
-Fixing the moisture term does not give the map an aridity signal, because the term
-is deliberately weak and the export side is not delivering one either. At
-`D_w = 0.03 m/yr`, `η_transport = q/(q + D_w)` is pinned near its ceiling over
-cropland: area-weighted mean **0.787**, with **62.4%** of cropland area above 0.8
-and 35.1% above 0.9, and a wettest-5%-to-driest-5% ratio of only **4.1×** against
-that 272× range in soil water.
+An earlier version of this section claimed the map had no aridity signal and that
+`D_w` was the blocking item. Measured, that was wrong on both counts.
+`scripts/analysis/dw_sensitivity.py` sweeps `D_w` over three orders of magnitude:
 
-So before this fix the map had a seasonality index and a saturated transport term,
-i.e. **no working aridity term at all**. Calabrese et al. 2022 argue aridity is
-*the* ERW bottleneck, and their mechanism is on the export side — the chemical
-depletion fraction collapses past a Budyko dryness index of 1 because weathering
-products are not flushed, not because the rock stops dissolving. That is where
-this has to be resolved, and it makes `D_w` the blocking item rather than a
-parallel one. (Citation carried over from `to_do.md` and not yet verified against
-the paper.)
+| `D_w` m/yr | η_tr mean | η_tr >0.8 | wet/dry **uncapped** | wet/dry **capped** | Gt uncapped | Gt capped |
+|---|---|---|---|---|---|---|
+| 0.001 | 0.984 | 99.3% | 3.2× | **125.3×** | 2.77 | 0.893 |
+| 0.010 | 0.899 | 86.9% | 5.5× | **125.1×** | 2.63 | 0.892 |
+| **0.030** (shipped) | **0.787** | **62.4%** | **9.9×** | **124.8×** | **2.43** | **0.888** |
+| 0.100 | 0.593 | 21.4% | 23.9× | **124.0×** | 2.04 | 0.874 |
+| 0.300 (published max) | 0.379 | 1.8% | 58.7× | 131.4× | 1.52 | 0.817 |
+| 1.000 | 0.182 | 0.1% | 148.1× | 179.7× | 0.91 | 0.659 |
+
+Wet/dry compares the area-weighted mean of the wettest 5% of cropland by drainage
+against the driest 5% — a 141× contrast in `q` itself, and 149× in the ceiling.
+
+**Two corrections fall out.** First, η_transport in isolation is the wrong quantity
+to judge: it spans only 4.4× wet-to-dry, but delivered carbon spans **9.9×**
+uncapped, because the dissolution response to X is nonlinear. Second and more
+important, **with the ceiling applied the contrast is 125× and does not depend on
+`D_w` at all** — 125.3× at 0.001 against 124.8× at 0.03. The ceiling is linear in
+`q` and binds on 91% of cropland area, so it has already taken the aridity signal
+over.
+
+So the aridity bottleneck *is* represented in this model, by the
+drainage-concentration ceiling described in §2b — which is computed, gated, and
+written to the texture, but **off by default** pending review. The lever is
+`FLUX_CEILING_ON`, which is a review question rather than a parameter question.
+`D_w` matters only for the uncapped map, and the uncapped map is the default only
+because the ceiling is switched off.
+
+**`D_w` is therefore not being retuned.** Maher & Chamberlain state 0.3 m/yr as a
+global maximum, the shipped 0.03 is their craton/collisional divide, and there is
+no basis in this sweep for moving off a published fit — moving it would be tuning
+a parameter to produce a contrast the binding constraint already supplies. The
+argument that crushed feedstock justifies a higher effective `D_w` than natural
+saprolite still stands on its own merits and is recorded in `constants.py`; it is
+just not an aridity argument.
+
+What does remain open is whether the aridity response should be *shaped* like
+Calabrese et al.'s Budyko formulation rather than emerging from a q-linear
+ceiling. That needs the paper read and PET as an input; neither is done. (The
+citation itself is still unverified — see `constants.py`.)
 
 ## 2b. The drainage-concentration ceiling — COMPUTED BUT NOT APPLIED
 

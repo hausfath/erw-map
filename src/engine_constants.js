@@ -1611,7 +1611,7 @@ window.ERW = {
     "paddy": "GRPI Landsat inundation months x SPAM2010 irrigated rice",
     "feedstock": "GLiM full-resolution basic igneous outcrop + USGS MRDS mafic-hosted stone producers, ANM SIGMINE titles (Brazil) and OSM quarries; truck-only haul, not routed",
     "substitutions": [
-      "the moisture term is a weak wetted-surface modulator, not the aridity signal: eta_transport is pinned near 1 on 62% of cropland area, so aridity is still under-represented",
+      "the moisture term is a weak wetted-surface modulator, not the aridity signal: the wet/dry carbon contrast is ~10x with the drainage limit off (the default) and ~125x with it on",
       "irrigation: drainage q includes irrigation return flow but the soil-water balance does not, so the two disagree on irrigated cropland",
       "kinetics over-predict measured basalt release; activation energy is ~2x too high (see the kinetics test)"
     ],

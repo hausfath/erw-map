@@ -1496,10 +1496,11 @@
       re-release and strong-acid competition plausibly claim 20–80% of gross
       removal, and the gap is spatially variable. Nothing here is validated
       against net measured removal.</p>
-      <p><b>Aridity is under-represented.</b> The moisture term is a real
-      saturation now, but it is a weak modulator by construction, and transport
-      limitation is near its ceiling on most cropland. If aridity is the binding
-      constraint on this technology, neither term yet says so.</p>
+      <p><b>The aridity contrast depends on a term that is off.</b> With the
+      drainage limit applied, gross removal spans ~125&times; from the wettest to
+      the driest 5% of cropland, close to the 141&times; contrast in the drainage
+      data. Without it — the default — the span is ~10&times;. The larger figure
+      is the defensible one.</p>
       <p><b>Irrigation is half-visible.</b> Drainage includes irrigation return
       flow; the soil-water balance behind the moisture term does not. On irrigated
       land the two disagree about how wet the field is.</p>

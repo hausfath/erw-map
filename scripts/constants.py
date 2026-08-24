@@ -928,12 +928,24 @@ CROP_SHARE_LEVELS = (1 << CROP_SHARE_BITS) - 1      # 63
 # depletion fraction collapses past PET/P = 1 because weathering products are not
 # flushed, not because the rock stops dissolving.
 #
-# SO THIS FIX MAKES D_W THE BLOCKING ITEM. At D_w = 0.03 m/yr, eta_transport is
-# pinned near its ceiling over cropland -- area-weighted mean 0.787, with 62.4%
-# of cropland area above 0.8 and 35.1% above 0.9, and a wettest-5%-to-driest-5%
-# ratio of only 4.1x against that 272x range in soil water. Before this fix the
-# map had a seasonality index and a saturated transport term, i.e. NO working
-# aridity signal at all. Fixing the moisture term does not supply one.
+# WHERE THE ARIDITY SIGNAL ACTUALLY LIVES -- MEASURED, and not where a first
+# reading of the above suggests. eta_transport IS nearly saturated at
+# D_w = 0.03 m/yr: area-weighted mean 0.787, 62.4% of cropland area above 0.8,
+# and a wettest-5%-to-driest-5% ratio of only 4.4x. But eta_transport in
+# isolation is the wrong quantity to judge. On DELIVERED CARBON the contrast is
+# 9.9x uncapped, and with the drainage ceiling applied it is 125x -- against a
+# 141x contrast in the drainage data itself.
+#
+# And the capped contrast is INVARIANT TO D_W: 125.3x at D_w = 0.001, 124.8x at
+# 0.03, 124.0x at 0.1. Three orders of magnitude, no effect. The ceiling is
+# linear in q and binds on 91% of cropland area, so it has already taken the
+# aridity signal over. See scripts/analysis/dw_sensitivity.py.
+#
+# The consequence for what to do next: raising D_w is NOT the fix. It only moves
+# the uncapped map, and the uncapped map is the default only because the ceiling
+# is switched off pending review. The lever is FLUX_CEILING_ON, which is a
+# review question, not a parameter question. Do not tune D_w to chase a contrast
+# that the binding constraint already supplies.
 #
 # LINEARITY IS A CONVENTION, NOT A RESULT. The rate is taken as first order in S.
 # Nothing in the literature constrains the exponent for mineral dissolution in

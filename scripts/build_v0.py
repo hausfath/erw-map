@@ -1336,8 +1336,8 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
                 "PRECIPITATION stands in for a soil-moisture climatology",
             ]) + [
                 "the moisture term is a weak wetted-surface modulator, not the "
-                "aridity signal: eta_transport is pinned near 1 on 62% of "
-                "cropland area, so aridity is still under-represented",
+                "aridity signal: the wet/dry carbon contrast is ~10x with the "
+                "drainage limit off (the default) and ~125x with it on",
                 "irrigation: drainage q includes irrigation return flow but the "
                 "soil-water balance does not, so the two disagree on irrigated "
                 "cropland",

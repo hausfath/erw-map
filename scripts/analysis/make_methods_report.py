@@ -107,6 +107,26 @@ etr_gt08 = 100.0 * float((w * (eta_tr > 0.8)).sum() / w.sum())
 etr_ratio = wq(eta_tr, (0.025, 0.975))[1] / max(wq(eta_tr, (0.025, 0.975))[0], 1e-9)
 
 # Jensen / covariance spread, exported by the build so it is not carried here.
+# Wet/dry carbon contrast, capped and uncapped, and the same under a far
+# smaller D_w -- the pair that shows the ceiling, not D_w, carries aridity.
+_qmm = q * 1000.0
+_ed, _ew = wq(_qmm, (0.05, 0.95))[0], wq(_qmm, (0.05, 0.95))[1]
+_dry, _wet = _qmm <= _ed, _qmm >= _ew
+def _fw(v, sel):
+    v = np.nan_to_num(np.asarray(v, dtype="float64"))
+    return float((v[sel] * w[sel]).sum() / w[sel].sum())
+def _contrast(v):
+    return _fw(v, _wet) / max(_fw(v, _dry), 1e-9)
+wd_unc = _contrast(unc)
+wd_cap = _contrast(cap)
+wd_drv = _contrast(_qmm)
+_UGa = np.concatenate([[0.0], np.geomspace(1e-5, 200.0, 900)])
+_GGa = np.concatenate([[0.0], K.dissolved_fraction(_UGa[1:], C.PSD_REF_WIDTH)])
+_etr_lo = q / (q + 0.001)
+_cdr_lo = np.interp(d_ref * np.clip((10 ** L1) * _etr_lo, 0, None)
+                    / C.PSD_REF_D50_UM, _UGa, _GGa) * eta * RATE * CEIL_T
+wd_cap_lo = _contrast(np.minimum(_cdr_lo, ceil_t))
+
 jen = wq(z["jensen"][m].astype("float64")) if "jensen" in z.files else [
     float("nan")] * 3
 
@@ -520,15 +540,27 @@ everywhere: area-weighted mean {etr_mean:.3f}, with {etr_gt08:.1f}\% of cropland
 area above 0.8, and a ratio between the wettest and driest 5\% of cropland of only
 {etr_ratio:.1f}$\times$ against a 272$\times$ range in root-zone soil water.
 
-This matters more than a parameter footnote should, because the export side is
-where aridity is \emph{{supposed}} to enter (\S\ref{{sec:moisture}}). Calabrese et
-al.\ (2022) argue aridity is the binding constraint on ERW, with the chemical
-depletion fraction collapsing past a Budyko dryness index of 1; a transport term
-pinned near unity over most cropland cannot express that. Resolving it means
-either a larger effective $D_w$ -- defensible for crushed feedstock, whose
-reactive surface area shortens the equilibration length relative to the natural
-saprolite the coefficient was fitted on -- or an explicitly aridity-dependent
-formulation. It is the largest open item in this document.
+That reads like a defect, and an earlier version of this document called it one.
+It is not, and the reason is worth stating. $\eta_{{\mathrm{{tr}}}}$ in isolation is
+the wrong quantity to judge: delivered carbon spans {wd_unc:.1f}$\times$ wet-to-dry
+because the dissolution response to $X$ is nonlinear, and with the drainage ceiling
+of \S\ref{{sec:ceiling}} applied it spans {wd_cap:.0f}$\times$ -- against a
+{wd_drv:.0f}$\times$ contrast in $q$ itself.
+
+More decisively, the capped contrast is \textbf{{invariant to $D_w$}}:
+{wd_cap_lo:.1f}$\times$ at $D_w = 0.001$ against {wd_cap:.1f}$\times$ at
+{C.DAMKOHLER_DW_M_YR}, three orders of magnitude apart. The ceiling is linear in
+$q$ and binds on {binds * 100:.0f}\% of cropland area, so it has already taken the
+aridity signal over. Aridity is represented in this model -- by a term that is
+switched off by default. The lever is the ceiling, not the coefficient, and
+$D_w$ is accordingly \emph{{not}} retuned here: Maher \& Chamberlain give 0.3 as a
+global maximum, and moving off a published fit to manufacture a contrast the
+binding constraint already supplies would be tuning. Full sweep in
+\texttt{{scripts/analysis/dw\_sensitivity.py}}.
+
+What stays open is whether the aridity response should be \emph{{shaped}} like
+Calabrese et al.\ (2022)'s Budyko formulation rather than emerging from a
+$q$-linear bound. That needs PET as an input and the paper actually read.
 
 \textbf{{We use $q_{{tot}}$}}, on the argument that Maher \& Chamberlain fit $D_w$
 against catchment discharge per unit area, which \emph{{is}} total runoff; driving a
@@ -876,13 +908,11 @@ this sets the absolute scale of every \cotwo{{}} number.
 10--50$\times$ more cations retained in secondary phases than exported, and modelled
 export lags of 5--22 years. Dissolution-based removal cannot be read as export
 without this term, and its absence is why the map is an upper bound.
-\item \textbf{{The map has no strong aridity signal.}} The moisture term is now an
-absolute saturation, but it is weak by construction, and
-$\eta_{{\mathrm{{transport}}}}$ is pinned near its ceiling at
-$D_w = {C.DAMKOHLER_DW_M_YR}$\,m\,yr$^{{-1}}$ -- area-weighted mean {etr_mean:.3f},
-with {etr_gt08:.1f}\% of cropland area above 0.8 and a wettest-to-driest ratio of
-only {etr_ratio:.1f}$\times$. If aridity is the ERW bottleneck, neither term
-currently represents it.
+\item \textbf{{The default map's aridity contrast rests on a term that is off.}}
+Uncapped, delivered carbon spans {wd_unc:.1f}$\times$ from the wettest to the driest
+5\% of cropland; with the ceiling applied it spans {wd_cap:.0f}$\times$, close to
+the {wd_drv:.0f}$\times$ contrast in the drainage data. The larger figure is the
+defensible one and it is not what ships by default.
 \item \textbf{{Irrigation is invisible to the soil-water balance but not to the
 drainage.}} WaterGAP \texttt{{histsoc}} simulates irrigation return flow, so $q$
 sees irrigation while TerraClimate's rain-fed balance does not. The two therefore

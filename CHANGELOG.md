@@ -5,6 +5,52 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## D_w does not carry the aridity signal. The ceiling does, and it is switched off
+
+The moisture work left an obvious follow-on: `η_transport = q/(q + D_w)` is nearly
+saturated at `D_w = 0.03 m/yr` — area-weighted mean 0.787, 62.4% of cropland area
+above 0.8, wettest-5%/driest-5% ratio only 4.4× against a 141× contrast in the
+drainage itself. The apparent conclusion was that the map under-represents aridity
+and that a larger `D_w` was the fix. `scripts/analysis/dw_sensitivity.py` sweeps
+`D_w` over 0.001–3.0 m/yr and refutes both halves.
+
+**η_transport in isolation is the wrong quantity.** Delivered carbon spans **9.9×**
+wet-to-dry at the shipped `D_w`, not 4.4×, because the dissolution response to X is
+nonlinear. Quoting the transport term's own range understates the contrast the map
+actually draws.
+
+**And the capped contrast does not depend on `D_w` at all:**
+
+| `D_w` | wet/dry uncapped | wet/dry **capped** | Gt uncapped | Gt capped |
+|---|---|---|---|---|
+| 0.001 | 3.2× | **125.3×** | 2.77 | 0.893 |
+| 0.030 (shipped) | 9.9× | **124.8×** | 2.43 | 0.888 |
+| 0.100 | 23.9× | **124.0×** | 2.04 | 0.874 |
+| 0.300 (published max) | 58.7× | 131.4× | 1.52 | 0.817 |
+
+Three orders of magnitude in `D_w`, and the capped wet/dry contrast moves by 1%.
+The drainage-concentration ceiling is linear in `q` and binds on 91% of cropland
+area, so it has already absorbed the aridity signal — the ceiling alone carries a
+149× wet/dry contrast, against 141× in `q`. The aridity bottleneck **is** in this
+model. It is in the term that is off by default.
+
+**So `D_w` is not being retuned.** The lever is `FLUX_CEILING_ON`, which is a
+review question already in front of the ERW community via the flux-reconciliation
+note, not a parameter question. Moving off Maher & Chamberlain's published fit to
+manufacture a contrast the binding constraint already supplies would be tuning.
+The separate argument that crushed feedstock justifies a higher effective `D_w`
+than natural saprolite still stands on its own merits — it is just not an aridity
+argument, and `constants.py` now says so.
+
+What remains genuinely open is whether the aridity response should be *shaped*
+like Calabrese et al.'s Budyko formulation rather than emerging from a q-linear
+bound. That needs PET as an input and the paper read; the citation is still flagged
+unverified.
+
+Corrected in this pass: `constants.py`, `docs/METHODOLOGY.md` §2, the methodology
+report's transport section and limitations list, and the Methods modal, all of
+which had briefly carried the stronger "no aridity signal" claim.
+
 ## Soil moisture: an absolute saturation, and the 10× unit error it was hiding
 
 The moisture term normalised each cell by **its own annual maximum**:
@@ -73,14 +119,12 @@ it carried. The conclusion is that the moisture term is a wetted-surface modulat
 and must not be asked to carry aridity: dissolution does not stop at the wilting
 point, so a term that falls to 0.021 in the Nile valley is more wrong, not less.
 
-**Which makes D_w the blocking item.** At `D_w = 0.03 m/yr`, `η_transport` is
-pinned near its ceiling — area-weighted mean **0.787**, **62.4%** of cropland area
-above 0.8, wettest/driest ratio only **4.1×**. Before this fix the map had a
-seasonality index and a saturated transport term, i.e. no working aridity term at
-all, and fixing the moisture term does not supply one. Calabrese et al. 2022 place
-the ERW aridity bottleneck on the export side, which is where this now has to be
-resolved. (That citation came from `to_do.md` and is flagged unverified in
-`constants.py`; the web-search budget was exhausted when it was written.)
+**Which raised a question about D_w — since answered, differently than expected.**
+`η_transport` is indeed nearly saturated: area-weighted mean **0.787**, **62.4%** of
+cropland area above 0.8, wettest/driest ratio only **4.4×**. The first version of
+this entry concluded the map therefore had no aridity signal and that `D_w` was the
+blocking item. `scripts/analysis/dw_sensitivity.py` shows both halves of that were
+wrong. See the next entry.
 
 **Gate 2e** now requires the term to be monotone in wetness — wettest/driest ≥ 1.25
 and corr with log₁₀ storage ≥ 0.50 — and fails any per-cell normalisation. Reads
