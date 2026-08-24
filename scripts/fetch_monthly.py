@@ -52,6 +52,29 @@ TERRA_URL = ("https://climate.northwestknowledge.net/TERRACLIMATE-DATA/"
              "TerraClimate_soil_{y}.nc")
 TERRA_YEARS = range(2011, 2021)      # 10-year climatology
 
+# UNIT TRAP, the second one in this file and the more expensive. TerraClimate
+# stores `soil` as int16 with scale_factor = 0.1 and add_offset = 0.0 (verified
+# against the THREDDS .das, not assumed), and rasterio's read() returns the RAW
+# stored integer -- it does not apply CF scaling. The first version of this
+# function left `scale` at its 1.0 default, so every value was 10x too large and
+# the file's own tag said scale_factor 1.0, which made the error self-consistent
+# and therefore invisible.
+#
+# It survived a long time because build_v0 normalised each cell by its own annual
+# maximum, and a constant factor cancels exactly in moist/max(moist). Fixing the
+# normalisation without fixing this would have produced a saturation term 10x too
+# large, i.e. clipped to 1 nearly everywhere.
+#
+# Independent confirmation that 0.1 is right, from a source that knows nothing
+# about the metadata: as-built annual-maximum storage had a cropland median of
+# 680 mm and exceeded SoilGrids root-zone plant-available capacity on 87.9% of
+# cropland area, which is impossible for extractable water. Scaled, the median is
+# 68 mm against a 141 mm capacity.
+#
+# Note also that TerraClimate `soil` is "Soil Moisture at End of Month", an
+# instantaneous state rather than a monthly mean. See docs/METHODOLOGY.md.
+TERRA_SOIL_SCALE = 0.1
+
 # 5-15 cm rather than 0-5 cm: Isometric's near-field zone is the deeper of 20 cm
 # or tillage depth + 5-10 cm, so the deeper layer is the better bracket, and the
 # top 5 cm swings far more than the reacting volume does.
@@ -174,7 +197,8 @@ def fetch_soil_moisture(transform, w, h, crs) -> bool:
         for m in range(12):
             acc[m] += np.nan_to_num(
                 onto(tmp, transform, w, h, crs, band=m + 1, decimate=1,
-                     lo_valid=0.0, hi_valid=5000.0), nan=0.0)
+                     scale=TERRA_SOIL_SCALE, lo_valid=0.0, hi_valid=3000.0),
+                nan=0.0)
         tmp.unlink()
         n += 1
         print(f"  {y}: {mb:6.1f} MB fetched then deleted")
@@ -185,7 +209,7 @@ def fetch_soil_moisture(transform, w, h, crs) -> bool:
     print(f"  {n} years; July land mean {v.mean():.1f} mm root-zone storage")
     write_stack(out, bands, transform, crs,
                 "TerraClimate root-zone soil moisture, mm, monthly climatology",
-                scale=1.0, lo=0, hi=6000)
+                scale=10.0, lo=0, hi=30000)
     return True
 
 

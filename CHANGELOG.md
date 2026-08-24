@@ -5,6 +5,95 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Soil moisture: an absolute saturation, and the 10× unit error it was hiding
+
+The moisture term normalised each cell by **its own annual maximum**:
+
+```python
+smax  = np.nanmax(moist_m, axis=0)
+sat_m = np.clip(moist_m / np.maximum(smax, 1e-6), 0.0, 1.0)
+```
+
+That is not a weak aridity signal, it is a different variable. Area-weighted over
+the 406,991 cropland cells the term correlated **−0.886** with the coefficient of
+variation of monthly storage and **+0.147** with storage itself: it measured
+seasonality. The driest and wettest 5% of cropland scored **identically at 0.653**
+across a 272× range in real soil water, because a dry cell is dry all year, so its
+seasonality is flat, so it reads saturated. The Nile valley at 6 mm mean root-zone
+storage scored **0.973**, higher than NW Europe. The Indo-Gangetic Plain, wetter
+than the US Corn Belt (746 vs 629 mm), was down-weighted **36%** against it purely
+for having a monsoon — inverting the temperature × moisture covariance that monthly
+integration was introduced to capture.
+
+The old caveat called this "porosity normalisation not yet applied", which
+describes a missing *constant* divisor. A constant would cancel in
+`reactivity/reference`. A spatially varying one does not.
+
+**And the normalisation was hiding a second defect.** TerraClimate stores `soil`
+as int16 with `scale_factor = 0.1`; `rasterio.read()` returns the raw integer, and
+`fetch_monthly.py` never applied it. The committed layer was **10× too large**,
+and because `write_stack` recorded `scale_factor: 1.0` the error was
+self-consistent and therefore invisible. It survived precisely because a constant
+factor cancels in `moist/max(moist)` — fixing the normalisation alone would have
+produced a saturation 10× too large, clipped to 1 nearly everywhere.
+
+Confirmed two independent ways: the THREDDS `.das` states `scale_factor = 0.1`
+(and `description = "Soil Moisture at End of Month"`, an instantaneous state we
+use as a monthly mean — now a documented limitation); and as-built annual-maximum
+storage had a cropland median of 680 mm, exceeding SoilGrids plant-available
+capacity on **87.9% of cropland area**, which is impossible for extractable water.
+Scaled, the median is 68 mm against 141 mm.
+
+A tripwire checked and found inert: `hi_valid=5000.0` was written meaning 5000 mm
+but bit at **500** real mm. Nothing in the written product exceeds it and 0.000% of
+land area lost a month, so re-tagging the committed raster to `scale_factor=10.0`
+is exactly equivalent to re-downloading 1.1 GB — the stored integers are already
+mm×10, so the re-tag reproduces what the fixed fetch writes.
+
+**The fix is a chain, not a divisor.** TerraClimate reports *extractable* storage,
+water above the wilting point, so it cannot be divided by a capacity and called a
+saturation:
+
+```
+f = clip(storage / (fc − wp), 0, 1);  θ = wp + f·(fc − wp);  S = θ / θ_sat
+```
+
+with `fc`/`wp` from SoilGrids `wv0033`/`wv1500` and `θ_sat = 1 − ρ_b/2.65` from
+`bdod`, all integrated over 0–100 cm into a new 3-band `rootzone_capacity.tif`.
+This settles the question the old note left open — field capacity, saturation, or
+plant-available water, which differ by ~2×. **None alone:** fc and wp bracket the
+range the storage occupies, and pore volume is what converts a content into a
+saturation.
+
+**The uncomfortable part of the result.** Because θ has a wilting-point floor, S
+spans only ~0.34–1.0, so the reactivity spread it produces (1.21 dex) is *no wider*
+than the broken term's (1.23 dex). Simply deleting the old term rearranges 58.1% of
+cropland area by decile against 64.3% for replacing it — that is how little signal
+it carried. The conclusion is that the moisture term is a wetted-surface modulator
+and must not be asked to carry aridity: dissolution does not stop at the wilting
+point, so a term that falls to 0.021 in the Nile valley is more wrong, not less.
+
+**Which makes D_w the blocking item.** At `D_w = 0.03 m/yr`, `η_transport` is
+pinned near its ceiling — area-weighted mean **0.787**, **62.4%** of cropland area
+above 0.8, wettest/driest ratio only **4.1×**. Before this fix the map had a
+seasonality index and a saturated transport term, i.e. no working aridity term at
+all, and fixing the moisture term does not supply one. Calabrese et al. 2022 place
+the ERW aridity bottleneck on the export side, which is where this now has to be
+resolved. (That citation came from `to_do.md` and is flagged unverified in
+`constants.py`; the web-search budget was exhausted when it was written.)
+
+**Gate 2e** now requires the term to be monotone in wetness — wettest/driest ≥ 1.25
+and corr with log₁₀ storage ≥ 0.50 — and fails any per-cell normalisation. Reads
+0.333 (1 mm) vs 0.625 (205 mm), ratio 1.88, corr +0.575.
+
+**What moved:** global gross 2.49 → **2.43** GtCO₂/yr, with the ceiling applied
+0.910 → **0.888**; median CDR 1.59 → **1.40** tCO₂/ha/yr; the ceiling binds on
+93.0% → **91.0%** of cropland area; the uncapped warm/cool gradient steepened
+3.95× → **4.75×**; median fraction weathered in year one 18.7% → **16.6%** and by
+year ten 78.1% → **73.8%**. Propagated to `README.md`, `docs/METHODOLOGY.md` §2,
+`docs/VALIDATION.md`, the methodology report, the Methods modal and the shader
+comment.
+
 ## A methodology report with the equations
 
 `scripts/analysis/make_methods_report.py` generates a ~10-page PDF setting out

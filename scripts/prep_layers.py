@@ -15,6 +15,8 @@ Outputs land in data/interim/ and are a few hundred kB each.
   paddy_area_frac.tif          SPAM2010 irrigated-rice area fraction of cell
   crop_mix.tif                 SPAM2010 two largest crops per cell + their shares
   soc_p_exceed.tif             P(SOC > 5 wt%), computed fine then averaged
+  rootzone_capacity.tif        SoilGrids field capacity / wilting point / pore
+                               volume, all mm over 0-100 cm
 
 Run with --delete-raw once the outputs look right.
 """
@@ -336,6 +338,113 @@ def prep_soc_exceedance() -> bool:
     return True
 
 
+def prep_rootzone_capacity() -> bool:
+    """SoilGrids water retention -> three root-zone capacities, all in mm.
+
+    This is the denominator that turns TerraClimate's extractable soil-water
+    STORAGE (mm) into an absolute degree of saturation. The build previously
+    normalised each cell by its own annual maximum, which cancels absolute
+    wetness entirely -- see the MOISTURE_TERM block in constants.py.
+
+    All three outputs are mm of water over the same 0-100 cm column, so the
+    saturation is a ratio of like quantities and no per-band unit convention has
+    to be remembered:
+
+      band 1  fc_mm    field capacity            sum(theta_33   * dz)
+      band 2  wp_mm    wilting point             sum(theta_1500 * dz)
+      band 3  sat_mm   saturation (pore volume)  sum((1 - rho_b/rho_p) * dz)
+
+    UNITS, verified against the value distributions rather than taken on trust:
+    wv0033 and wv1500 are 0.1 v%, so /1000 is a volume fraction (p99 of the
+    0-5 cm field capacity is 448 -> 44.8 v%); bdod is cg/cm3, so /100 is g/cm3
+    (p99 is 150 -> 1.50 g/cm3). SoilGrids declares no nodata on these coverages
+    and uses 0 for ocean; 0 v% field capacity and 0 bulk density are both
+    physically impossible, so 0 is treated as missing.
+
+    DEPTH. 0-100 cm, because that is what SoilGrids publishes and roughly what a
+    root zone is. TerraClimate's own extractable-water capacity comes from a
+    rooting-depth field that exceeds 1 m in deep tropical soils, so the two
+    columns are not identical -- storage exceeds the 1 m plant-available capacity
+    on 23.4% of cropland area. That residue is a real depth mismatch, not an
+    error, and it is why the saturation is clipped at 1 rather than allowed to
+    run over.
+    """
+    LAYERS = [("0-5", 50.0), ("5-15", 100.0), ("15-30", 150.0),
+              ("30-60", 300.0), ("60-100", 400.0)]      # mm of column each
+    need = [RAW / f"{v}_{tag}.tif" for v in ("wv0033", "wv1500", "bdod")
+            for tag, _ in LAYERS]
+    missing = [p.name for p in need if not p.exists()]
+    if missing:
+        print(f"  SKIP root-zone capacity: missing {len(missing)} of {len(need)} "
+              f"SoilGrids rasters, e.g. {missing[0]} (see fetch_v0.sh stage 1b)")
+        return False
+    print("root-zone water retention, 0-100 cm, from SoilGrids")
+
+    with rasterio.open(RAW / "ph_0_5.tif") as g:
+        gt, gw, gh, gcrs = g.transform, g.width, g.height, g.crs
+
+    def depth_sum(var: str, conv: float) -> np.ndarray:
+        tot = np.zeros((gh, gw), dtype="float64")
+        for tag, dz in LAYERS:
+            with rasterio.open(RAW / f"{var}_{tag}.tif") as s:
+                a = s.read(1).astype("float32")
+            a[a <= 0] = np.nan                    # 0 is ocean, not a real value
+            dst = np.full((gh, gw), np.nan, dtype="float32")
+            reproject(source=a, destination=dst,
+                      src_transform=s.transform, src_crs=s.crs,
+                      dst_transform=gt, dst_crs=gcrs,
+                      src_nodata=np.nan, dst_nodata=np.nan,
+                      resampling=Resampling.average)
+            tot += np.nan_to_num(dst * conv, nan=0.0) * dz
+        return tot
+
+    fc_mm = depth_sum("wv0033", 1e-3)             # 0.1 v% -> volume fraction
+    wp_mm = depth_sum("wv1500", 1e-3)
+    rho_b = depth_sum("bdod", 1e-2) / 1000.0      # cg/cm3 -> g/cm3, dz-weighted
+    por = 1.0 - rho_b / C.PARTICLE_DENSITY_G_CM3
+    sat_mm = np.clip(por, 0.05, 0.75) * 1000.0
+
+    land = fc_mm > 0
+    fc_mm[~land] = np.nan
+    wp_mm[~land] = np.nan
+    sat_mm[~land] = np.nan
+    # Field capacity below wilting point is unphysical and would give a negative
+    # plant-available capacity. It happens in a handful of cells where the two
+    # coverages disagree; clamp rather than propagate a negative denominator.
+    bad = np.isfinite(fc_mm) & np.isfinite(wp_mm) & (fc_mm <= wp_mm)
+    if bad.any():
+        print(f"  {int(bad.sum())} cells with FC <= WP; clamping FC to WP + 1 mm")
+        fc_mm[bad] = wp_mm[bad] + 1.0
+
+    def pc(a):
+        v = a[np.isfinite(a)]
+        return "/".join(f"{x:.0f}" for x in np.percentile(v, [10, 50, 90]))
+
+    print(f"  over land, p10/p50/p90 mm over 0-100 cm:")
+    print(f"    field capacity   {pc(fc_mm)}")
+    print(f"    wilting point    {pc(wp_mm)}")
+    print(f"    plant-available  {pc(fc_mm - wp_mm)}")
+    print(f"    pore volume      {pc(sat_mm)}")
+
+    out = INTERIM / "rootzone_capacity.tif"
+    INTERIM.mkdir(parents=True, exist_ok=True)
+    with rasterio.open(out, "w", driver="GTiff", height=gh, width=gw, count=3,
+                       dtype="int16", crs=gcrs, transform=gt, nodata=-32768,
+                       compress="deflate", predictor=2, tiled=True) as dst:
+        for i, (band, name) in enumerate(
+                [(fc_mm, "field capacity mm"), (wp_mm, "wilting point mm"),
+                 (sat_mm, "pore volume mm")], 1):
+            q = np.where(np.isfinite(band),
+                         np.clip(np.rint(band * 10.0), 0, 30000), -32768)
+            dst.write(q.astype("int16"), i)
+            dst.set_band_description(i, name)
+        dst.update_tags(
+            description="SoilGrids root-zone water retention, mm over 0-100 cm",
+            scale_factor="10.0", source=C.SOILGRIDS_RETENTION_CITATION)
+    print(f"  wrote {out.name}  3 bands  {out.stat().st_size / 1e6:.1f} MB")
+    return True
+
+
 def prep_crop_mix() -> bool:
     """SPAM2010 -> the two largest crops in each cell, and their shares.
 
@@ -497,12 +606,16 @@ def prep_crop_mix() -> bool:
 
 def main() -> int:
     made = [prep_drainage(), prep_paddy_months(), prep_paddy_area(),
-            prep_soc_exceedance(), prep_crop_mix()]
+            prep_soc_exceedance(), prep_rootzone_capacity(), prep_crop_mix()]
     if "--delete-raw" in sys.argv and all(made):
+        retention = [f"{v}_{d}.tif"
+                     for v in ("wv0033", "wv1500", "bdod")
+                     for d in ("0-5", "5-15", "15-30", "30-60", "60-100")]
         for f in ("watergap_qr.nc", "watergap_qtot.nc", "watergap_qs.nc",
                   "grpi_paddy.nc", "spam2010.zip",
                   "spam2010V2r0_global_A_RICE_I.tif",
-                  "soc_fine_q05.tif", "soc_fine_q50.tif", "soc_fine_q95.tif"):
+                  "soc_fine_q05.tif", "soc_fine_q50.tif", "soc_fine_q95.tif",
+                  *retention):
             p = RAW / f
             if p.exists():
                 mb = p.stat().st_size / 1e6

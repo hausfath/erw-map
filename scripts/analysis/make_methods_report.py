@@ -99,6 +99,17 @@ impl = unc * 1e6 / C.M_CO2_G_MOL / np.maximum(q * 1e7, 1e-9) * 1e3
 implp = wq(impl)
 dv = C.DRAINAGE_MEDIAN_MM_YR
 
+# How much aridity contrast the transport term actually delivers. Quoted in the
+# limitations section, because the answer is "very little" and that is the
+# headline open problem rather than a footnote.
+etr_mean = float((w * eta_tr).sum() / w.sum())
+etr_gt08 = 100.0 * float((w * (eta_tr > 0.8)).sum() / w.sum())
+etr_ratio = wq(eta_tr, (0.025, 0.975))[1] / max(wq(eta_tr, (0.025, 0.975))[0], 1e-9)
+
+# Jensen / covariance spread, exported by the build so it is not carried here.
+jen = wq(z["jensen"][m].astype("float64")) if "jensen" in z.files else [
+    float("nan")] * 3
+
 # ---- Everything the prose quotes, computed rather than carried over.
 # The opening box promises this, so it has to actually hold.
 _UG = np.concatenate([[0.0], np.geomspace(1e-5, 200.0, 900)])
@@ -334,11 +345,45 @@ returns the protons as the iron oxidises. The crediting protocols agree --
 Isometric computes \cotwo{{}} potential from CaO, MgO, Na$_2$O and K$_2$O with no
 FeO term. Consequence: fayalite scores zero here against $\nu = 4$ in B\&P.
 
-\subsection{{Moisture and monthly integration}}
+\subsection{{Moisture and monthly integration}}\label{{sec:moisture}}
 
-$s \in [0,1]$ is relative root-zone saturation, normalised by each cell's own
-annual maximum. The rate is evaluated \emph{{monthly and then averaged}}, never at
-annual-mean drivers:
+$s \in [0,1]$ is the \emph{{absolute}} degree of soil-water saturation. TerraClimate
+reports \emph{{extractable}} storage in mm -- water held above the wilting point --
+so it cannot be divided by a capacity and called a saturation. Three steps, each
+with its own denominator from SoilGrids water retention over 0--100\,cm:
+\begin{{equation}}
+f = \min\!\left(\frac{{W}}{{\theta_{{fc}} - \theta_{{wp}}}},\, 1\right),
+\qquad
+\theta = \theta_{{wp}} + f\,(\theta_{{fc}} - \theta_{{wp}}),
+\qquad
+s = \frac{{\theta}}{{\theta_{{sat}}}},
+\end{{equation}}
+with $\theta_{{sat}} = 1 - \rho_b/\rho_p$ at $\rho_p = {C.PARTICLE_DENSITY_G_CM3}$
+g\,cm$^{{-3}}$. Field capacity and wilting point \emph{{bracket}} the range the
+storage occupies; pore volume is what converts a water content into a saturation.
+Using any one of the three alone is a units error dressed as a choice.
+
+Through 2026-08-23 this term instead normalised each cell by \emph{{its own}} annual
+maximum, which removes absolute wetness and leaves only seasonal shape. It
+correlated $-0.886$ with the coefficient of variation of monthly storage and only
+$+0.147$ with storage itself: the driest and wettest 5\% of cropland scored
+identically at 0.653 across a 272$\times$ range in real soil water, and the
+Indo-Gangetic Plain -- wetter than the US Corn Belt -- was down-weighted 36\%
+against it for having a monsoon. Gate 2e now requires the term to be monotone in
+wetness and fails any per-cell normalisation.
+
+Because $\theta$ has a wilting-point floor, $s$ spans only about 0.34--1.0 over
+cropland. That is a result rather than a residual defect: the moisture term is a
+modest wetted-surface-area modulator, and it is \emph{{not}} the map's aridity
+signal. Dissolution does not stop at the wilting point, so a term that falls to
+zero in hyper-arid cropland would be more wrong, not less. Aridity has to enter
+through the export side, which is also the mechanism Calabrese et al.\ (2022)
+describe -- and \S\ref{{sec:transport}} explains why that side does not currently
+deliver it either. Linearity in $s$ is a convention: no published relation
+constrains the exponent for mineral dissolution in soils.
+
+The rate is evaluated \emph{{monthly and then averaged}}, never at annual-mean
+drivers:
 \begin{{equation}}
 R = \frac{{1}}{{12}}\sum_{{i=1}}^{{12}} R(T_i, s_i),
 \qquad
@@ -350,7 +395,8 @@ efficiency that matters is the one operating while dissolution is happening.
 Two effects motivate this and they oppose. The rate is convex in temperature, so
 the mean of the rate exceeds the rate at the mean (Jensen); but weathering needs
 warm \emph{{and}} wet simultaneously, which annual means destroy. Measured ratio of
-monthly-integrated to annual-mean rate: median 1.04, range 0.89--1.33 -- smaller
+monthly-integrated to annual-mean rate: median {jen[1]:.2f}, p10--p90
+{jen[0]:.2f}--{jen[2]:.2f} -- smaller
 than the $\approx 1.4$ an air-temperature estimate suggests, because soil at
 5--15\,cm is strongly damped. It is spatially structured as the mechanism
 predicts: Mediterranean cropland falls \emph{{below}} 1 where warm and wet seasons
@@ -464,6 +510,25 @@ store discharges as baseflow, so a 30-year mean $q_{{sb}}$ is close to $q_r$
 relabelled, and it strands {igp_zero:.0f}\% of the Indo-Gangetic Plain below
 1\,mm\,yr$^{{-1}}$ instead. Per-region detail is in
 \texttt{{scripts/analysis/drainage\_variable.py}}.
+
+\subsection{{How little aridity contrast this delivers}}
+
+$\eta_{{\mathrm{{tr}}}}$ is a saturating function, and at
+$D_w = {C.DAMKOHLER_DW_M_YR}$\,m\,yr$^{{-1}}$ against a cropland median $q$ of
+{dv[C.DRAINAGE_VARIABLE]:.0f}\,mm\,yr$^{{-1}}$ it sits close to its ceiling almost
+everywhere: area-weighted mean {etr_mean:.3f}, with {etr_gt08:.1f}\% of cropland
+area above 0.8, and a ratio between the wettest and driest 5\% of cropland of only
+{etr_ratio:.1f}$\times$ against a 272$\times$ range in root-zone soil water.
+
+This matters more than a parameter footnote should, because the export side is
+where aridity is \emph{{supposed}} to enter (\S\ref{{sec:moisture}}). Calabrese et
+al.\ (2022) argue aridity is the binding constraint on ERW, with the chemical
+depletion fraction collapsing past a Budyko dryness index of 1; a transport term
+pinned near unity over most cropland cannot express that. Resolving it means
+either a larger effective $D_w$ -- defensible for crushed feedstock, whose
+reactive surface area shortens the equilibration length relative to the natural
+saprolite the coefficient was fitted on -- or an explicitly aridity-dependent
+formulation. It is the largest open item in this document.
 
 \textbf{{We use $q_{{tot}}$}}, on the argument that Maher \& Chamberlain fit $D_w$
 against catchment discharge per unit area, which \emph{{is}} total runoff; driving a
@@ -811,8 +876,20 @@ this sets the absolute scale of every \cotwo{{}} number.
 10--50$\times$ more cations retained in secondary phases than exported, and modelled
 export lags of 5--22 years. Dissolution-based removal cannot be read as export
 without this term, and its absence is why the map is an upper bound.
-\item \textbf{{Soil moisture is a crude normalisation.}} TerraClimate reports
-root-zone storage in mm, not a saturation fraction, and porosity is not applied.
+\item \textbf{{The map has no strong aridity signal.}} The moisture term is now an
+absolute saturation, but it is weak by construction, and
+$\eta_{{\mathrm{{transport}}}}$ is pinned near its ceiling at
+$D_w = {C.DAMKOHLER_DW_M_YR}$\,m\,yr$^{{-1}}$ -- area-weighted mean {etr_mean:.3f},
+with {etr_gt08:.1f}\% of cropland area above 0.8 and a wettest-to-driest ratio of
+only {etr_ratio:.1f}$\times$. If aridity is the ERW bottleneck, neither term
+currently represents it.
+\item \textbf{{Irrigation is invisible to the soil-water balance but not to the
+drainage.}} WaterGAP \texttt{{histsoc}} simulates irrigation return flow, so $q$
+sees irrigation while TerraClimate's rain-fed balance does not. The two therefore
+disagree about how wet every irrigated cell is.
+\item \textbf{{Soil moisture is an end-of-month state.}} TerraClimate publishes
+\emph{{Soil Moisture at End of Month}}, an instantaneous value, which is used here
+as though it were a monthly mean.
 \item \textbf{{Nothing downstream of dissolution is deducted}} -- not riverine
 re-release, not strong-acid competition, not the emissions of grinding and
 hauling. Every \cotwo{{}} figure is \textbf{{gross}}.

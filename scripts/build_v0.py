@@ -94,6 +94,43 @@ def piecewise(x, knots) -> np.ndarray:
     return np.where(np.isnan(x), np.nan, out).astype("float32")
 
 
+def moisture_saturation(moist_m, transform, w, h, crs):
+    """Monthly extractable storage (mm) -> absolute degree of saturation.
+
+    Returns (sat_m, source_label). See the MOISTURE_TERM block in constants.py
+    for why this is a three-step chain rather than a single divisor, and why the
+    resulting term is deliberately a weak modulator rather than the map's
+    aridity signal.
+
+    If MOISTURE_TERM is "none" the term is identically 1 -- the documented
+    ensemble bracket, which sits only 0.03 dex from the fix in reactivity spread.
+    That is also the fallback when the retention layer is absent: falling back to
+    the old self-normalisation would silently reinstate the defect this replaces.
+    """
+    if C.MOISTURE_TERM == "none":
+        return np.ones_like(moist_m), "none (moisture term disabled)"
+
+    p = INTERIM / "rootzone_capacity.tif"
+    if not p.exists():
+        print("    WARNING: rootzone_capacity.tif missing, run prep_layers.py; "
+              "falling back to NO moisture term rather than to the old "
+              "self-normalisation")
+        return np.ones_like(moist_m), "FALLBACK none -- rootzone_capacity.tif missing"
+
+    with rasterio.open(p) as s:
+        rscale = float(s.tags().get("scale_factor", 1.0))
+    fc_mm, wp_mm, sat_mm = (
+        onto_grid(p, transform, w, h, crs, band=b) / rscale for b in (1, 2, 3))
+
+    paw_mm = np.maximum(fc_mm - wp_mm, 1.0)          # plant-available capacity
+    frac = np.clip(moist_m / paw_mm, 0.0, 1.0)       # fraction of it that is held
+    theta_mm = wp_mm + frac * (fc_mm - wp_mm)        # absolute water, mm of column
+    sat_m = np.clip(theta_mm / np.maximum(sat_mm, 1e-6), 0.0, 1.0)
+    if C.MOISTURE_EXPONENT != 1.0:
+        sat_m = sat_m ** C.MOISTURE_EXPONENT
+    return sat_m.astype("float32"), C.SOILGRIDS_RETENTION_CITATION
+
+
 def exceedance_lognormal(q05, q50, q95, threshold) -> np.ndarray:
     """P(X > threshold) from SoilGrids quantiles, lognormal matched in log space.
 
@@ -143,14 +180,20 @@ def main() -> int:
     mS = INTERIM / "soilmoist_monthly.tif"
     monthly = mT.exists() and mS.exists()
     if monthly:
-        # Stored as int16 decidegrees to keep the committed artefact small; the
-        # scale factor lives in the file's tags so it cannot be lost.
-        with rasterio.open(mT) as _s:
-            t_scale = float(_s.tags().get("scale_factor", 1.0))
+        # Both stacks are int16 with the scale factor in the file's tags, so it
+        # cannot be lost. APPLY IT TO BOTH. An earlier version applied it to
+        # temperature only, which left soil moisture 10x too large -- invisible
+        # at the time because the saturation term then normalised each cell by
+        # its own annual maximum, and a constant factor cancels there. See the
+        # TERRA_SOIL_SCALE block in fetch_monthly.py.
+        def _scale_of(p):
+            with rasterio.open(p) as _s:
+                return float(_s.tags().get("scale_factor", 1.0))
+
         soilT_m = np.stack([onto_grid(mT, transform, w, h, crs, band=b)
-                            for b in range(1, 13)]) / t_scale
+                            for b in range(1, 13)]) / _scale_of(mT)
         moist_m = np.stack([onto_grid(mS, transform, w, h, crs, band=b)
-                            for b in range(1, 13)])
+                            for b in range(1, 13)]) / _scale_of(mS)
 
     # Potapov et al. 2022 percent-cropland, 0-100 per 0.025 deg cell.
     #
@@ -292,11 +335,18 @@ def main() -> int:
         #     Mediterranean climates, where the means look ideal but the two
         #     never coincide, and LOW in monsoon climates.
         soilT_K = soilT_m + 273.15
-        # Relative saturation from root-zone storage, normalised by its own
-        # local maximum across the year. Crude, and flagged: TerraClimate reports
-        # storage in mm, not a saturation fraction, and porosity is not applied.
-        smax = np.nanmax(moist_m, axis=0)
-        sat_m = np.clip(moist_m / np.maximum(smax, 1e-6), 0.0, 1.0)
+        # ABSOLUTE degree of saturation, via the three-step chain in the
+        # MOISTURE_TERM block of constants.py. TerraClimate reports EXTRACTABLE
+        # storage in mm (water above the wilting point), so it cannot simply be
+        # divided by a capacity: convert to a fraction of plant-available water,
+        # then to an absolute water content, then to a saturation.
+        #
+        # NEVER normalise by the cell's own annual maximum. That is what this
+        # build did through 2026-08-23, and it measured seasonality
+        # (corr -0.886 with the CV of monthly storage) rather than wetness
+        # (corr +0.147 with storage), scoring the driest and wettest 5% of
+        # cropland identically at 0.653.
+        sat_m, sat_source = moisture_saturation(moist_m, transform, w, h, crs)
 
         rate_m = np.stack([
             K.rate_ca_mg_release(C.FEEDSTOCK_DEFAULT, ph_chem, soilT_K[i]) * sat_m[i]
@@ -314,7 +364,8 @@ def main() -> int:
         annual_rate = K.rate_ca_mg_release(
             C.FEEDSTOCK_DEFAULT, ph_chem, np.nanmean(soilT_K, axis=0)
         ) * np.nanmean(sat_m, axis=0)
-        clim_source = "Lembrechts monthly soil T (5-15 cm) + TerraClimate moisture"
+        clim_source = ("Lembrechts monthly soil T (5-15 cm) + TerraClimate "
+                       "extractable storage on SoilGrids retention")
     else:
         reactivity = K.rate_ca_mg_release(C.FEEDSTOCK_DEFAULT, ph_chem, T_K) * wet
         eta = K.eta_dic(ph_chem, pco2, T_K)
@@ -513,14 +564,24 @@ def main() -> int:
           f"{float((aw * no_input[m]).sum()) * 100 / 1e6:.2f} Mha) have no monthly "
           f"soil T/moisture; flagged as no-data, not as zero potential")
 
+    jensen = np.full_like(ph, np.nan, dtype="float32")
     if annual_rate is not None:
         with np.errstate(divide="ignore", invalid="ignore"):
             ratio = reactivity / np.maximum(annual_rate, 1e-30)
-        rr = ratio[m & np.isfinite(ratio) & (annual_rate > 0)]
-        if rr.size:
-            print(f"    monthly-integrated rate / rate-at-annual-mean: "
-                  f"p10 {np.percentile(rr, 10):.2f}  p50 {np.percentile(rr, 50):.2f}  "
-                  f"p90 {np.percentile(rr, 90):.2f}")
+        keep = np.isfinite(ratio) & (annual_rate > 0)
+        jensen[keep] = ratio[keep].astype("float32")
+        sel = m & keep
+        if sel.any():
+            # AREA-weighted, like every other percentile this build prints. It
+            # used to be a plain cell-count percentile, which made it the only
+            # statistic here on a different basis from the rest -- and the
+            # methodology report then hardcoded the cell-count figure.
+            rr, ww = ratio[sel], (crop * area)[sel]
+            o = np.argsort(rr)
+            cw = np.cumsum(ww[o]) / ww.sum()
+            p10, p50, p90 = np.interp([0.1, 0.5, 0.9], cw, rr[o])
+            print(f"    monthly-integrated rate / rate-at-annual-mean, "
+                  f"area-weighted: p10 {p10:.2f}  p50 {p50:.2f}  p90 {p90:.2f}")
             print("      >1 is the Jensen effect (convex rate); <1 is the "
                   "temperature-moisture covariance penalty where warm and wet "
                   "do not coincide")
@@ -588,6 +649,40 @@ def main() -> int:
               f"leaving cropland that receives more than a metre of rain. This is a "
               f"variable-definition defect, not a dry climate -- see "
               f"constants.DRAINAGE_VARIABLE")
+
+    # ---- GATE 2e: the moisture term must be monotone in wetness. THE gate that
+    # would have caught the self-normalisation defect, which scored the driest and
+    # wettest 5% of cropland identically (0.653 / 0.653, ratio 1.00) while
+    # correlating -0.886 with seasonality and only +0.147 with storage.
+    if monthly and C.MOISTURE_TERM != "none":
+        sbar = np.nanmean(sat_m, axis=0)[m]
+        stor = np.nanmean(moist_m, axis=0)[m]
+        good = np.isfinite(sbar) & np.isfinite(stor)
+        sb, st, ww = sbar[good], stor[good], aw[good]
+        order = np.argsort(st)
+        cw = np.cumsum(ww[order]) / ww.sum()
+        dry, wet = cw <= 0.05, cw >= 0.95
+        wmean = lambda x, s: float((x[order][s] * ww[order][s]).sum()
+                                  / ww[order][s].sum())
+        s_dry, s_wet = wmean(sb, dry), wmean(sb, wet)
+        ratio = s_wet / max(s_dry, 1e-9)
+        lg = np.log10(np.maximum(st, 1e-3))
+        cs, cl = sb - (sb * ww).sum() / ww.sum(), lg - (lg * ww).sum() / ww.sum()
+        corr = float((ww * cs * cl).sum()
+                     / np.sqrt((ww * cs * cs).sum() * (ww * cl * cl).sum()))
+        ok2e = (ratio >= C.GATES["moisture_wet_dry_ratio_min"]
+                and corr >= C.GATES["moisture_storage_corr_min"])
+        print(f"  GATE 2e moisture monotone in wetness: driest 5% "
+              f"{s_dry:.3f} ({wmean(st, dry):.0f} mm) vs wettest 5% "
+              f"{s_wet:.3f} ({wmean(st, wet):.0f} mm), ratio {ratio:.2f} >= "
+              f"{C.GATES['moisture_wet_dry_ratio_min']:.2f}; "
+              f"corr vs log10 storage {corr:+.3f} >= "
+              f"{C.GATES['moisture_storage_corr_min']:.2f}  "
+              f"[{'PASS' if ok2e else 'FAIL'}]")
+        if not ok2e:
+            print("    the moisture term is not measuring wetness. If it was "
+                  "normalised per-cell in any way, that is the bug -- see the "
+                  "MOISTURE_TERM block in constants.py")
 
     # ---- GATE 2d: the drainage-variable spread, reported not enforced. Carries
     # the qr-vs-qtot bracket into every build so the choice stays visible.
@@ -718,6 +813,10 @@ def main() -> int:
         cascade=cascade.astype("float32"), p_soc=p_soc,
         q=q.astype("float32"), f_flood=f_flood.astype("float32"),
         pco2=pco2.astype("float32"),
+        # Monthly-integrated rate over rate-at-annual-mean drivers, so the
+        # methodology report can quote the Jensen/covariance spread instead of
+        # carrying a hardcoded copy of it. All-NaN on the fallback climate path.
+        jensen=jensen,
         # The conservative drainage variable alongside the one actually used, so
         # the qr-vs-qtot bracket can be reproduced downstream without reopening
         # the 0.5-deg tifs. All-NaN when the two are the same variable.
@@ -1236,8 +1335,12 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
                 "AIR temperature stands in for monthly SOIL temperature",
                 "PRECIPITATION stands in for a soil-moisture climatology",
             ]) + [
-                "soil moisture is root-zone storage in mm, not a saturation "
-                "fraction: porosity normalisation not yet applied",
+                "the moisture term is a weak wetted-surface modulator, not the "
+                "aridity signal: eta_transport is pinned near 1 on 62% of "
+                "cropland area, so aridity is still under-represented",
+                "irrigation: drainage q includes irrigation return flow but the "
+                "soil-water balance does not, so the two disagree on irrigated "
+                "cropland",
                 "kinetics over-predict measured basalt release; activation energy "
                 "is ~2x too high (see the kinetics test)",
             ],

@@ -310,7 +310,7 @@
     // Which term costs the most here. The ceiling gets its OWN state rather than
     // being folded into the drainage term: when it binds, the limit is not that
     // the water moves too slowly, it is that the water cannot hold the carbon at
-    // any speed -- and on 93.0% of cropland that is the operative limit, which is
+    // any speed -- and on 91.0% of cropland that is the operative limit, which is
     // exactly the thing a reader needs to be told.
     if (uMode == 1) {
       if (ceilBinds) { fragColor = withMafic(factorColor(3), mafic); return; }
@@ -1339,7 +1339,9 @@
       <li><b>Dissolution rate.</b> The Palandri &amp; Kharaka (2004,
       USGS OFR 2004-1068) three-mechanism rate law for basalt, driven by soil pH
       (SoilGrids, 0–15 cm) and monthly soil temperature (Lembrechts et al. 2022,
-      5–15 cm), moisture-limited from a TerraClimate root-zone climatology. The
+      5–15 cm), moisture-limited by the degree of soil-water saturation — a
+      TerraClimate extractable-storage climatology divided through SoilGrids
+      field capacity, wilting point and pore volume over 0–100 cm. The
       rate is computed month by month and then averaged, because weathering needs
       warm and wet at the same time. (An index first-order in hydrogen-ion
       activity, as in Cascade, is close to a rescaled soil-pH map; the
@@ -1494,9 +1496,13 @@
       re-release and strong-acid competition plausibly claim 20–80% of gross
       removal, and the gap is spatially variable. Nothing here is validated
       against net measured removal.</p>
-      <p><b>One input is a stand-in.</b> Soil moisture is root-zone storage in
-      millimetres rather than a saturation fraction; the porosity normalisation
-      is not yet applied.</p>
+      <p><b>Aridity is under-represented.</b> The moisture term is a real
+      saturation now, but it is a weak modulator by construction, and transport
+      limitation is near its ceiling on most cropland. If aridity is the binding
+      constraint on this technology, neither term yet says so.</p>
+      <p><b>Irrigation is half-visible.</b> Drainage includes irrigation return
+      flow; the soil-water balance behind the moisture term does not. On irrigated
+      land the two disagree about how wet the field is.</p>
       <p><b>Cropland is herbaceous-only.</b> The mask reproduces Potapov et al.
       (2022) to 0.1%, but excludes perennial woody crops, temporary meadows and
       long fallow (~0.36 Gha vs FAOSTAT). Woody crops are protocol-eligible and a

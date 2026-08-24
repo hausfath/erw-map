@@ -97,20 +97,20 @@ drainage.
 store discharges as baseflow, so a 30-year mean `qsb` is `qr` relabelled (global
 land medians 33.5 vs 32.6 mm/yr). It clears the deltas and creates worse zeros
 where groundwater is pumped: 26% of the Indo-Gangetic Plain and 4% of the US Corn
-Belt, taking the negligible class from 0.79% to 6.60% of cropland area.
+Belt, taking the negligible class from 1.15% to 6.71% of cropland area.
 
 **`qtot` is the default.** Maher & Chamberlain fit `D_w` against catchment
 discharge per unit area, which *is* `qtot`, so driving a `qtot`-calibrated `D_w`
 with recharge penalises the flux twice — the same double-counting logic as
 `DAMKOHLER_TAU_APPLIED_IN_ETA`. It also fixes the defect without creating another:
-negligible class 0.79% → 0.10% of area, every delta clears, no region worsens, and
-the >90%-weathered tail only moves 0.63% → 0.77%.
+negligible class 1.15% → 0.18% of area, every delta clears, no region worsens, and
+the >90%-weathered tail only moves 0.24% → 0.31%.
 
 The counter-argument, which is why `qr` is kept as a reported sensitivity: surface
 runoff has little contact time with topsoil rock, so `qtot` credits water that
 arguably weathered nothing. Against it, `D_w` is an *effective* catchment-scale
 parameter that already absorbs the distinction. Read the two as a bracket —
-2.15 (`qr`) to 2.49 (`qtot`) GtCO₂/yr global gross, printed every build as gate 2d.
+2.10 (`qr`) to 2.43 (`qtot`) GtCO₂/yr global gross, printed every build as gate 2d.
 
 Gate 2c enforces the impossibility that `qr` violated: a cell receiving more than
 1,000 mm/yr of rain cannot drain less than 1 mm/yr. Currently 0.024% of cropland
@@ -122,8 +122,8 @@ area, against a 0.05% allowance for 0.5° cells straddling a wet/arid boundary.
 The rate is computed **each month and the rate averaged**, never the drivers.
 Two reasons, the second larger: the rate is convex in temperature so the mean of
 the rate exceeds the rate at the mean (Jensen); and weathering needs warm *and*
-wet simultaneously, which annual means destroy. Measured effect: median 1.04,
-range 0.89–1.33 — smaller than the ~1.4 an air-temperature-based estimate
+wet simultaneously, which annual means destroy. Measured effect: area-weighted median **1.15**,
+p10–p90 1.01–1.34 — smaller than the ~1.4 an air-temperature-based estimate
 suggests, because soil at 5–15 cm is strongly damped.
 
 η_DIC is **rate-weighted** across months, not plainly averaged: the efficiency
@@ -153,11 +153,11 @@ Measured effect on the shipped map, at the reference grind:
 
 | | exponential | shrinking core |
 |---|---|---|
-| cropland area above 50% weathered | 17.9% | 15.7% |
-| above 75% | 7.6% | **4.4%** |
-| above 90% | 2.2% | **0.77%** |
-| above 99% | 0.15% | **0.01%** |
-| p50 / p90 / p99 | 18.0 / 68.7 / 95.0% | 18.7 / 61.8 / 88.4% |
+| cropland area above 50% weathered | 18.1% | 15.9% |
+| above 75% | 5.5% | **2.6%** |
+| above 90% | 1.2% | **0.31%** |
+| above 99% | 0.04% | **0.00%** |
+| p50 / p90 / p99 | 15.8 / 66.2 / 91.7% | 16.6 / 59.6 / 84.1% |
 
 The median barely moves; the extreme tail is cut by about two thirds. Note it does
 **not** make 100% unreachable — a cell with 40× the reference reactivity still gets
@@ -167,27 +167,122 @@ The integral is untruncated. Truncating at the 1–5000 µm range `ssa_geometric
 uses changes Fw by ≤0.001 for n ≥ 1.5 and by up to 0.03 at n = 0.7, where real mass
 sits outside that window.
 
-### Soil moisture: a known defect, stated plainly
+### Soil moisture: an absolute saturation, and what it cost to get there
 
-`sat_m = moist_m / max(moist_m over the year)` normalises each cell by **its own**
-annual maximum, which removes absolute wetness and leaves only seasonal shape. A
-uniformly arid cell has flat seasonality and therefore reads as near-saturated.
-Measured: the driest 5% of cropland (8.1 mm mean root-zone storage) scores a
-*higher* saturation term (0.72) than the wettest 5% (2,194 mm → 0.69). A 272×
-range in real water becomes 0.95×.
+**Fixed 2026-08-24.** Two stacked defects, one of which was hiding the other.
 
-This is **not** the "porosity normalisation not yet applied" caveat previously
-recorded, which describes a missing constant divisor — that would rescale
+**Defect 1, the normalisation.** The build used to compute
+`sat_m = moist_m / max(moist_m over the year)`, normalising each cell by **its
+own** annual maximum. That removes absolute wetness and leaves only seasonal
+shape, so it did not weaken the aridity signal, it deleted it. Area-weighted over
+the 406,991 cropland cells, the term correlated **−0.886** with the coefficient of
+variation of monthly storage and only **+0.147** with storage itself. The driest
+and wettest 5% of cropland scored **identically, 0.653 both**, across a 272× range
+in real soil water — a dry cell is dry all year, so its seasonality is flat, so it
+read as saturated. The Nile valley, at 6 mm mean root-zone storage, scored
+**0.973**, higher than NW Europe. Worst of all, the Indo-Gangetic Plain holds more
+water than the US Corn Belt (746 vs 629 mm) and was down-weighted **36%** against
+it purely for having a monsoon, inverting the temperature × moisture covariance
+that monthly integration exists to capture.
+
+This was **not** the "porosity normalisation not yet applied" caveat previously
+recorded here, which describes a missing constant divisor — that would rescale
 uniformly and cancel in `reactivity/reference`. A spatially varying rescale does
 not cancel.
 
-Fixing it needs porosity or available water capacity to convert mm of storage
-into a saturation fraction, and it interacts with the transport term: aridity
-currently enters the model only through `η_transport`, so a fix must decide
-whether moisture limitation of the *rate* and transport limitation of the
-*export* are separate physics or double counting. Substituting a plausible
-absolute saturation moves **64% of cropland area** by reactivity decile, so this
-is a first-order open item, not a units nicety.
+**Defect 2, the units, invisible because of defect 1.** TerraClimate stores `soil`
+as int16 with `scale_factor = 0.1`, and `rasterio.read()` returns the raw integer.
+`fetch_monthly.py` never applied it, so the committed layer was **10× too large**
+and its own tag said `scale_factor: 1.0`, making the error self-consistent. It
+survived because a constant factor cancels exactly in `moist/max(moist)`. Fixing
+the normalisation without fixing this would have produced a saturation term 10×
+too large, i.e. clipped to 1 almost everywhere. Confirmed independently of the
+metadata: as-built annual-maximum storage had a cropland median of 680 mm and
+exceeded SoilGrids root-zone plant-available capacity on **87.9%** of cropland
+area, impossible for extractable water. Scaled, the median is 68 mm against a
+141 mm capacity.
+
+A related tripwire, checked and found inert: `hi_valid=5000.0` was written meaning
+5000 mm but bit at 500 real mm. Nothing in the written product exceeds it and
+**0.000%** of land area lost a month, so re-tagging the committed raster is exactly
+equivalent to re-downloading 1.1 GB. The validity range is now expressed in real
+mm.
+
+**The fix is a chain, not a divisor.** TerraClimate reports *extractable* storage
+in mm — water above the wilting point — so it cannot be divided by a capacity and
+called a saturation. Three steps, each with its own denominator from SoilGrids
+water retention integrated over 0–100 cm (`wv0033`, `wv1500`, `bdod`):
+
+```
+f     = clip(storage_mm / (fc_mm − wp_mm), 0, 1)     fraction of plant-available
+θ     = θ_wp + f · (θ_fc − θ_wp)                    absolute water content
+S     = θ / θ_sat,   θ_sat = 1 − ρ_b/2.65           degree of saturation
+```
+
+This answers the question this section used to leave open — field capacity,
+saturation, or plant-available water, which differ by ~2×. **None of them alone.**
+Field capacity and wilting point *bracket* the range the storage occupies; pore
+volume is the denominator that turns a content into a saturation. Cropland medians
+over 0–100 cm: FC 308 mm, WP 138 mm, plant-available 154 mm, pore volume 487 mm.
+
+**What this term is for, and what it is not for.** Because θ has a wilting-point
+floor, S spans only ~0.34–1.0 over cropland, so the reactivity spread it produces
+(1.21 dex p10–p90) is no wider than the broken term's (1.23 dex). That is a
+*result*, not a failure to fix anything: the moisture term is a modest
+wetted-surface-area modulator and **it should not be asked to carry the aridity
+signal**. Dissolution does not stop at the wilting point — films persist — so a
+term that falls to ~0 in the Nile valley (a `clip(storage/300 mm)` stand-in gives
+0.021) is *more* wrong than one giving 0.31.
+
+Measured alternatives, all re-running the monthly integration:
+
+| definition | mean S | p10–p90 spread | area changing decile | rank corr |
+|---|---|---|---|---|
+| self-normalised (removed) | 0.546 | 1.23 dex (17×) | — | 1.000 |
+| `clip(storage/300mm)` stand-in | 0.706 | 1.63 dex (43×) | 64.3% | 0.864 |
+| extractable / plant-available | 0.336 | 2.11 dex (130×) | 71.2% | 0.833 |
+| **θ/θ_sat, shipped** | **0.476** | **1.21 dex (16×)** | **58.5%** | **0.930** |
+| no moisture term (ensemble bracket) | 1.000 | 1.11 dex (13×) | 58.1% | 0.956 |
+
+The last row is the one worth sitting with: simply *deleting* the old term
+rearranged 58.1% of cropland area by decile against 64.3% for replacing it, which
+is how little signal it carried. `MOISTURE_TERM = "none"` ships that bracket.
+
+**Gate 2e** now requires the term to be monotone in wetness — wettest 5% over
+driest 5% ≥ 1.25 and correlation with log₁₀ storage ≥ 0.50 — and fails any
+per-cell normalisation. It reads 0.333 (1 mm) vs 0.625 (205 mm), ratio 1.88, corr
++0.575.
+
+**Linearity in S is a convention, not a result.** Nothing in the literature
+constrains the exponent for mineral dissolution in soils, and wetted surface area
+plausibly saturates well below full saturation, which argues for `S**b` with
+b < 1. Shipped at b = 1 (`MOISTURE_EXPONENT`), with b in the ensemble.
+
+**Two limitations that these inputs cannot close.** TerraClimate publishes *Soil
+Moisture at End of Month*, an instantaneous state used here as a monthly mean. And
+the drainage `q` comes from WaterGAP `histsoc`, which simulates irrigation return
+flow, so `η_transport` sees irrigation while a rain-fed soil-water balance does
+not — hence the Nile valley reading dry on a field that is in fact wet. Every
+irrigated cell therefore has a moisture term and a drainage term that disagree
+about how wet it is. Closing this needs an irrigation mask as a third input.
+
+### The aridity signal is still missing, and D_w is why
+
+Fixing the moisture term does not give the map an aridity signal, because the term
+is deliberately weak and the export side is not delivering one either. At
+`D_w = 0.03 m/yr`, `η_transport = q/(q + D_w)` is pinned near its ceiling over
+cropland: area-weighted mean **0.787**, with **62.4%** of cropland area above 0.8
+and 35.1% above 0.9, and a wettest-5%-to-driest-5% ratio of only **4.1×** against
+that 272× range in soil water.
+
+So before this fix the map had a seasonality index and a saturated transport term,
+i.e. **no working aridity term at all**. Calabrese et al. 2022 argue aridity is
+*the* ERW bottleneck, and their mechanism is on the export side — the chemical
+depletion fraction collapses past a Budyko dryness index of 1 because weathering
+products are not flushed, not because the rock stops dissolving. That is where
+this has to be resolved, and it makes `D_w` the blocking item rather than a
+parallel one. (Citation carried over from `to_do.md` and not yet verified against
+the paper.)
 
 ## 2b. The drainage-concentration ceiling — COMPUTED BUT NOT APPLIED
 
@@ -200,12 +295,12 @@ is a first-order open item, not a units nicety.
 > shader switches it without a rebuild, and every dependent readout follows: the
 > footer total, the limiting-factor class, the hover box's "without the drainage
 > limit" row, the legend and the Methods text. Turning it on live reproduces the
-> build's own figure to the digit (0.91 GtCO₂/yr against the build's 0.910).
+> build's own figure to the digit (0.89 GtCO₂/yr against the build's 0.888).
 >
 > **In the derived products** — the `cdr` array, gate 12, the cost screen —
 > `constants.FLUX_CEILING_ON = False` remains the switch; flip it to `True` and
 > rebuild to apply the bound outside the browser too.
-> While it is off, the map's CO₂ figures are **above this bound on 93.0% of
+> While it is off, the map's CO₂ figures are **above this bound on 91.0% of
 > cropland, by a median factor of 2.9×**, so they should be read as an upper bound
 > on dissolution rather than as carbon that can be shown to leave the field. Gate 12
 > reports that exceedance on every build rather than letting it disappear with the
@@ -254,7 +349,7 @@ assumptions with the closed form:
 | Meybeck carbonate-terrain streams | 3.15 |
 | soil-pH backstop: holding 10 mmol/L needs pH 8.16 at 4,000 µatm | ~10 |
 
-**Effect, measured.** The ceiling binds on **93.0% of cropland area**; the median
+**Effect, measured.** The ceiling binds on **91.0% of cropland area**; the median
 falls 1.589 → 0.510 tCO₂/ha/yr (3.1×). But the level is not the point:
 
 | mean soil T | uncapped | ceiling | exceedance |
@@ -267,7 +362,7 @@ falls 1.589 → 0.510 tCO₂/ha/yr (3.1×). But the level is not the point:
 
 `C_eq` **falls** with warming while the rate law rises, so the exceedance is
 monotonic in temperature and the warmest/coolest ratio of the median goes from
-**3.95× uncapped to 1.41× at the ceiling**. Imposing the bound therefore removes
+**4.75× uncapped to 1.41× at the ceiling**. Imposing the bound therefore removes
 the map's warm-climate gradient rather than merely rescaling the level, and that is
 the most consequential thing about this term.
 
@@ -278,13 +373,13 @@ from 20 to 30 t/ha in August 2026:
 
 | | 20 t/ha | 30 t/ha |
 |---|---|---|
-| uncapped median CDR | 1.059 | 1.589 (+50%, linear in rate) |
-| **capped median CDR** | **0.478** | **0.510 (+6.6%)** |
-| global gross, capped | 0.837 | **0.910 GtCO₂/yr (+8.6%)** |
-| cropland area where the cap binds | 82.3% | 93.0% |
-| realised carbon per tonne of rock, median cell | 8.3% of stoichiometric | **5.9%** |
+| uncapped median CDR | 0.931 | 1.396 (+50%, linear in rate) |
+| **capped median CDR** | **0.474** | **0.507 (+7.0%)** |
+| global gross, capped | 0.807 | **0.888 GtCO₂/yr (+10.0%)** |
+| cropland area where the cap binds | 79.6% | 91.0% |
+| realised carbon per tonne of rock, median cell | 8.2% of stoichiometric | **5.8%** |
 
-**50% more rock bought 8.6% more carbon.** Adding feedstock past the point where
+**50% more rock bought 10.0% more carbon.** Adding feedstock past the point where
 drainage saturates raises the fraction of the map that is transport-limited instead
 of raising the tonnage, and it lowers the realised efficiency per tonne. That is a
 physical result, not a modelling artefact, and it is the kind of thing an uncapped
@@ -293,7 +388,7 @@ rate law cannot say.
 The sublinearity was starker on the groundwater-recharge drainage this section was
 first written against — 50% more rock bought 1.8% more carbon, and the capped median
 did not move at all. Total runoff raises the ceiling in proportion, so it binds on
-93.0% of area rather than 98.9% and leaves the rate some room. The direction is
+91.0% of area rather than 98.9% and leaves the rate some room. The direction is
 robust to the drainage variable; the magnitude is not, and it is worth knowing that
 the most quotable version of this result was the one on the more conservative
 water flux.
@@ -335,29 +430,29 @@ removal from one application**. Those are only the same thing if you reapply eve
 year, and you cannot: a field takes a multi-year break between applications.
 
 The two errors partly cancel, and it is worth showing how far rather than relying on
-it. Run the shrinking-core model forward and the median cell weathers **18.7% in year
-one and 78.1% by year ten**, so one application delivers ~4.2× its year-one carbon
-over a decade — a 10-year yield of **6.37 tCO₂/ha** at the median. Under a
+it. Run the shrinking-core model forward and the median cell weathers **16.6% in year
+one and 73.8% by year ten**, so one application delivers ~4.3× its year-one carbon
+over a decade — a 10-year yield of **6.04 tCO₂/ha** at the median. Under a
 reapplication interval of *k* years the steady-state annual removal is that yield
 divided by *k*:
 
 | reapplication interval | average t/ha/yr | steady-state tCO₂/ha/yr |
 |---|---|---|
-| every year | 30.0 | 6.37 |
-| every 2 years | 15.0 | 3.19 |
-| every 3 years | 10.0 | 2.12 |
-| **every 4 years** | **7.5** | **1.59** |
-| every 5 years | 6.0 | 1.27 |
-| every 7 years | 4.3 | 0.91 |
-| every 10 years | 3.0 | 0.64 |
+| every year | 30.0 | 6.04 |
+| every 2 years | 15.0 | 3.02 |
+| every 3 years | 10.0 | 2.01 |
+| **every 4 years** | **7.5** | **1.51** |
+| every 5 years | 6.0 | 1.21 |
+| every 7 years | 4.3 | 0.86 |
+| every 10 years | 3.0 | 0.60 |
 
-The map shows **1.59** tCO₂/ha/yr, which lands on a **four-year** interval. So the
-year-one framing still approximates a plausible operational cadence at steady state,
-and annual reapplication (6.37) would badly overstate it — but the equivalent cadence
-is shorter than the five years this section previously claimed, and a field on a
-longer rotation than four years will remove less than the map shows. Stated here
-because the "/yr" label otherwise invites reading it as a sustainable annual rate
-from annual application, which it is not.
+The map shows **1.40** tCO₂/ha/yr, which lands between the four- and five-year
+intervals at an equivalent cadence of **4.3 years**. So the year-one framing still
+approximates a plausible operational cadence at steady state, and annual
+reapplication (6.04) would badly overstate it — but a field on a longer rotation
+than about four years will remove less than the map shows. Stated here because the
+"/yr" label otherwise invites reading it as a sustainable annual rate from annual
+application, which it is not.
 
 Two corrections behind the shift from five years to four. Most of it is the drainage
 variable: on groundwater recharge the year-one fraction was 14.9% and the equivalent

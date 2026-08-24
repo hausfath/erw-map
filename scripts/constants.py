@@ -884,10 +884,96 @@ CROP_ID_BITS = 6
 CROP_SHARE_BITS = 6
 CROP_SHARE_LEVELS = (1 << CROP_SHARE_BITS) - 1      # 63
 
+# ---------------------------------------------------------------------------
+# THE MOISTURE TERM. Degree of saturation, absolute -- never self-normalised.
+#
+# WHAT WAS WRONG. Through 2026-08-23 the build computed
+#     smax  = nanmax(moist_m, axis=0)
+#     sat_m = clip(moist_m / smax, 0, 1)
+# i.e. it normalised each cell by ITS OWN annual maximum. That removes absolute
+# wetness and leaves only within-year seasonal shape, and it is not a weakening
+# of the aridity signal but a destruction of it. Measured, area-weighted over the
+# 406,991 cropland cells:
+#   corr(term, CV of monthly storage)  -0.886   <- what it actually measured
+#   corr(term, log10 storage)          +0.147   <- what it was supposed to measure
+# The driest and wettest 5% of cropland scored IDENTICALLY, 0.653 both, across a
+# 272x range in real soil water: a dry cell is dry all year, so its seasonality
+# is flat, so it reads saturated. The Nile valley at 6 mm mean root-zone storage
+# scored 0.973, higher than NW Europe. The Indo-Gangetic Plain holds more water
+# than the US Corn Belt and was down-weighted 36% against it purely for having a
+# monsoon -- inverting the temperature x moisture covariance that monthly
+# integration exists to capture.
+#
+# THE FIX IS A CHAIN, NOT A DIVISOR. TerraClimate reports EXTRACTABLE storage in
+# mm -- water held above the wilting point -- so it cannot be divided by a
+# capacity and called a saturation. Three steps, each with its own denominator:
+#   f     = clip(storage_mm / (fc_mm - wp_mm), 0, 1)     fraction of available
+#   theta = theta_wp + f * (theta_fc - theta_wp)         absolute water content
+#   S     = theta / theta_sat                            degree of saturation
+# This answers the question the earlier note left open -- field capacity,
+# saturation, or plant-available water, which differ by ~2x. None of them alone:
+# fc and wp BRACKET the range the storage lives in, and pore volume is the
+# denominator that turns a content into a saturation.
+#
+# WHAT THIS TERM IS FOR, AND WHAT IT IS NOT FOR. Because theta has a
+# wilting-point floor, S spans roughly 0.34-1.0 over cropland -- a 2.9x range, so
+# the reactivity spread it produces (1.21 dex p10-p90) is no wider than the
+# broken term's (1.23 dex). That is a RESULT, not a failure to fix anything: the
+# moisture term is a modest wetted-surface-area modulator and it should not be
+# asked to carry the aridity signal. Dissolution does not stop at the wilting
+# point -- films persist -- so a term that goes to ~0 in the Nile valley (the
+# clip(storage/300mm) stand-in gives 0.021) is MORE wrong than one giving 0.31.
+# Aridity has to come from the export side (q, eta_transport, and the drainage
+# ceiling), which is also Calabrese et al. 2022's own mechanism: their chemical
+# depletion fraction collapses past PET/P = 1 because weathering products are not
+# flushed, not because the rock stops dissolving.
+#
+# SO THIS FIX MAKES D_W THE BLOCKING ITEM. At D_w = 0.03 m/yr, eta_transport is
+# pinned near its ceiling over cropland -- area-weighted mean 0.787, with 62.4%
+# of cropland area above 0.8 and 35.1% above 0.9, and a wettest-5%-to-driest-5%
+# ratio of only 4.1x against that 272x range in soil water. Before this fix the
+# map had a seasonality index and a saturated transport term, i.e. NO working
+# aridity signal at all. Fixing the moisture term does not supply one.
+#
+# LINEARITY IS A CONVENTION, NOT A RESULT. The rate is taken as first order in S.
+# Nothing in the literature constrains the exponent for mineral dissolution in
+# soils; wetted surface area plausibly saturates well below full saturation,
+# which argues for S**b with b < 1. Shipped as b = 1 with b in the ensemble.
+#
+# KNOWN INCONSISTENCY, not fixable with these inputs. The drainage q comes from
+# WaterGAP histsoc, which simulates irrigation return flow, so eta_transport sees
+# irrigation. A rain-fed soil-water balance does not -- hence the Nile valley
+# reading dry on a field that is in fact wet. Every irrigated cell therefore has
+# a moisture term and a drainage term that disagree about how wet it is. Closing
+# this needs an irrigation mask as a third input.
+# ---------------------------------------------------------------------------
+MOISTURE_TERM = "saturation"       # "saturation" | "none" (ensemble bracket)
+MOISTURE_EXPONENT = 1.0            # b in S**b; see LINEARITY above
+PARTICLE_DENSITY_G_CM3 = 2.65      # quartz-dominated mineral density, for porosity
+# CITATION STATUS: both strings below carry volume/page numbers that were NOT
+# verified against the primary source in the session that added them (the web
+# search budget was exhausted). The Calabrese reference was carried over from
+# to_do.md rather than read from the paper. Check both before either appears in
+# anything published, and drop the volume/pages if they cannot be confirmed.
+SOILGRIDS_RETENTION_CITATION = (
+    "Poggio et al. 2021, SOIL 7:217-240 (SoilGrids 2.0) [citation UNVERIFIED]; "
+    "water retention wv0033/wv1500 and bulk density bdod, 0-100 cm"
+)
+ARIDITY_BOTTLENECK_CITATION = (
+    "Calabrese et al. 2022, Environ. Sci. Technol. 56:15261-15272, "
+    "'The Aridity Bottleneck' (Budyko dryness index vs chemical depletion) "
+    "[citation UNVERIFIED]"
+)
+TERRACLIMATE_IS_END_OF_MONTH = True   # instantaneous state, not a monthly mean
+
 # Reference condition for L1. Published, absolute, so L1 is domain-invariant.
 # L1 is reported as log10(R / R_ref) on a diverging scale centred at zero and
 # labelled in x-reference units -- NOT as a 0-1 index, which invites reading
 # 0.5 as "half as reactive".
+#
+# saturation 0.6 is not arbitrary and is now physically anchored: the cropland
+# median field capacity is 313 mm against a 500 mm pore volume over 0-100 cm, so
+# S = 0.63 IS field capacity. The reference cell is a soil at field capacity.
 L1_REF = {"pH": 6.5, "T_soil_C": 15.0, "saturation": 0.6}
 L1_LOG_HALF_RANGE = 30.0          # 'A': clamp at +/- log10(A)
 
@@ -1390,6 +1476,15 @@ GATES = {
     # inflate the total by roughly this much. If the inflation is outside this
     # band, the area code is wrong regardless of what the total comes to.
     "naive_area_inflation": (0.20, 0.35),
+    # The moisture term must be MONOTONE IN WETNESS. This is the gate that would
+    # have caught the self-normalisation defect: under it the driest and wettest
+    # 5% of cropland both scored 0.653, a ratio of 1.00, and the correlation with
+    # log10 storage was +0.147. Any term that normalises a cell by its own annual
+    # maximum fails both. The thresholds are deliberately weak -- a term that is
+    # merely ordered correctly clears them -- because the point is to catch a
+    # sign error, not to legislate a slope.
+    "moisture_wet_dry_ratio_min": 1.25,
+    "moisture_storage_corr_min": 0.50,
     # Stoichiometric ceiling is computed PER ARCHETYPE from its oxide
     # composition, not set as one global number -- an early draft used a single
     # basalt-derived 0.45 and ultramafic legitimately exceeded it. The only

@@ -217,11 +217,11 @@ window.ERW = {
         0.75
       ]
     },
-    "bindsAreaFrac": 0.9299,
+    "bindsAreaFrac": 0.91,
     "medianTco2HaYr": 0.5171,
-    "warmCoolUncapped": 3.95,
+    "warmCoolUncapped": 4.75,
     "warmCoolCeiling": 1.41,
-    "exceedMedian": 2.93,
+    "exceedMedian": 2.89,
     "realisedShareOfStoich": 0.0595
   },
   "dissolution": {
@@ -1598,20 +1598,21 @@ window.ERW = {
   },
   "stats": {
     "croplandGha": 1.215,
-    "evaluatedGha": 1.21,
-    "cdrMedian": 1.59,
+    "evaluatedGha": 1.209,
+    "cdrMedian": 1.4,
     "quarryPoints": 5295
   },
   "provenance": {
     "crops": "IFPRI SPAM2010 v2.0 global physical area, doi:10.7910/DVN/PRFF8V (latest global release)",
     "soil": "SoilGrids v2.0 via ISRIC WCS (pH 0-15 cm, SOC 0-5 cm + quantiles)",
-    "climate": "Lembrechts monthly soil T (5-15 cm) + TerraClimate moisture",
+    "climate": "Lembrechts monthly soil T (5-15 cm) + TerraClimate extractable storage on SoilGrids retention",
     "cropland": "Potapov et al. 2022 percent-cropland, 3 km",
     "drainage": "WaterGAP2-2e total runoff (qtot) via ISIMIP3a, 0.5 deg",
     "paddy": "GRPI Landsat inundation months x SPAM2010 irrigated rice",
     "feedstock": "GLiM full-resolution basic igneous outcrop + USGS MRDS mafic-hosted stone producers, ANM SIGMINE titles (Brazil) and OSM quarries; truck-only haul, not routed",
     "substitutions": [
-      "soil moisture is root-zone storage in mm, not a saturation fraction: porosity normalisation not yet applied",
+      "the moisture term is a weak wetted-surface modulator, not the aridity signal: eta_transport is pinned near 1 on 62% of cropland area, so aridity is still under-represented",
+      "irrigation: drainage q includes irrigation return flow but the soil-water balance does not, so the two disagree on irrigated cropland",
       "kinetics over-predict measured basalt release; activation energy is ~2x too high (see the kinetics test)"
     ],
     "dw": {

@@ -241,7 +241,7 @@ observationally. That ratio is the argument to put to operators.
 ## 5. Known asymmetries and open audit items
 
 - **The drainage-concentration ceiling is OFF pending external review (2026-08-03),
-  so the shipped map violates a bound this repo computes and documents.** On 93.0%
+  so the shipped map violates a bound this repo computes and documents.** On 91.0%
   of cropland area the CO₂ layer exceeds what the drainage could carry, by a median
   factor of 2.9×. (Both figures fell when the drainage variable changed from
   groundwater recharge to total runoff in August 2026 — the ceiling scales with `q`,
@@ -298,7 +298,7 @@ observationally. That ratio is the argument to put to operators.
   ceiling itself — the map's capped median moves only **0.478 → 0.510 tCO₂/ha/yr
   from 20 to 30 t/ha**, because the ceiling does not scale with how much rock is
   applied. (It was flat at 0.220 for both rates until the drainage variable was
-  corrected in August 2026; total runoff raises the ceiling, so it now binds on 93.0%
+  corrected in August 2026; total runoff raises the ceiling, so it now binds on 91.0%
   of area rather than 98.9% and leaves the rate a little room. Still an 8.6% gain in
   capped global total for 50% more rock.) So conclusions that rest on the ceiling are
   nearly unaffected by the rate change; conclusions

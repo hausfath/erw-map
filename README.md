@@ -345,7 +345,7 @@ letting the trade-off be judged in units that mean something.
 Cost is compensatory with a floor, not annihilating: expensive rock is bad, not
 impossible. It is **on by default** as of August 2026. It used to be off, so that
 the landing map was a statement about physical potential — but the unscreened map
-implies 2.49 GtCO₂/yr across essentially all cropland, and almost none of that is
+implies 2.43 GtCO₂/yr across essentially all cropland, and almost none of that is
 deployable at a price anyone would pay. Leading with the physical figure put the
 less useful number in front. The toggle still switches it off, and the footer states
 its basis either way.
@@ -357,8 +357,16 @@ natively 30 arc-second and monthly, plus a ten-year TerraClimate root-zone
 moisture climatology. The rate is computed **each month and the rate averaged**,
 never the drivers.
 
+The moisture term is an **absolute degree of saturation** as of August 2026. It
+used to normalise each cell by its own annual maximum, which measured seasonality
+rather than wetness and scored the driest and wettest 5% of cropland identically —
+see [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) §2, which also records the 10×
+unit error that defect was concealing. The storage is now divided through
+SoilGrids field capacity, wilting point and pore volume over 0–100 cm, and gate 2e
+fails any per-cell normalisation.
+
 **We were wrong about the size of the effect.** Air-temperature-based literature
-estimates suggested ~1.4×; measured here it is median **1.04**, range 0.89–1.33.
+estimates suggested ~1.4×; measured here it is area-weighted median **1.15**, p10–p90 1.01–1.34.
 Soil temperature at 5–15 cm is strongly damped relative to air, so the Jensen term
 is much weaker than an air-based estimate implies, and the covariance term pulls
 the other way in places.
@@ -449,7 +457,7 @@ rather than deleted: surface runoff has little contact time with topsoil rock, s
 `qtot` credits water that arguably weathered nothing. The counter is that `D_w` is
 an *effective* parameter fit at catchment scale, where nearly all runoff has passed
 through regolith, so it already absorbs that. Treat the two as a bracket —
-**2.15 (`qr`) to 2.49 (`qtot`) GtCO₂/yr** global gross, a 16% spread that the build
+**2.10 (`qr`) to 2.43 (`qtot`) GtCO₂/yr** global gross, a 16% spread that the build
 prints every run as gate 2d.
 
 The change is broad, not a delta patch: +7% to +30% by latitude band, largest in
@@ -467,7 +475,7 @@ of rain a year cannot drain less than a millimetre. Run
 |---|---|
 | **The SOC screen barely binds on cropland** | Only 0.04% of cropland area is confidently excluded (P > 0.9), and 96% of the cells flagged worldwide are north of 50°N: SOC above 5 wt% is a peatland and boreal-forest phenomenon. A *marginal* class (0.1 < P < 0.9) covering 53% of cropland was drawn in an earlier version and is now reported rather than mapped — it was the dominant visual feature of the map while saying little that was actionable, and it is largely a statement about the width of SoilGrids' predictive intervals (on a point estimate the same figure is ~0.2%). Still a screening likelihood, not a calibrated eligibility probability, because the quantiles describe a block average and the threshold applies to a field |
 | **Grid is 0.1° (~11 km), not 1 km** | The header says so. Effective resolution is coarser again |
-| **Nothing bounds the reported carbon by the water that has to carry it** — by default | The drainage-concentration ceiling (`cdr ≤ q·[HCO₃⁻]_max·44`, from calcite saturation with pH endogenous) is built, gated and shipped in the texture, but **not applied**, pending review by the ERW community — see [`docs/rfc_flux_reconciliation.tex`](docs/rfc_flux_reconciliation.tex). So the CO₂ layer is an upper limit on *dissolution*, not carbon shown to leave the field: it exceeds the bound on **93.0%** of cropland area by a median **2.9×**. The viewer exposes it as a live toggle (Advanced → *Apply the drainage limit*), which takes the global total from 2.49 to 0.91 GtCO₂/yr and makes the ceiling the limiting factor almost everywhere. `constants.FLUX_CEILING_ON` sets the default and governs the derived products |
+| **Nothing bounds the reported carbon by the water that has to carry it** — by default | The drainage-concentration ceiling (`cdr ≤ q·[HCO₃⁻]_max·44`, from calcite saturation with pH endogenous) is built, gated and shipped in the texture, but **not applied**, pending review by the ERW community — see [`docs/rfc_flux_reconciliation.tex`](docs/rfc_flux_reconciliation.tex). So the CO₂ layer is an upper limit on *dissolution*, not carbon shown to leave the field: it exceeds the bound on **91.0%** of cropland area by a median **2.9×**. The viewer exposes it as a live toggle (Advanced → *Apply the drainage limit*), which takes the global total from 2.43 to 0.89 GtCO₂/yr and makes the ceiling the limiting factor almost everywhere. `constants.FLUX_CEILING_ON` sets the default and governs the derived products |
 | **Gudbrandsson kinetics test now runs, and FAILS** | See below. The rate law over-predicts measured basalt Ca and Mg release, with structured residuals. This is the most important open problem in the model |
 
 Weight sensitivity is not hidden: lowering the reactivity exponent from 1.00 to
@@ -644,10 +652,12 @@ that broke the sibling [BiCRS Atlas](../BiCRS%20Map) in production.
 
 ## Reproducibility caveat
 
-Four layers are practically Earth Engine only: cropland fraction (ESA
+Three layers are practically Earth Engine only: cropland fraction (ESA
 WorldCover is 10 m and 124 GB globally, so local aggregation is not viable),
-soil moisture (the 1 km global archive is 779 GB with no published climatology),
-the Weiss et al. friction surface (no anonymous HTTP endpoint), and GSHTD. The
+the Weiss et al. friction surface (no anonymous HTTP endpoint), and GSHTD.
+Soil moisture came off that list in August 2026: TerraClimate's annual NetCDFs
+are ~110 MB each and `fetch_monthly.py` streams ten of them, and the retention
+denominator comes from the same ISRIC WCS as pH. The
 Earth Engine scripts are committed, but **the pipeline cannot run end to end
 from a bare clone without a free GEE account.** Coarser local fallbacks (ESA
 CCI-LC 300 m, ERA5-Land) exist and double as ensemble members.

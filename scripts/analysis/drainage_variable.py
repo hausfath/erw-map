@@ -43,7 +43,7 @@ import kinetics as K             # noqa: E402
 from build_v0 import onto_grid, master_grid   # noqa: E402
 
 VARIANTS = [
-    ("qr   groundwater recharge  (SHIPPED)", "drainage_recharge_mmyr.tif"),
+    ("qr   groundwater recharge  (sensitivity)", "drainage_recharge_mmyr.tif"),
     ("qsb  subsurface runoff", "drainage_qsb_mmyr.tif"),
     ("qs   surface runoff", "drainage_qs_mmyr.tif"),
     ("qtot total runoff", "drainage_qtot_mmyr.tif"),

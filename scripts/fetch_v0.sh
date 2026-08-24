@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 # Fetch the v0 input layers: a real, global, end-to-end dataset at 0.1 degrees.
 #
-# v0 is deliberately coarse and uses two documented substitutions so that the
-# whole pipeline and the interactive map exist and can be inspected before the
-# heavy ingest is built. Both substitutions are visible in the UI:
+# The WorldClim layers fetched below are now only a FALLBACK. Both of v0's
+# original substitutions have been replaced by the real thing, and the build
+# reports which path it took:
 #
-#   AIR temperature (WorldClim BIO1) instead of monthly SOIL temperature.
-#     This is exactly Cascade's input, so v0 can ship a like-for-like baseline
-#     comparison. Planned upgrade: Lembrechts et al. 2022 monthly soil T.
-#   PRECIPITATION (WorldClim BIO12) as a wetness and drainage proxy instead of
-#     a soil-moisture climatology. Planned upgrade: a GEE-reduced monthly
-#     soil-moisture climatology.
+#   AIR temperature (WorldClim BIO1) -> Lembrechts et al. 2022 monthly soil T,
+#     5-15 cm, via fetch_monthly.py.
+#   PRECIPITATION (WorldClim BIO12) as a wetness proxy -> TerraClimate monthly
+#     extractable soil-water storage, converted to an absolute degree of
+#     saturation against the SoilGrids retention layers fetched in stage 1b.
+#     BIO12 is still used, but for the wet-but-undrained gate rather than as a
+#     moisture term.
 #
-# Everything else is the real thing: SoilGrids pH and SOC via ISRIC's WCS
-# (server-side resampled, so we never download the 250 m global archive) and
-# GLAD global cropland.
+# Everything else is the real thing: SoilGrids pH, SOC and water retention via
+# ISRIC's WCS (server-side resampled, so we never download the 250 m global
+# archive) and GLAD global cropland.
 #
 # Raw downloads land in data/raw/ and are deleted after deriving products.
 set -euo pipefail
@@ -37,7 +38,7 @@ sg() {   # sg <coverage-map> <coverage-id> <out>
 &SCALESIZE=long(${W}),lat(${H})"
 }
 
-echo "1/7 SoilGrids (pH, SOC, and the quantiles the eligibility work needs)"
+echo "1/8 SoilGrids (pH, SOC, and the quantiles the eligibility work needs)"
 sg phh2o phh2o_0-5cm_mean   ph_0_5.tif
 sg phh2o phh2o_5-15cm_mean  ph_5_15.tif
 sg soc   soc_0-5cm_mean     soc_0_5.tif
@@ -45,7 +46,27 @@ sg soc   soc_0-5cm_Q0.05    soc_q05.tif
 sg soc   soc_0-5cm_Q0.95    soc_q95.tif
 sg bdod  bdod_0-5cm_mean    bdod_0_5.tif
 
-echo "2/7 WorldClim 2.1 bioclim at 10 arc-min (BIO1 air temp, BIO12 precip)"
+echo "1b/8 SoilGrids water retention over the root zone (0-100 cm)"
+# The DENOMINATOR that turns TerraClimate's extractable storage in mm into an
+# absolute degree of saturation. Three variables, five depth intervals each:
+#   wv0033  volumetric water content at 33 kPa   -- field capacity
+#   wv1500  volumetric water content at 1500 kPa -- wilting point
+#   bdod    bulk density                         -- porosity via 1 - rho_b/2.65
+# 15 requests, ~2 MB each, ~1 min total. prep_layers.py reduces them to a single
+# 3-band interim product and --delete-raw removes these.
+#
+# Why all three rather than one: field capacity and wilting point BRACKET the
+# range TerraClimate's extractable storage lives in, and porosity is the
+# denominator that turns a water content into a saturation. Using any one of them
+# alone is a units error dressed as a choice -- see the MOISTURE_TERM block in
+# constants.py.
+for D in 0-5 5-15 15-30 30-60 60-100; do
+  sg wv0033 "wv0033_${D}cm_mean" "wv0033_${D}.tif"
+  sg wv1500 "wv1500_${D}cm_mean" "wv1500_${D}.tif"
+  sg bdod   "bdod_${D}cm_mean"   "bdod_${D}.tif"
+done
+
+echo "2/8 WorldClim 2.1 bioclim at 10 arc-min (BIO1 air temp, BIO12 precip)"
 if [ ! -s data/raw/wc_bio.zip ]; then
   curl -sSfL --max-time 900 -o data/raw/wc_bio.zip \
     "https://geodata.ucdavis.edu/climate/worldclim/2_1/base/wc2.1_10m_bio.zip"
@@ -53,7 +74,7 @@ fi
 unzip -o -q data/raw/wc_bio.zip -d data/raw/wc \
   'wc2.1_10m_bio_1.tif' 'wc2.1_10m_bio_12.tif'
 
-echo "3/7 Potapov et al. 2022 percent-cropland, 3 km (7.4 MB)"
+echo "3/8 Potapov et al. 2022 percent-cropland, 3 km (7.4 MB)"
 # 0-100 percent cropland per 0.025 deg cell, EPSG:4326.
 #
 # NOT glad.umd.edu/croplands/tiledata/global_crop_probability.tif.gz, which an
@@ -69,7 +90,7 @@ fi
 
 # Discard the superseded probability layer if a previous run left it behind.
 rm -f data/raw/glad_crop_prob.tif data/raw/glad_crop_prob.tif.gz
-echo "4/7 WaterGAP2-2e water fluxes via ISIMIP3a (885 MB, reduced then deleted)"
+echo "4/8 WaterGAP2-2e water fluxes via ISIMIP3a (885 MB, reduced then deleted)"
 # THREE fluxes, not one, because which of them is "the water that weathers the
 # rock" is a real open question and we would rather measure the spread than pick:
 #   qr    groundwater recharge -- water reaching the AQUIFER. Exactly zero in
@@ -94,7 +115,7 @@ for wg_var in qr qtot qs; do
   fi
 done
 
-echo "5/7 GRPI rice-paddy inundation, 0.1 deg monthly (4 MB)"
+echo "5/8 GRPI rice-paddy inundation, 0.1 deg monthly (4 MB)"
 # Note: this record publishes only the CH4 emission field, not the paddy area
 # map from the paper. We use its monthly PRESENCE pattern for months-flooded and
 # take sub-cell area fraction from SPAM below.
@@ -103,7 +124,7 @@ if [ ! -s data/raw/grpi_paddy.nc ] && [ ! -s data/interim/paddy_months_flooded.t
     "https://zenodo.org/records/15210212/files/grpi_hemco.nc?download=1"
 fi
 
-echo "6/7 SPAM2010 physical area, all 42 crops (143 MB archive)"
+echo "6/8 SPAM2010 physical area, all 42 crops (143 MB archive)"
 # THE ARCHIVE IS KEPT, not unpacked and discarded. Two layers come out of it:
 # irrigated rice for the paddy pCO2 pathway, and the two largest crops per cell
 # for the readout. prep_layers streams the 42 all-technology rasters out one at a
@@ -122,7 +143,7 @@ if [ -s data/raw/spam2010.zip ] && [ ! -s data/raw/spam2010V2r0_global_A_RICE_I.
   unzip -o -q -j data/raw/spam2010.zip "*RICE_I.tif" -d data/raw/
 fi
 
-echo "7/7 SoilGrids SOC quantiles at 0.025 deg, for a VALID exceedance probability"
+echo "7/8 SoilGrids SOC quantiles at 0.025 deg, for a VALID exceedance probability"
 # Computed at ~2.8 km then averaged, because averaging quantiles first (as an
 # earlier version did) is not valid uncertainty propagation and inflated the
 # "marginal" eligibility class.
