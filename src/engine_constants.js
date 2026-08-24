@@ -1580,14 +1580,14 @@ window.ERW = {
     "outcropToQuarry": 2.0,
     "gateRange": [
       0.0,
-      15.0
+      25.0
     ],
     "gateRegional": {
       "BR": 9.0,
       "IN": 3.0,
       "US": 12.0
     },
-    "gateSource": "Operator-reported quarry-fines prices (Lithos ~$12/t, Isometric <$10/t, InPlanet ~$10/t); Brazilian po de pedra R$45-50/t; Indian crusher dust ~Rs200/t. Several operators supply free, so the true floor can be $0.",
+    "gateSource": "Operator-reported quarry-fines prices (Lithos ~$12/t, Isometric <$10/t, InPlanet ~$10/t); Brazilian po de pedra R$45-50/t; Indian crusher dust ~Rs200/t. Several operators supply free, so the true floor can be $0. At-scale benchmarks in docs/GATE_COST_AT_SCALE.md: US traprock averages $21.33/t (USGS 2023).",
     "source": "USGS crushed-stone unit values for the gate cost; truck haul rate is an ASSUMPTION with no citation and no validation -- see TRUCK_COST_USD_T_KM. Truck only: basalt is rarely railed, and rail still needs first/last-mile truck"
   },
   "eligibility": {

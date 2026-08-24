@@ -5,6 +5,42 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## The quarry gate at scale: sourced, and the slider now reaches it
+
+Companion research to the haul-rate work: docs/GATE_COST_AT_SCALE.md asks what
+the $10/t gate becomes when ERW outgrows byproduct fines. From USGS Minerals
+Yearbook 2023 (Tables 2 and 12, read from the published XLSX): US traprock
+(basalt/diabase) averages **$21.33/t f.o.b.** across 259 quarries — a premium
+rock, $7/t above limestone — and even the classes labelled "crusher run / fill /
+waste" trade at $12.6/t. Identifiable fines-class traprock sales are ~5 Mt/yr
+against 93 Mt/yr total US traprock output, so a 3 Mha US programme at 30 t/ha
+consumes the entire current output: at scale ERW pays dedicated-production
+prices, not disposal prices. BGS puts UK aggregates at £11.9/t ex-quarry (2017,
+~$19–20 today); Brazil (~$10–15) and India (~$4–7) are derived from current
+fines prices and flagged as such.
+
+Consequences shipped:
+
+- **The gate slider now spans $0–25** (was $0–15, below the observed US traprock
+  average). The default stays $10/t — today's byproduct price — because a single
+  global at-scale value would be MORE wrong than a single global byproduct
+  value: byproduct pricing is near-uniform, at-scale pricing is regional.
+  Proposed at-scale regional gates live in FEEDSTOCK_GATE_AT_SCALE_USD_T as an
+  unapplied scenario, waiting on to_do 10.4 (regional gate), which must also
+  decide whether regional gate differences should move the map — a uniform gate
+  cancels out of v_cost, a regional one is real spatial information.
+- **Measured sensitivity** (regional haul model, $100/tCO2 screen): gate $10 →
+  0.66 Gt/yr on 0.19 Gha; $12 → 0.53; $18 → 0.12; $21.50 → zero. At US at-scale
+  prices the sub-$100 screen admits essentially nothing, before spreading or MRV
+  are even priced.
+- **"Loading charge" renamed to "per-trip trucking charge"** after the fair
+  question of whether it double-counts the gate. It does not: the gate is
+  f.o.b. quarry, which includes the QUARRY'S loading service; F is the HAULER'S
+  fixed trip cost (truck time under the loader, tipping, positioning),
+  decomposed from trucking rates that exclude the commodity. Different party,
+  different invoice. The boundary is now stated in constants.py, the note, and
+  the Methods modal. Spreading on the field is in neither and remains unpriced.
+
 ## Trucking priced regionally, with a fixed loading charge
 
 The single global $0.12/t-km is gone. Delivered cost is now

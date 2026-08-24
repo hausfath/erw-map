@@ -927,7 +927,7 @@
        rate multiplier  moves the map. It scales the regional per-km rates
                         baked into the texture (haul = F + m*r(region)*d, so
                         haul is affine in m), and the cost-screened headline
-                        total follows. The fixed loading charge F is NOT
+                        total follows. The fixed trucking charge F is NOT
                         multiplied: a dearer trucking market does not make
                         loading a truck proportionally dearer.
        gate cost        does NOT move the map. v = 1/(1 + (cost - gate)/S) is
@@ -951,11 +951,14 @@
             rateList + "; elsewhere $" + (E.cost.truckRateDefault || "?") +
             "), on great-circle distance \u00d7 " + E.cost.tortuosity +
             " tortuosity plus a $" + E.cost.haulFixedUsdT +
-            "/t fixed loading charge. Moves the map."},
+            "/t fixed per-trip trucking charge. Moves the map."},
       {k: "gate", label: "Quarry gate ($/t)",
        min: gr[0], max: gr[1], step: 0.5,
-       why: "Rock at the quarry before haulage. Changes the reported cost and " +
-            "the $/tCO\u2082 screen, but not the map colour \u2014 the cost " +
+       why: "Rock at the quarry before haulage. The default is today\u2019s " +
+            "byproduct-fines price; at scale, dedicated basalt runs " +
+            "$15\u201322/t in the US and Europe (US traprock averages " +
+            "$21.33/t, USGS 2023). Changes the reported cost and the " +
+            "$/tCO\u2082 screen, but not the map colour \u2014 the cost " +
             "penalty applies to the haul increment only."},
     ];
     rows.forEach((r) => {
@@ -1000,7 +1003,7 @@
     const basis = $("econ-basis");
     if (basis) {
       basis.innerHTML = `$${econ.gate.toFixed(0)}/t at the quarry gate, a ` +
-        `$${E.cost.haulFixedUsdT}/t loading charge, plus trucking at regional ` +
+        `$${E.cost.haulFixedUsdT}/t per-trip trucking charge, plus regional ` +
         `rates ($${E.cost.truckRates ? E.cost.truckRates["India/South Asia"] : "?"}` +
         `\u2013$${E.cost.truckRates ? E.cost.truckRates["Africa"] : "?"}/t-km; ` +
         `US $${E.cost.truckRates ? E.cost.truckRates["US/Canada"] : "?"}) from ` +
@@ -1538,7 +1541,9 @@
       depends on trusting it; they are not importance weights, because the terms
       are not substitutable.</li>
       <li><b>Delivered cost (optional).</b> $${E.cost.gateUsdT}/t at the quarry
-      gate, a $${E.cost.haulFixedUsdT}/t fixed loading charge, plus trucking at
+      gate, a $${E.cost.haulFixedUsdT}/t fixed per-trip trucking charge
+      (the hauler's time while loading, tipping and positioning — the quarry's
+      loading service is already inside the f.o.b. gate price), plus trucking at
       regional rates \u2014
       ${Object.entries(E.cost.truckRates || {}).map(([k, v]) => `${k} $${v}`)
         .join(", ")}, elsewhere $${E.cost.truckRateDefault}/t-km
@@ -1572,7 +1577,9 @@
           <td>${(E.dissolvedFracAtRef * 100).toFixed(0)}%, anchored to verified
           deliveries (${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%)</td></tr>
         <tr><td>Quarry gate cost</td><td>$${E.cost.gateUsdT}/t, from
-          operator-reported quarry-fines prices</td></tr>
+          operator-reported quarry-fines prices — today's byproduct deals, not
+          an at-scale price (US traprock averages $21.33/t, USGS 2023; see
+          docs/GATE_COST_AT_SCALE.md)</td></tr>
         <tr><td>Trucking</td><td>regional $/t-km (US
           $${E.cost.truckRates ? E.cost.truckRates["US/Canada"] : "?"}, Brazil
           $${E.cost.truckRates ? E.cost.truckRates["Brazil/Latin America"] : "?"},
@@ -1687,7 +1694,7 @@
       priced with regional rates (only the US entry is current — USDA grain-truck
       rates; Brazil, China and Europe rest on 2007 World Bank corridor prices
       inflated by US CPI, India on a 2021 national average) plus a fixed
-      $${E.cost ? E.cost.haulFixedUsdT : 5}/t loading charge. Nothing validates
+      $${E.cost ? E.cost.haulFixedUsdT : 5}/t per-trip trucking charge. Nothing validates
       the resulting cost surface against real delivered costs, and haul distance
       is modelled, not routed. The rate multiplier and gate cost are sliders
       under Advanced so the dependence is visible rather than buried; sources and

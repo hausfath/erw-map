@@ -1292,9 +1292,34 @@ FLUX_CEILING_ANCHORS_MMOL_L = {
 # multiplier entirely. Lowering it changes the REPORTED $/t and $/tCO2 -- which is
 # the point, since those were overstated -- without perturbing the spatial pattern.
 # ---------------------------------------------------------------------------
-FEEDSTOCK_GATE_COST_USD_T = 10.0     # quarry fines at the gate
-FEEDSTOCK_GATE_COST_RANGE = (0.0, 15.0)
-FEEDSTOCK_GATE_REGIONAL_USD_T = {   # indicative, not yet applied spatially
+# THE DEFAULT IS A CURRENT-PROCUREMENT PRICE, NOT AN AT-SCALE PRICE, and the
+# distinction is now sourced -- see docs/GATE_COST_AT_SCALE.md (2026-08-24).
+# $10/t describes today's byproduct-fines deals ($0-12 operator-reported). At
+# scale those deals cannot hold: identifiable fines-class US traprock sales are
+# ~5 Mt/yr against a total US traprock output of 93 Mt/yr, so a 3 Mha US
+# programme at 30 t/ha consumes the ENTIRE current output and ERW becomes the
+# anchor customer of dedicated quarries. Dedicated production prices at the
+# market rate for primary crushed basalt:
+#   US traprock average $21.33/t f.o.b. (USGS MYB 2023, Table 2; even the
+#     classes labelled "crusher run/fill/waste" trade at $12.6/t);
+#   UK/Europe ~GBP 11.9/t ex-quarry 2017 (BGS) ~ $19-20 in 2026 money;
+#   Brazil ~$10-15 and India ~$4-7 (derived from current fines prices x the
+#     US fines->dedicated ratio of ~1.6-1.9; no primary source yet).
+# The default STAYS at the current-procurement $10 because a single global
+# at-scale value would be MORE wrong than a single global byproduct value:
+# byproduct pricing is near-uniform globally, at-scale pricing is regional.
+# The at-scale numbers below become the regional gate when to_do 10.4 lands,
+# which must also settle whether regional gate differences move the map (a
+# uniform gate cancels out of v_cost; a regional one is real spatial
+# information and the cancellation logic stops being coherent).
+FEEDSTOCK_GATE_COST_USD_T = 10.0     # quarry fines at the gate, TODAY
+FEEDSTOCK_GATE_COST_RANGE = (0.0, 25.0)   # slider reaches the at-scale US value;
+                                          # was (0, 15), below USGS's $21.33
+FEEDSTOCK_GATE_AT_SCALE_USD_T = {   # scenario values, NOT applied; sourced above
+    "US/Canada": 18.0, "Europe": 17.0, "Brazil/Latin America": 12.0,
+    "India/South Asia": 5.0, "elsewhere": 12.0,
+}
+FEEDSTOCK_GATE_REGIONAL_USD_T = {   # indicative CURRENT prices, not yet applied
     "BR": 9.0,      # po de pedra, quarry price list
     "IN": 3.0,      # raw crusher dust; weakly sourced, single vendor figure
     "US": 12.0,     # Lithos reported
@@ -1302,7 +1327,9 @@ FEEDSTOCK_GATE_REGIONAL_USD_T = {   # indicative, not yet applied spatially
 FEEDSTOCK_GATE_SOURCE = (
     "Operator-reported quarry-fines prices (Lithos ~$12/t, Isometric <$10/t, "
     "InPlanet ~$10/t); Brazilian po de pedra R$45-50/t; Indian crusher dust "
-    "~Rs200/t. Several operators supply free, so the true floor can be $0.")
+    "~Rs200/t. Several operators supply free, so the true floor can be $0. "
+    "At-scale benchmarks in docs/GATE_COST_AT_SCALE.md: US traprock averages "
+    "$21.33/t (USGS 2023).")
 ROAD_TORTUOSITY = 1.35               # great-circle -> road distance
 
 # TRUCK ONLY. Basalt for ERW is rarely railed today, and even where rail exists
@@ -1437,15 +1464,22 @@ TRUCK_RATE_ISO_DEFAULT = ["RU"]
 TRUCK_RATE_MULT_RANGE = (0.25, 2.5)   # the Advanced slider, a global multiplier
                                       # on the regional surface
 
-# The FIXED per-trip haul component, $/t: loading, unloading and positioning,
-# paid once regardless of distance. Decomposed from the same USDA GTOR curve:
+# The FIXED per-trip haul component, $/t: the HAULER'S fixed trip cost -- truck
+# and driver time while being loaded and while tipping, plus positioning --
+# paid once regardless of distance. NO DOUBLE COUNT WITH THE GATE, a question
+# worth answering precisely because the old label ("loading charge") invited
+# it: the gate price is f.o.b. quarry, which includes the QUARRY'S loading
+# service (its loader, its operator); F comes from USDA TRUCKING rates, which
+# are what shippers pay haulers and exclude the commodity and its loading
+# service entirely. Different party, different invoice. Decomposed from the
+# same USDA GTOR curve:
 # the per-mile rate falls with distance because this fixed cost is spread over
 # more km ($7.53/t total at 25 mi vs $19.36 at 100 mi implies fixed $3.6-6.0/t
 # plus $0.083-0.098/t-km marginal). Consequences, both deliberate:
 #   - v_cost no longer reaches 1.0 anywhere: at zero distance the transport
 #     penalty is F/S, i.e. v_max = 1/(1 + F/S) ~ 0.952. The old rule
 #     "v = 1 exactly at the gate" is superseded -- even a farm beside the
-#     quarry pays loading and unloading.
+#     quarry pays for the truck's loading and tipping time.
 #   - The gate still cancels exactly. F is transport, not gate.
 HAUL_FIXED_USD_T = 5.0
 
@@ -1485,7 +1519,7 @@ OUTCROP_TO_QUARRY_FACTOR = 2.0
 # for something it cannot avoid and that carries no spatial information. Since
 # HAUL_FIXED_USD_T was added (Aug 2026), cost - gate = F + r*d > 0 everywhere,
 # so v tops out at 1/(1 + F/S) ~ 0.95 at zero distance rather than reaching 1:
-# even a farm beside the quarry pays loading and unloading.
+# even a farm beside the quarry pays for the truck's loading and tipping time.
 #
 # This replaces five hand-placed knots that were 1.0 at $25 but ramped hard: a
 # cell at the CROPLAND MEDIAN of $61/t lost 38%, which is a heavy penalty for a

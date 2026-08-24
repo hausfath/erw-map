@@ -109,7 +109,7 @@ console.log();
 console.log("3. the gate cost does not move v_cost (the UI's claim)");
 let gateMoved = false;
 for (const v of baked) {
-  for (const g of [0, 3, 10, 15]) {
+  for (const g of [0, 3, 10, 15, 21.33, 25]) {
     const d = costUsdT(v, g, 1) - costUsdT(v, C.gateUsdT, 1);
     if (Math.abs(d - (g - C.gateUsdT)) > 1e-9) gateMoved = true;
   }

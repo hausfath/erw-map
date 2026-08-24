@@ -555,13 +555,13 @@ showing numbers derived from the NaN fallback.
 | Soil pCO₂, unsaturated | 4,000 µatm | Isometric v1.2 §10.4.5.7, mandated |
 | Soil pCO₂, flooded | 50,000 µatm | Isometric v1.2, mandated; this is the **floor** of the literature paddy range |
 | Flooded pH convergence | 6.7 | van Breemen 1987; submergence drives pH toward 6–7 |
-| Quarry gate cost | $10/t | operator-reported quarry-fines prices |
+| Quarry gate cost | $10/t | operator-reported quarry-fines prices — a **current-procurement** (byproduct) price. At scale, dedicated basalt runs $15–22/t in the US/Europe (US traprock averages $21.33/t, USGS 2023); see `docs/GATE_COST_AT_SCALE.md`. Slider spans $0–25 |
 | Truck haul | regional $/t-km (US/CA 0.10, EU 0.09, BR/LatAm 0.055, IN/S Asia 0.045, CN/SE Asia 0.07, Africa 0.11, else 0.08) + $5/t fixed, × 1.35 tortuosity | per-entry sources and vintages in `constants.TRUCK_RATE_GROUPS` and `docs/TRUCK_RATE_SOURCES.md`; only the US rate is a current primary. Live multiplier under Advanced; see §3b |
 | Haul penalty scale S | $100/t | editorial choice, stated as such |
 | Headline cost screen | **$100/tCO₂**, 10 yr at 5% | applies to the footer total when economics is on; acquisition and haul only, not a levelised cost |
 | SOC exclusion | 5 wt%, P > 0.9 | Puro.earth rule 3.9.1(c) |
 
-### 3b. The haul model: regional rates plus a fixed loading charge
+### 3b. The haul model: regional rates plus a fixed per-trip trucking charge
 
 Until August 2026 haulage was one global number, $0.12/t-km, flagged in
 `constants.py` as an assumption with no citation. Sourcing it
@@ -592,7 +592,12 @@ prices `cost = gate + F + r(region)·d` with `F = $5/t`. A pure `rate × distanc
 model understates short hauls and overstates long ones; this changes the shape
 independently of any regional level, and it means `v_cost` peaks at
 `1/(1 + F/S) = 0.952` at zero distance rather than 1 — even a farm beside the
-quarry pays loading and unloading. The gate still cancels exactly.
+quarry pays the truck's loading and tipping time. **No double count with the
+gate:** the gate price is f.o.b. quarry, which includes the *quarry's* loading
+service; `F` is the *hauler's* fixed per-trip cost (truck and driver time under
+the loader, tipping, positioning), decomposed from trucking rates that exclude
+the commodity. Different party, different invoice. The gate still cancels
+exactly.
 
 Measured on the shipped build: cropland delivered cost is **$17 / $35 / $100**
 (p10/p50/p90), against $14/$43/$123 under the old model — cheaper across the
@@ -633,7 +638,7 @@ routed.
   is bad, not impossible. It is the first genuinely tradeable factor in the model.
 - **The cost penalty applies to the haul increment only.** The gate cost cancels
   out of the map, because every site must buy and crush rock and that carries no
-  spatial information. With the fixed loading charge the increment is
+  spatial information. With the fixed trucking charge the increment is
   `F + r·d > 0` everywhere, so the multiplier peaks at 0.952 rather than 1. Note
   the cancellation is only coherent while the gate cost is globally uniform;
   regionalising it (BR $9, IN $3, US $12 are known) would make it real spatial

@@ -307,7 +307,7 @@ the limiting uncertainty in the cost surface; lithology resolution is.
 Haul is **truck only**: basalt is rarely railed for ERW today, and even where rail
 exists there is still a first- and last-mile trucking leg.
 
-**Trucking is priced regionally, with a fixed loading charge** (August 2026 —
+**Trucking is priced regionally, with a fixed per-trip trucking charge** (August 2026 —
 research in [`docs/TRUCK_RATE_SOURCES.md`](docs/TRUCK_RATE_SOURCES.md)):
 `cost = gate + $5/t + r(region) × road km`, with r from USDA grain-truck rates for
 the US/Canada ($0.10/t-km), NITI Aayog for India/South Asia ($0.045), and World
@@ -327,7 +327,8 @@ $43/123 under the old model.
 
 Both cost assumptions are live under **Advanced**: a haul-rate multiplier
 (×0.25–2.5 on the regional baselines; median delivered cost runs $20/t to $65/t
-across it) and the gate cost ($0–15/t). They are asymmetric and the UI says so:
+across it) and the gate cost ($0–25/t; the top of the range reaches the
+at-scale US price). They are asymmetric and the UI says so:
 the multiplier **moves the map**, while the gate **cannot**, because the penalty
 applies to the haul increment only. The gate still moves the headline economic
 total through the $/tCO₂ screen. `tests/cost_sliders.mjs` asserts the live path
@@ -361,7 +362,7 @@ when a number looks wrong, diagnose before changing the model.
 **The penalty applies to the haul increment only.** The gate cost cancels — you
 must buy and crush rock wherever you are, so it carries no spatial information —
 and the multiplier declines as `1/(1 + (cost − gate)/S)` with S = $100/t, putting
-the half-penalty point at $125/t delivered. Since the fixed loading charge was
+the half-penalty point at $125/t delivered. Since the fixed trucking charge was
 added, the increment is `$5/t + r·d > 0` everywhere, so the multiplier peaks at
 0.952 at zero distance rather than 1: even a farm beside the quarry pays loading
 and unloading. This form replaced five hand-placed breakpoints that ramped hard
