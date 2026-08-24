@@ -307,6 +307,24 @@ the limiting uncertainty in the cost surface; lithology resolution is.
 Haul is **truck only**: basalt is rarely railed for ERW today, and even where rail
 exists there is still a first- and last-mile trucking leg.
 
+**The haul rate is the weakest number in the economic model, and it is now a
+slider.** $0.12/t-km has no citation, no gate, and no comparison against real
+delivered costs — the gate cost is triangulated across five operator-reported
+prices, the haul rate is not triangulated against anything. One global rate also
+cannot hold across Brazil, India and the US Midwest, and it multiplies a modelled
+distance (great-circle × 1.35, median 275 road km). What can be said for it is that
+it puts the cropland median at $43/t, the right order for a $10/t product hauled
+275 km — a plausibility argument, not a calibration.
+
+Both cost assumptions are therefore live under **Advanced**, over $0.03–0.30/t-km
+and $0–15/t. They are asymmetric and the UI says so: the truck rate **moves the
+map** (median delivered cost runs $18/t to $92/t across the range), while the gate
+cost **cannot** move it, because the penalty applies to the haul increment only. The
+gate still moves the headline economic total through the $/tCO₂ screen — 0.59
+GtCO₂/yr on 0.19 Gha at $10/t against 0.39 on 0.11 Gha at $15/t. Full account in
+[`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) §3b; `tests/cost_sliders.mjs` asserts
+the live path reproduces the build exactly at the default positions.
+
 **The gate cost was revised down from $25/t to $10/t, because the old figure priced
 the wrong product.** ERW does not buy graded construction aggregate; it buys quarry
 *fines* — crusher dust and screenings — the cheapest class a quarry makes and in

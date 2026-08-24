@@ -70,6 +70,16 @@
             <span>Apply the drainage limit</span></label>
           <p class="hint" id="flux-hint"></p>
         </div>
+        <div id="econ-assumptions" style="margin-top:14px">
+          <p class="hint">Delivered-cost assumptions. The haul rate is
+            <b>unsourced and unvalidated</b> &mdash; the widest uncertainty in the
+            economic layer, and the reason it is a slider.</p>
+          <div id="econ-assumption-sliders"></div>
+          <div class="btn-row">
+            <button class="mini" id="btn-econ-reset">Reset cost assumptions</button>
+          </div>
+          <p class="hint stability" id="econ-assumption-readout"></p>
+        </div>
         <div id="term-sensitivity">
           <p class="hint" style="margin-top:14px">Lower a term&rsquo;s exponent to
             see how much of the map depends on trusting it. At 1.00 the score is

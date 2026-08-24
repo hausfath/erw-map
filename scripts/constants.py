@@ -1324,10 +1324,49 @@ ROAD_TORTUOSITY = 1.35               # great-circle -> road distance
 #
 # Rail can come back if and when a rail-served-quarry layer exists to gate it,
 # rather than being assumed available everywhere.
+# HOW CONFIDENT ARE WE IN 0.12? NOT VERY, AND THIS IS THE WEAKEST NUMBER IN THE
+# ECONOMIC HALF OF THE MODEL. Stated plainly because it is easy to mistake for a
+# sourced parameter:
+#
+#  1. It has no citation. FEEDSTOCK_COST_SOURCE below has always said "truck haul
+#     rate is an assumption", and nothing has been done since to source it. The
+#     gate cost, by contrast, is triangulated from several operator-reported
+#     prices.
+#  2. Nothing validates it. There is no cost gate in build_v0.py, no cost row in
+#     docs/VALIDATION.md, and no comparison against delivered costs in the
+#     verified-delivery fixture. The whole delivered-cost surface is unvalidated,
+#     unlike the physical layers.
+#  3. A single global rate cannot be right. Real haulage rates vary severalfold
+#     with fuel price, backhaul availability, road quality, truck size limits,
+#     minimum load charges, and whether the operator owns the fleet. Brazil,
+#     India and the US Midwest are not one number.
+#  4. It is a per-km rate applied to a distance that is itself modelled --
+#     great-circle x ROAD_TORTUOSITY, with no routing, no terrain and no border
+#     crossings -- so the rate and the distance carry independent error that
+#     multiply.
+#  5. It is NOT weakly held in its effect. Unlike the gate cost, this rate moves
+#     the map: v_cost depends on the haul increment, so the spatial pattern of
+#     the economic discount and the cost-screened headline total both scale with
+#     it.
+#
+# What can be said for it: 0.12 puts the cropland median delivered cost at $43/t
+# and the p90 at $123/t, which is the right order for a $10/t product hauled a
+# median 204 km, and it reproduces the standard aggregates rule of thumb that
+# trucking doubles the delivered price of crushed stone within a hundred-odd km.
+# That is a plausibility argument, not a calibration.
+#
+# THE RANGE BELOW IS AN EXPLORATION BRACKET, NOT A PUBLISHED INTERVAL. The
+# endpoints are chosen to span plausible regional variation so the slider can
+# show how much of the economic layer depends on this one unsourced number.
+# Do not quote them as a confidence interval.
 TRUCK_COST_USD_T_KM = 0.12
+TRUCK_COST_RANGE = (0.03, 0.30)
+TRUCK_COST_IS_UNSOURCED = True
 FEEDSTOCK_COST_SOURCE = ("USGS crushed-stone unit values for the gate cost; "
-                         "truck haul rate is an assumption. Truck only: basalt is "
-                         "rarely railed, and rail still needs first/last-mile truck")
+                         "truck haul rate is an ASSUMPTION with no citation and "
+                         "no validation -- see TRUCK_COST_USD_T_KM. Truck only: "
+                         "basalt is rarely railed, and rail still needs "
+                         "first/last-mile truck")
 
 # Outcrop distance -> quarry distance where no usable inventory exists.
 # MEASURED at 2.0 inside the trusted MRDS area (prep_feedstock.py reports it),

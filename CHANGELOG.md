@@ -5,6 +5,53 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Delivered-cost assumptions are sliders, and the haul rate is admitted to be a guess
+
+Both economic assumptions are now live under Advanced: quarry gate $0–15/t and
+truck haul $0.03–0.30/t-km.
+
+**No texture change was needed, which is worth recording.** `tex3.b` stores the
+finished value function `v = 1/(1 + haul/S)` rather than a distance, so at first
+glance the sliders needed a new distance channel. They do not: haul is linear in
+the rate, so rescaling by `k = rate/rate_baked` is exact — `v' = v/(k + v(1−k))` —
+and the existing byte is a lossless encoding of haul cost. Checked before relying
+on it: no cropland area sits at the value-function floor (p1 of `v_cost` is 0.296
+against a floor of 0.05), so the inversion is nowhere ill-conditioned, and one
+least-significant bit is worth 2–7% in recovered km, far inside the error of a
+great-circle × 1.35 haul model.
+
+**The two sliders are deliberately asymmetric, and the UI has to say so.** The
+truck rate moves the map. The gate cost cannot, because `v = 1/(1 + (cost − gate)/S)`
+is independent of the gate by construction — a fact `constants.py` has recorded for
+months but which would make the slider look broken if left unexplained. It does move
+the reported $/t and, through the $/tCO₂ screen, the headline total: 0.59 GtCO₂/yr
+on 0.19 Gha at $10/t against **0.39 on 0.11 Gha** at $15/t. A $5/t gate change moves
+the headline economic figure by a third while the map is pixel-identical.
+
+**`tests/cost_sliders.mjs`** asserts the identity at the build's own rate is exact
+(worst delta 0), that reported $/t at the defaults reproduces the build's
+`gate + S(1/v − 1)` to 1e-9, that the gate shifts reported cost by exactly the gate
+delta and cannot touch `v_cost`, that `v_cost` stays in [floor, 1] and falls
+monotonically as haul gets dearer, and that the GLSL uses the same expression as the
+JS.
+
+**On the number itself: $0.12/t-km is an assumption, and a doc row overstated it.**
+`docs/METHODOLOGY.md` credited it to a "US trade-association rate", which the code
+has never supported — `FEEDSTOCK_COST_SOURCE` has always called it an assumption.
+Corrected. There is also no cost gate in `build_v0.py`, no cost row in
+`docs/VALIDATION.md`, and no comparison against the verified-delivery fixture, so
+the whole delivered-cost surface is unvalidated while every physical layer has a
+gate. The slider range is an exploration bracket, not a confidence interval, and
+says so.
+
+Sensitivity, measured: median delivered cost $18/t at $0.03/t-km, $43/t at the
+shipped $0.12, $92/t at $0.30; median `v_cost` 0.924 to 0.548 across the same span.
+
+Also fixed while here: the neutral-baseline cache key now includes both cost
+settings. Omitting a setting from that key has caused a visible bug twice (the
+grind slider, then the ceiling toggle), so the gate is in the key even though it
+cannot change a score.
+
 ## D_w does not carry the aridity signal. The ceiling does, and it is switched off
 
 The moisture work left an obvious follow-on: `η_transport = q/(q + D_w)` is nearly

@@ -52,7 +52,14 @@
   // Economic weight. A real preference, not a what-if: cost genuinely trades off
   // against physical potential in a way the physical terms do not trade off
   // against each other.
-  const econ = {costExp: E.cost ? E.cost.expDefault : 0};
+  const econ = {
+    costExp: E.cost ? E.cost.expDefault : 0,
+    // The two delivered-cost assumptions, live. Defaults are the build's own
+    // values, so the shipped view is the built view.
+    gate: E.cost ? E.cost.gateUsdT : 0,
+    truck: E.cost ? E.cost.truckUsdTKm : 0,
+  };
+
   const CRIT = E.terms;
   // Drainage-concentration ceiling. Falls back to OFF with a neutral encoding if
   // an older engine_constants.js is served, so a stale build degrades to the
@@ -106,6 +113,28 @@
   /* ---------------- helpers ---------------- */
   const $ = (id) => document.getElementById(id);
   const clamp = (lo, v, hi) => Math.max(lo, Math.min(hi, v));
+
+  /* Truck rate as a multiple of the rate baked into tex3.b. */
+  function truckScale() {
+    if (!E.cost || !E.cost.truckUsdTKm) return 1;
+    return econ.truck / E.cost.truckUsdTKm;
+  }
+
+  /* Baked v_cost -> v_cost at the current truck rate. Mirrors the shader
+     exactly; the Node harness in tests/ asserts they agree. */
+  function vCostLive(vBaked) {
+    const fl = E.cost ? E.cost.floor : 1;
+    const k = truckScale();
+    if (!(vBaked > 0)) return fl;
+    return clamp(fl, vBaked / (k + vBaked * (1 - k)), 1);
+  }
+
+  /* True when both cost assumptions sit at the build's own values. */
+  function econAtRef() {
+    if (!E.cost) return true;
+    return Math.abs(econ.gate - E.cost.gateUsdT) < 1e-9
+        && Math.abs(econ.truck - E.cost.truckUsdTKm) < 1e-12;
+  }
 
   function hex2rgb(h) {
     return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16),
@@ -165,6 +194,11 @@
   uniform float uCx[6], uCy[6];   // suitability knots, x in log10(tCO2/ha/yr)
   uniform float uCostExp;         // exponent on the compensatory cost multiplier
   uniform float uCostFloor;
+  // Truck rate as a MULTIPLE of the rate baked into tex3.b. tex3.b stores
+  // v = 1/(1 + haul/S) at the build's rate, and haul is linear in the rate, so
+  // rescaling by k = rate/rate_baked is exact: v' = v / (k + v(1 - k)). No
+  // texture change is needed, and at k = 1 this is the identity.
+  uniform float uTruckScale;
 
   const vec4 OUT_OF_DOMAIN = vec4(0.0, 0.0, 0.0, 0.0);
   const vec4 NEGLIGIBLE    = vec4(0.16, 0.17, 0.19, 1.0);
@@ -332,8 +366,15 @@
 
     // Economic discount. Compensatory, with a floor, so it never zeroes a cell
     // that has real physical potential -- only the physics annihilates.
-    float vCost = uCostFloor
-                + clamp((cc.b * 255.0 - 5.0) / 250.0, 0.0, 1.0) * (1.0 - uCostFloor);
+    float vBaked = uCostFloor
+                 + clamp((cc.b * 255.0 - 5.0) / 250.0, 0.0, 1.0) * (1.0 - uCostFloor);
+    // The QUARRY GATE COST DELIBERATELY DOES NOT APPEAR HERE. v_cost penalises the
+    // haul increment only -- v = 1/(1 + (cost - gate)/S) -- so the gate cancels
+    // out of the multiplier exactly. It moves the reported $/t and the cost
+    // screen, never the colour. The UI says so, because a slider that visibly
+    // does nothing otherwise reads as broken.
+    float vCost = clamp(vBaked / (uTruckScale + vBaked * (1.0 - uTruckScale)),
+                        uCostFloor, 1.0);
     sc *= pow(vCost, uCostExp);
 
     vec3 col = texture(uRamp, vec2(clamp(sc, 0.0, 1.0), 0.5)).rgb;
@@ -558,6 +599,7 @@
     gl.uniform1fv(u("uCy"), new Float32Array(E.cdrKnots.map(k => k[1])));
     gl.uniform1f(u("uCostExp"), econ.costExp);
     gl.uniform1f(u("uCostFloor"), E.cost ? E.cost.floor : 1.0);
+    gl.uniform1f(u("uTruckScale"), truckScale());
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texA);
     gl.uniform1i(u("uA"), 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texB);
@@ -753,10 +795,15 @@
      v = 1 / (1 + (cost - gate)/S)  inverts in closed form to
      cost = gate + S (1/v - 1), which is exact rather than the piecewise
      back-interpolation the five-knot version needed. */
-  function costUsdT(vCost) {
+  function costUsdT(vBaked) {
     if (!E.cost) return null;
-    const v = clamp(E.cost.floor, vCost, 1);
-    return E.cost.gateUsdT + E.cost.haulScaleUsdT * (1 / v - 1);
+    // Takes the BAKED v from tex3.b, not a rescaled one: the haul increment it
+    // encodes is at the build's truck rate, and haul is linear in the rate, so
+    // scaling here is exact. The gate is the LIVE value, which is why it moves
+    // this number while never touching the shader.
+    const v = clamp(E.cost.floor, vBaked, 1);
+    const haul = E.cost.haulScaleUsdT * (1 / v - 1) * truckScale();
+    return econ.gate + haul;
   }
 
   function buildSliders() {
@@ -835,10 +882,11 @@
     if (!E.cost) { $("econ-group").classList.add("hidden"); return; }
     // A two-state toggle, not a continuous slider: there is no principled middle
     // value, and inventing one would be an unlabelled thumb on the scale.
-    $("econ-sliders").innerHTML =
-      `<p class="why" style="margin-top:10px">$${E.cost.gateUsdT}/t at the ` +
-      `quarry gate plus trucking at $${E.cost.truckUsdTKm}/t-km from the ` +
-      `nearest mafic quarry.</p>`;
+    // Rendered by syncEcon() from the live slider values, not from the build
+    // constants: the sliders under Advanced can move both, and a static caption
+    // would then describe assumptions the map is no longer using.
+    $("econ-sliders").innerHTML = `<p class="why" style="margin-top:10px" ` +
+      `id="econ-basis"></p>`;
     document.querySelectorAll("#econ-seg .seg-btn").forEach((b) => {
       b.addEventListener("click", () => {
         econ.costExp = +b.dataset.econ ? E.cost.expOn : 0;
@@ -847,12 +895,82 @@
     });
   }
 
+  /* The two delivered-cost assumptions, under Advanced.
+
+     They are deliberately NOT symmetric in effect, and the UI has to say so:
+
+       truck rate  moves the map. v_cost penalises the haul increment, and haul
+                   is linear in the rate, so every score and the cost-screened
+                   headline total scale with it.
+       gate cost   does NOT move the map. v = 1/(1 + (cost - gate)/S) is
+                   independent of the gate by construction, so the colour cannot
+                   change. It moves the reported $/t and $/tCO2, and through the
+                   $/tCO2 screen it moves the headline total.
+
+     Without that caption the gate slider looks broken. */
+  function buildEconAssumptionSliders() {
+    const host = $("econ-assumption-sliders");
+    if (!E.cost || !host) return;
+    const gr = E.cost.gateRange || [0, 15];
+    const tr = E.cost.truckRange || [0.03, 0.30];
+    const rows = [
+      {k: "truck", label: "Truck haul ($/t\u00b7km)",
+       min: tr[0], max: tr[1], step: 0.005,
+       why: "Applied to great-circle distance \u00d7 " + E.cost.tortuosity +
+            " tortuosity, not a routed network. Moves the map."},
+      {k: "gate", label: "Quarry gate ($/t)",
+       min: gr[0], max: gr[1], step: 0.5,
+       why: "Rock at the quarry before haulage. Changes the reported cost and " +
+            "the $/tCO\u2082 screen, but not the map colour \u2014 the cost " +
+            "penalty applies to the haul increment only."},
+    ];
+    rows.forEach((r) => {
+      const d = document.createElement("div");
+      d.className = "slider";
+      d.innerHTML =
+        `<div class="row"><span class="name">${r.label}</span>` +
+        `<span class="val" id="ev-${r.k}"></span></div>` +
+        `<input type="range" id="es-${r.k}" min="${r.min}" max="${r.max}" ` +
+        `step="${r.step}">` +
+        `<div class="why">${r.why}</div>`;
+      host.appendChild(d);
+      const inp = d.querySelector("input");
+      inp.value = econ[r.k];
+      inp.addEventListener("input", () => { econ[r.k] = +inp.value; refresh(); });
+    });
+  }
+
+  function syncEconAssumptions() {
+    if (!E.cost || !$("ev-truck")) return;
+    $("ev-truck").textContent = "$" + econ.truck.toFixed(3);
+    $("ev-gate").textContent = "$" + econ.gate.toFixed(0);
+    const k = truckScale();
+    const ref = econAtRef();
+    // At the reference, "1.00x the build's haul rate" is a tautology dressed as a
+    // measurement -- the same trap the grind readout documents. Say it plainly.
+    $("econ-assumption-readout").textContent = ref
+      ? "The build\u2019s own assumptions, against which the map was generated"
+      : (Math.abs(k - 1) < 1e-9
+          ? "Gate cost changed; reported cost moves, the map does not"
+          : "Haul " + (k >= 1 ? k.toFixed(2) + "\u00d7 dearer" : (1 / k).toFixed(2)
+             + "\u00d7 cheaper") + " than the build\u2019s $"
+            + E.cost.truckUsdTKm + "/t\u00b7km");
+  }
+
   function syncEcon() {
     if (!E.cost) return;
     const on = econ.costExp > 0;
     document.querySelectorAll("#econ-seg .seg-btn").forEach((b) =>
       b.classList.toggle("active", (+b.dataset.econ > 0) === on));
     $("econ-tag").textContent = on ? "On" : "Off";
+    const basis = $("econ-basis");
+    if (basis) {
+      basis.innerHTML = `$${econ.gate.toFixed(0)}/t at the quarry gate plus ` +
+        `trucking at $${econ.truck.toFixed(3)}/t-km from the nearest mafic ` +
+        `quarry.` + (econAtRef() ? "" :
+          ` <b>Adjusted from the build\u2019s $${E.cost.gateUsdT}/t and ` +
+          `$${E.cost.truckUsdTKm}/t-km.</b>`);
+    }
     // Two distinct effects, and the second is easy to miss: the toggle discounts
     // the MAP by cost, and it also restricts the headline TOTAL to cells under the
     // $/tCO2 screen. Say both.
@@ -956,7 +1074,7 @@
     const t = termsAt(i);
     const g = grossCdr(t.rel, t.eDic, t.eTr, t.ceil);
     const econOn = econ.costExp > 0;
-    const score = suitabilityOf(g.cdr) * Math.pow(t.vCost, econ.costExp);
+    const score = suitabilityOf(g.cdr) * Math.pow(vCostLive(t.vCost), econ.costExp);
     // Limiting term = the largest negative contribution to log X -- unless the
     // drainage cannot carry the carbon at all, which outranks any of the three
     // because it is a bound rather than a rate.
@@ -1127,7 +1245,8 @@
   function scoreOf(row, exps) {
     const fl = E.cost ? E.cost.floor : 1;
     const vc = fl + rawByte(row[4] === undefined ? 255 : row[4]) * (1 - fl);
-    return suitabilityOf(cdrOfRow(row, exps)) * Math.pow(vc, econ.costExp);
+    return suitabilityOf(cdrOfRow(row, exps))
+           * Math.pow(vCostLive(vc), econ.costExp);
   }
 
   /* Global gross removal, GtCO2/yr, from the gridded data rather than a stored
@@ -1223,16 +1342,21 @@
     return out;
   }
 
-  // The neutral baseline depends on the grind, the cost exponent and whether the
-  // drainage ceiling is applied, but NOT on the term exponents, so its SCORES and
-  // its edges are cached and invalidated on exactly those three. The old code cached
-  // them and never invalidated, which is why moving the grind slider produced
-  // spurious instability -- so the ceiling toggle belongs in this key too, or
-  // switching it would leave the baseline scored under the other setting. Caching
-  // the scores as well as the edges is what lets updateStability() do one pass.
+  // The neutral baseline depends on the grind, the cost exponent, whether the
+  // drainage ceiling is applied, and the two delivered-cost assumptions -- but NOT
+  // on the term exponents, so its SCORES and its edges are cached and invalidated
+  // on exactly those. The old code cached them and never invalidated, which is why
+  // moving the grind slider produced spurious instability; the ceiling toggle was
+  // then added to the key for the same reason, having been left out once already.
+  // The truck rate belongs here because it moves every score. The GATE cost does
+  // not move any score, but it is in the key anyway: it costs one string compare,
+  // and the failure mode of omitting a setting from this key has now bitten twice.
+  // Caching the scores as well as the edges is what lets updateStability() do one
+  // pass.
   let baseScores = null, baseEdges = null, baseKey = null;
   function neutralBase() {
-    const key = ssaShift().toFixed(6) + "|" + econ.costExp + "|" + (ceilOn ? 1 : 0);
+    const key = ssaShift().toFixed(6) + "|" + econ.costExp + "|" + (ceilOn ? 1 : 0)
+              + "|" + econ.gate.toFixed(4) + "|" + econ.truck.toFixed(6);
     if (baseKey !== key || !baseScores) {
       baseScores = scoresFor(CRIT.map(() => 1));
       baseEdges = edgesFrom(baseScores);
@@ -1513,6 +1637,13 @@
       US and static since 2011; mining titles (Brazil) and crowd-sourced points
       overstate producing quarries. Haul distance is great-circle × tortuosity,
       not road-routed.</p>
+      <p><b>The haul rate is unsourced and unvalidated.</b> $${E.cost ? E.cost.truckUsdTKm : 0.12}/t&middot;km
+      has no citation, no gate and no comparison against real delivered costs,
+      and one global rate cannot hold across Brazil, India and the US Midwest. It
+      is the widest uncertainty in the economic layer, and it moves the map: at
+      $0.03 the median cell delivers rock at $18/t, at $0.30 it is $92/t. Both
+      cost assumptions are sliders under Advanced so the dependence is visible
+      rather than buried.</p>
       <p><b>Screening probabilities are not calibrated.</b> SoilGrids quantiles
       describe ~250 m block averages, not sampled fields, so field-scale
       threshold exceedance is understated; the SOC screen is a screening
@@ -1592,7 +1723,7 @@
   }
 
   function refresh() {
-    syncSliders(); syncPsd(); syncEcon(); renderLegend();
+    syncSliders(); syncPsd(); syncEconAssumptions(); syncEcon(); renderLegend();
     draw();
     // Keep the readout consistent with what is drawn. A pinned box in particular
     // has no mousemove to bring it up to date. Cheap, so it stays inline.
@@ -1729,6 +1860,7 @@
     buildSliders();
     buildPsdSliders();
     buildEconSliders();
+    buildEconAssumptionSliders();
     attachPanZoom();
     document.querySelectorAll("#mode-seg .seg-btn").forEach((btn) =>
       btn.addEventListener("click", () => setMode(btn.dataset.mode)));
@@ -1775,6 +1907,12 @@
     $("btn-psd-reset").onclick = () => {
       psd.d50 = E.psd.refD50; psd.width = E.psd.refWidth;
       $("ps-d50").value = psd.d50; $("ps-width").value = psd.width;
+      refresh();
+    };
+    $("btn-econ-reset").onclick = () => {
+      if (!E.cost) return;
+      econ.gate = E.cost.gateUsdT; econ.truck = E.cost.truckUsdTKm;
+      $("es-gate").value = econ.gate; $("es-truck").value = econ.truck;
       refresh();
     };
     $("open-method").onclick = () => $("method-modal").classList.remove("hidden");

@@ -556,10 +556,70 @@ showing numbers derived from the NaN fallback.
 | Soil pCO₂, flooded | 50,000 µatm | Isometric v1.2, mandated; this is the **floor** of the literature paddy range |
 | Flooded pH convergence | 6.7 | van Breemen 1987; submergence drives pH toward 6–7 |
 | Quarry gate cost | $10/t | operator-reported quarry-fines prices |
-| Truck haul | $0.12/t-km × 1.35 tortuosity | US trade-association rate; **not verified outside the US** |
+| Truck haul | $0.12/t-km × 1.35 tortuosity | **assumption with no citation and no validation.** A previous version of this row credited it to a "US trade-association rate", which the code has never supported — `FEEDSTOCK_COST_SOURCE` has always called it an assumption. Exposed as a slider under Advanced; see §3b |
 | Haul penalty scale S | $100/t | editorial choice, stated as such |
 | Headline cost screen | **$100/tCO₂**, 10 yr at 5% | applies to the footer total when economics is on; acquisition and haul only, not a levelised cost |
 | SOC exclusion | 5 wt%, P > 0.9 | Puro.earth rule 3.9.1(c) |
+
+### 3b. How confident are we in $0.12/t-km? Not very
+
+This is the weakest number in the economic half of the model, and it is easy to
+mistake for a sourced parameter, so it is set out separately.
+
+**Against it:**
+
+1. **No citation.** `FEEDSTOCK_COST_SOURCE` has always said "truck haul rate is an
+   assumption", and nothing has been done since to source it. The gate cost, by
+   contrast, is triangulated across several operator-reported prices (Lithos ~$12/t,
+   Isometric <$10/t, InPlanet ~$10/t, Brazilian *pó de pedra* R$45–50/t).
+2. **No validation anywhere.** There is no cost gate in `build_v0.py`, no cost row
+   in `docs/VALIDATION.md`, and no comparison against delivered costs in the
+   verified-delivery fixture. Every physical layer has a gate; the delivered-cost
+   surface has none.
+3. **A single global rate cannot be right.** Real haulage varies severalfold with
+   fuel price, backhaul availability, road quality, truck size limits, minimum load
+   charges, and whether the operator owns the fleet. Brazil, India and the US
+   Midwest are not one number.
+4. **The rate multiplies a modelled distance.** Haul is great-circle × 1.35, with
+   no routing, no terrain and no border crossings, over a cropland median of
+   275 road km (p90 942 km). Rate error and distance error compound.
+
+**For it:** at $0.12/t-km the cropland median delivered cost is $43/t and the p90
+is $123/t, which is the right order for a $10/t product hauled a median 275 km, and
+it reproduces the standard aggregates rule of thumb that trucking doubles the
+delivered price of crushed stone within a hundred-odd kilometres. That is a
+plausibility argument, not a calibration.
+
+**It is not weakly held in its effect.** Unlike the gate cost, this rate moves the
+map, because `v_cost` penalises the haul increment and haul is linear in the rate:
+
+| truck rate | median $/t | p90 $/t | median `v_cost` |
+|---|---|---|---|
+| $0.03 | 18 | 38 | 0.924 |
+| $0.06 | 26 | 66 | 0.858 |
+| **$0.12** (shipped) | **43** | **123** | **0.752** |
+| $0.20 | 65 | 198 | 0.645 |
+| $0.30 | 92 | 292 | 0.548 |
+
+Both assumptions are therefore **live sliders under Advanced**, with the range
+$0.03–0.30/t-km. That range is an **exploration bracket, not a confidence
+interval** — the endpoints are chosen to span plausible regional variation, not
+inferred from data.
+
+The two sliders are deliberately asymmetric in effect and the UI says so:
+
+- **Truck rate moves the map.** Every score and the cost-screened headline total
+  scale with it.
+- **Gate cost does not move the map**, because `v = 1/(1 + (cost − gate)/S)` is
+  independent of the gate by construction. It moves the reported $/t and $/tCO₂,
+  and through the $/tCO₂ screen it moves the headline total — from **0.59 GtCO₂/yr
+  on 0.19 Gha** at $10/t to **0.39 GtCO₂/yr on 0.11 Gha** at $15/t. Median
+  delivered cost runs $33/t ($114/tCO₂) at a $0/t gate to $48/t ($166/tCO₂) at
+  $15/t.
+
+`tests/cost_sliders.mjs` asserts that at the default slider positions the live path
+reproduces the build's own $/t exactly, that the rescale is the identity at the
+build's rate, and that the gate cannot affect `v_cost`.
 
 ### Choices that are not forced by physics
 
