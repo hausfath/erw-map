@@ -48,3 +48,4 @@ docs/*.log
 # are not ours to publish. scripts/analyse_deployments.py skips when absent.
 cross_deployment_comparison.md
 tests/fixtures/deployments_2026.csv
+*.docx
