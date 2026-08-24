@@ -5,6 +5,16 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Wheel zoom anchors on the cursor
+
+Scroll zoom now keeps the geographic point under the cursor fixed, instead of
+always zooming into the centre of the frame. Standard map behaviour, and it has
+a free correctness benefit: a hover readout stays valid through a zoom, because
+the cell under the cursor does not change. Verified to the cell -- the readout
+coordinate is identical before five zoom steps, after them, and after zooming
+back out. The +/- buttons keep the centre anchor on purpose, and clampView()
+still wins at the data edge, so anchoring degrades gracefully at the borders.
+
 ## The footer moves to a steady-state basis; the map layers stay year-1
 
 The bottom-left total was the year-1 removal of a single application, stated

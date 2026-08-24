@@ -1884,7 +1884,7 @@
     // (as it once was) it covered ~90% of the usable zoom range.
     const ZOOM_MAX = 40;
     let capTimer = null;
-    const zoomBy = (f) => {
+    const zoomBy = (f, cx, cy) => {
       const z = clamp(1, view.zoom * f, ZOOM_MAX);
       if (f > 1 && z === view.zoom && z >= ZOOM_MAX) {
         const el = $("zoomcap");
@@ -1892,11 +1892,28 @@
         clearTimeout(capTimer);
         capTimer = setTimeout(() => el.classList.add("hidden"), 2200);
       }
+      if (z === view.zoom) return;               // capped or floored: no-op
+      // Wheel zoom anchors on the CURSOR: the geographic point under it stays
+      // under it, which is what a map user's hand expects -- and it keeps a
+      // hover readout valid through the zoom, since the cell under the cursor
+      // does not change. The +/- buttons pass no anchor and keep the centre.
+      // Anchor math: recentre so the cursor's lon/lat sits at the same pixel
+      // offset under the new degrees-per-pixel. clampView() may still override
+      // at the data edge; the edge wins on purpose.
+      if (cx !== undefined) {
+        const r = c.getBoundingClientRect();
+        const b = visibleBox();
+        const dx = (cx - r.left) - r.width / 2;
+        const dy = (cy - r.top) - r.height / 2;
+        const dppNew = b.degPerPxCss * view.zoom / z;
+        view.lon += dx * (b.degPerPxCss - dppNew);
+        view.lat -= dy * (b.degPerPxCss - dppNew);
+      }
       view.zoom = z; clampView(); draw();
     };
     c.addEventListener("wheel", (e) => {
       e.preventDefault();
-      zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15);
+      zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY);
     }, { passive: false });
     $("zin").onclick = () => zoomBy(1.4);
     $("zout").onclick = () => zoomBy(1 / 1.4);
