@@ -1328,10 +1328,14 @@ ROAD_TORTUOSITY = 1.35               # great-circle -> road distance
 # ECONOMIC HALF OF THE MODEL. Stated plainly because it is easy to mistake for a
 # sourced parameter:
 #
-#  1. It has no citation. FEEDSTOCK_COST_SOURCE below has always said "truck haul
-#     rate is an assumption", and nothing has been done since to source it. The
-#     gate cost, by contrast, is triangulated from several operator-reported
-#     prices.
+#  1. It began as a citation-free assumption. It now has benchmarks -- see
+#     docs/TRUCK_RATE_SOURCES.md (2026-08-24) -- but benchmarks are not a
+#     calibration, and they show the single global value is regionally wrong:
+#     USDA grain-truck rates put the US at $0.10-0.12/t-km at this map's median
+#     haul (0.12 is a good US number), while Brazil sits near $0.05-0.06 and
+#     India near $0.045-0.05, so 0.12 overstates delivered cost ~2x in the two
+#     countries with the most ERW deployment. USDA's distance curve also implies
+#     a fixed $4-6/t per-trip component this model lacks.
 #  2. Nothing validates it. There is no cost gate in build_v0.py, no cost row in
 #     docs/VALIDATION.md, and no comparison against delivered costs in the
 #     verified-delivery fixture. The whole delivered-cost surface is unvalidated,
@@ -1350,10 +1354,12 @@ ROAD_TORTUOSITY = 1.35               # great-circle -> road distance
 #     it.
 #
 # What can be said for it: 0.12 puts the cropland median delivered cost at $43/t
-# and the p90 at $123/t, which is the right order for a $10/t product hauled a
-# median 204 km, and it reproduces the standard aggregates rule of thumb that
-# trucking doubles the delivered price of crushed stone within a hundred-odd km.
-# That is a plausibility argument, not a calibration.
+# and the p90 at $123/t, and USDA GTOR (Q2 2026) makes it a genuinely good US
+# rate: $0.120/t-km at 100-mile hauls, $0.102 at 200 miles, against this map's
+# 171-mile median haul. That upgrades the default from "plausible" to "sourced
+# for the US" -- and simultaneously establishes it is the WRONG number for
+# Brazil, India, and most of Asia. Regionalisation is the fix, tracked in
+# to_do.md; the full source table is docs/TRUCK_RATE_SOURCES.md.
 #
 # THE RANGE BELOW IS AN EXPLORATION BRACKET, NOT A PUBLISHED INTERVAL. The
 # endpoints are chosen to span plausible regional variation so the slider can
