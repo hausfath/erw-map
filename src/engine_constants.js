@@ -1574,7 +1574,7 @@ window.ERW = {
       0.25,
       2.5
     ],
-    "haulFixedUsdT": 5.0,
+    "haulFixedKm": 50.0,
     "expOn": 1.0,
     "tortuosity": 1.35,
     "outcropToQuarry": 2.0,

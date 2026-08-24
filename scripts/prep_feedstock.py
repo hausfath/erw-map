@@ -13,7 +13,7 @@ Writes to data/interim/:
   mafic_frac.tif            fraction of cell underlain by basic igneous rock
   mafic_km.tif              great-circle km to the nearest mafic outcrop
   quarry_km.tif             km to the nearest mafic-hosted stone quarry
-  feedstock_cost.tif        indicative delivered $/t: gate + F + r(region)*d
+  feedstock_cost.tif        indicative delivered $/t: gate + r(region)*(d+50km)
   truck_rate.tif            the regional $/t-km surface used in that cost
   feedstock_conf.tif        0-1 confidence that the quarry inventory is usable
 
@@ -325,21 +325,26 @@ def build_cost(transform, w, h, crs, mafic_km, quarry_km, conf) -> None:
     # rail mode was removed.
     road_km = C.ROAD_TORTUOSITY * haul_km
     rate = truck_rate_raster(transform, w, h, crs)
-    cost = (C.FEEDSTOCK_GATE_COST_USD_T + C.HAUL_FIXED_USD_T + rate * road_km)
-    print(f"  truck only: ${C.HAUL_FIXED_USD_T:.0f}/t fixed + regional rate on "
-          f"{C.ROAD_TORTUOSITY}x great-circle distance")
+    # The fixed per-trip charge is a km-equivalent priced at the regional rate:
+    # ~45 min of loading/tipping/positioning = ~50 km of driving, so the whole
+    # haul is one product. See constants.HAUL_FIXED_KM_EQUIV for the reversal
+    # this replaces (a global $5/t that priced Indian trip time at US wages).
+    cost = (C.FEEDSTOCK_GATE_COST_USD_T
+            + rate * (road_km + C.HAUL_FIXED_KM_EQUIV))
+    print(f"  truck only: regional rate on ({C.ROAD_TORTUOSITY}x great-circle "
+          f"+ {C.HAUL_FIXED_KM_EQUIV:.0f} km fixed-trip equivalent)")
 
     # ROUND TRIP, fatal: the written surface must decompose back into exactly
     # gate + F + r*d. Catches a unit slip or a misaligned rate raster here,
     # where all three pieces are still in hand, rather than three artefacts
     # downstream in a browser readout.
     chk = np.isfinite(cost) & np.isfinite(road_km) & (road_km > 1.0)
-    resid = np.abs(cost[chk] - C.FEEDSTOCK_GATE_COST_USD_T - C.HAUL_FIXED_USD_T
-                   - rate[chk] * road_km[chk])
+    resid = np.abs(cost[chk] - C.FEEDSTOCK_GATE_COST_USD_T
+                   - rate[chk] * (road_km[chk] + C.HAUL_FIXED_KM_EQUIV))
     if chk.any() and float(resid.max()) > 1e-3:
         raise SystemExit(f"cost round-trip failed: max residual "
                          f"${float(resid.max()):.4f}/t")
-    print(f"  round trip gate+F+r*d: max residual ${float(resid.max()):.1e}/t "
+    print(f"  round trip gate+r*(d+50): max residual ${float(resid.max()):.1e}/t "
           f"over {int(chk.sum()):,} cells  [PASS]")
 
     v = cost[np.isfinite(cost)]

@@ -764,15 +764,19 @@ dissolution over alkalinity retention -- both are required multiplicatively.
 Truck only, at great-circle distance $\times$ a tortuosity factor, not network
 routing, with a fixed per-trip charge and a \emph{{regional}} per-km rate:
 \begin{{equation}}
-c = c_{{\mathrm{{gate}}}} + F + r(x)\cdot \tau_{{\mathrm{{road}}}}\, d_{{gc}},
+c = c_{{\mathrm{{gate}}}} + r(x)\left(\tau_{{\mathrm{{road}}}}\, d_{{gc}} + d_0\right),
 \qquad
 c_{{\mathrm{{gate}}}} = \${C.FEEDSTOCK_GATE_COST_USD_T:g}\,\mathrm{{t^{{-1}}}},\ \
-F = \${C.HAUL_FIXED_USD_T:g}\,\mathrm{{t^{{-1}}}},\ \
+d_0 = {C.HAUL_FIXED_KM_EQUIV:g}\,\mathrm{{km}},\ \
 \tau_{{\mathrm{{road}}}} = {C.ROAD_TORTUOSITY:g} .
 \end{{equation}}
-$F$ is loading, unloading and positioning, paid once regardless of distance; it is
-decomposed from the USDA grain-truck rate curve, whose per-mile rate falls with
-haul length exactly as a fixed charge spread over more km predicts. $r(x)$ is a
+$d_0$ is the fixed trip charge -- the hauler's loading, tipping and positioning
+time, paid once regardless of distance -- expressed as a km-equivalent and priced
+at the regional rate, because trip \emph{{time}} is roughly universal while its
+\emph{{price}} follows the local hourly trucking cost. It is decomposed from the
+USDA grain-truck rate curve, whose per-mile rate falls with haul length exactly
+as a fixed charge spread over more km predicts (implied $F/r = 37$--$72$ km;
+at the US rate, $d_0 = 50$ km is \${C.HAUL_FIXED_KM_EQUIV * 0.10:.2f}/t). $r(x)$ is a
 regional rate rasterised from Natural Earth countries
 ({rate_rows}; elsewhere \${C.TRUCK_RATE_DEFAULT:g}), sourced in
 \texttt{{docs/TRUCK\_RATE\_SOURCES.md}} -- only the US entry is a current primary;
@@ -803,11 +807,14 @@ and multiplies suitability as $v_{{\mathrm{{cost}}}}^{{\,w}}$. The physical half
 annihilates -- zero removal is zero suitability at any price -- while expensive
 rock is discounted rather than excluded, because expensive is bad, not impossible.
 The floor at {C.COST_FLOOR:g} keeps a remote cell visible as physically real.
-With the fixed charge, $c - c_{{\mathrm{{gate}}}} = F + r\,d > 0$ everywhere, so
-$v_{{\mathrm{{cost}}}}$ peaks at $1/(1+F/S) \approx
-{1 / (1 + C.HAUL_FIXED_USD_T / C.HAUL_PENALTY_SCALE_USD_T):.3f}$ at zero distance
-rather than reaching 1: even a farm beside the quarry pays loading and unloading.
-The gate still cancels exactly.
+With the fixed charge, $c - c_{{\mathrm{{gate}}}} = r(d + d_0) > 0$ everywhere,
+so $v_{{\mathrm{{cost}}}}$ peaks at $1/(1 + r d_0/S)$ at zero distance rather
+than reaching 1 -- between
+{1 / (1 + 0.11 * C.HAUL_FIXED_KM_EQUIV / C.HAUL_PENALTY_SCALE_USD_T):.3f}
+(Africa) and
+{1 / (1 + 0.045 * C.HAUL_FIXED_KM_EQUIV / C.HAUL_PENALTY_SCALE_USD_T):.3f}
+(India) by region: even a farm beside the quarry pays for the truck's loading
+and tipping time. The gate still cancels exactly.
 
 \subsection{{The headline screen: multi-year, discounted}}
 

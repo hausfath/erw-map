@@ -2,28 +2,31 @@
  *
  *   node tests/cost_sliders.mjs
  *
- * The delivered-cost controls rescale a value function BAKED into tex3.b at the
- * build's regional truck rates and fixed per-trip charge F, rather than
- * recomputing cost from a distance layer. The baked haul increment is
- * h = F + r(region)*d; the slider multiplies only the per-km part, so
- * h' = F + m*(h - F), and in v-space with a = v*(1 + F/S):
+ * The delivered-cost controls rescale a value function BAKED into tex3.b. The
+ * baked haul is h = r(region) * (road_km + d0), where d0 = 50 km is the fixed
+ * trip charge expressed as a km-equivalent and priced at the regional rate.
+ * The whole haul is therefore linear in r, so the multiplier rescale
  *
- *     v' = v / (a + m*(1 - a))
+ *     v' = v / (m + v*(1 - m))
  *
- * exact because h is affine in m, and written in that form so m = 1 is the
- * bit-exact identity (a + (1 - a) rounds to exactly 1). "Exact in principle"
- * is how the double-grind-shift bug shipped, so it gets asserted here against
- * the build's own numbers.
+ * is exact, and m + v*(1 - m) evaluates to exactly 1 at m = 1, making the
+ * identity bit-exact. The fixed charge scales with m ON PURPOSE: m represents
+ * the trucking market's hourly cost level, and trip time is priced at that
+ * level. (An earlier design spared the fixed charge from the multiplier; it
+ * confused time, which is universal, with cost, which is regional.)
+ * "Exact in principle" is how the double-grind-shift bug shipped, so it gets
+ * asserted here against the build's own numbers.
  *
  * Five things are checked:
  *   1. At m = 1 the rescale is the identity to floating-point exactness.
  *   2. Reported $/t at the default sliders is exactly gate + S(1/v - 1),
- *      the build's own decomposition of the baked byte.
+ *      the build's own decomposition of the baked byte -- every byte, no
+ *      carve-outs (the pure-multiplier model needs no zero-distance guard).
  *   3. The GATE cost does not change v_cost at all -- the claim the UI makes --
- *      and shifts the reported $/t by exactly the gate delta.
+ *      and shifts the reported $/t by exactly the gate delta, up to $25.
  *   4. The multiplier is monotone the right way and v stays in [floor, 1].
- *   5. The FIXED charge is not multiplied: at the zero-distance byte
- *      (v = 1/(1 + F/S)) the reported cost is gate + F at EVERY multiplier.
+ *   5. Fixed-charge coherence per region: a zero-distance cell in rate group r
+ *      bakes v = 1/(1 + r*d0/S) and must report gate + m*r*d0 at multiplier m.
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
@@ -37,8 +40,7 @@ const E = new Function("window", `${src}; return window.ERW;`)({});
 const C = E.cost;
 
 const clamp = (lo, v, hi) => Math.max(lo, Math.min(hi, v));
-const F = C.haulFixedUsdT;
-const fFrac = F / C.haulScaleUsdT;
+const D0 = C.haulFixedKm;
 
 // --- the functions under test, transcribed from app.js. Kept as a literal
 // transcription rather than an import because app.js is a browser IIFE; the
@@ -46,19 +48,16 @@ const fFrac = F / C.haulScaleUsdT;
 // caught here rather than by eye on the deployed page.
 const vCostLive = (vBaked, m) => {
   if (!(vBaked > 0)) return C.floor;
-  const a = Math.min(vBaked * (1 + fFrac), 1);   // zero-distance guard
-  return clamp(C.floor, vBaked / (a + m * (1 - a)), 1);
+  return clamp(C.floor, vBaked / (m + vBaked * (1 - m)), 1);
 };
 const costUsdT = (vBaked, gate, m) => {
   const v = clamp(C.floor, vBaked, 1);
-  const haul = C.haulScaleUsdT * (1 / v - 1);
-  return gate + F + m * Math.max(haul - F, 0);   // zero-distance guard
+  return gate + m * C.haulScaleUsdT * (1 / v - 1);
 };
 
 const app = readFileSync(join(ROOT, "src/app.js"), "utf8");
-const shaderExpr =
-  app.includes("float aFix = min(vBaked * (1.0 + uHaulFix), 1.0);")
-  && app.includes("vBaked / (aFix + uTruckScale * (1.0 - aFix))");
+const shaderExpr = app.includes(
+  "vBaked / (uTruckScale + vBaked * (1.0 - uTruckScale))");
 
 let fails = 0;
 const ok = (name, cond, detail = "") => {
@@ -66,7 +65,8 @@ const ok = (name, cond, detail = "") => {
   if (!cond) fails++;
 };
 
-console.log(`cost model: gate $${C.gateUsdT}/t, fixed $${F}/t, regional rates ` +
+console.log(`cost model: gate $${C.gateUsdT}/t, fixed trip = ${D0} km at the ` +
+            `regional rate, rates ` +
             Object.entries(C.truckRates).map(([k, v]) => `${k} $${v}`).join(", ") +
             `, elsewhere $${C.truckRateDefault}/t-km`);
 console.log(`haul scale $${C.haulScaleUsdT}/t, floor ${C.floor}, ` +
@@ -87,23 +87,13 @@ ok("v_cost unchanged at m = 1", worstId === 0, `worst |delta| = ${worstId}`);
 
 console.log();
 console.log("2. reported $/t at defaults reproduces the baked decomposition");
-// Exactness is claimed over PRODUCIBLE bytes (haul >= F). Bytes past the
-// zero-distance point encode quantisation jitter, and the guard deliberately
-// reports gate + F for them instead of gate + (something < gate + F).
-let worstCost = 0, worstGuard = 0;
+let worstCost = 0;
 for (const v of baked) {
-  const haul = C.haulScaleUsdT * (1 / v - 1);
-  const live = costUsdT(v, C.gateUsdT, 1);
-  if (haul >= F) {
-    worstCost = Math.max(worstCost, Math.abs(live - (C.gateUsdT + haul)));
-  } else {
-    worstGuard = Math.max(worstGuard, Math.abs(live - (C.gateUsdT + F)));
-  }
+  const build = C.gateUsdT + C.haulScaleUsdT * (1 / v - 1);
+  worstCost = Math.max(worstCost, Math.abs(costUsdT(v, C.gateUsdT, 1) - build));
 }
-ok("$/t identical at defaults (producible bytes)", worstCost < 1e-9,
+ok("$/t identical at defaults (every byte)", worstCost < 1e-9,
    `worst |delta| = $${worstCost.toExponential(2)}/t`);
-ok("past zero-distance, cost is pinned at gate + F", worstGuard < 1e-9,
-   `worst |delta| = $${worstGuard.toExponential(2)}/t`);
 
 console.log();
 console.log("3. the gate cost does not move v_cost (the UI's claim)");
@@ -135,26 +125,25 @@ ok("v_cost falls as the multiplier rises", monotone);
 ok("shader uses the same rescale expression", shaderExpr);
 
 console.log();
-console.log("5. the fixed charge is not multiplied");
-const vZeroDist = 1 / (1 + fFrac);           // the byte a zero-distance cell bakes
-let fixedMoved = 0;
-for (const m of mults) {
-  fixedMoved = Math.max(fixedMoved,
-                        Math.abs(costUsdT(vZeroDist, C.gateUsdT, m)
-                                 - (C.gateUsdT + F)));
+console.log("5. fixed-charge coherence: zero-distance cells by rate group");
+// A cell at the quarry in group r bakes haul = r*d0. At multiplier m it must
+// report gate + m*r*d0 -- the fixed charge scales with the market level.
+const allRates = [...Object.values(C.truckRates), C.truckRateDefault];
+let worstFix = 0;
+for (const r of allRates) {
+  const vZero = 1 / (1 + (r * D0) / C.haulScaleUsdT);
+  for (const m of mults) {
+    worstFix = Math.max(worstFix,
+                        Math.abs(costUsdT(vZero, C.gateUsdT, m)
+                                 - (C.gateUsdT + m * r * D0)));
+  }
 }
-ok("zero-distance cost is gate + F at every multiplier", fixedMoved < 1e-9,
-   `worst |delta| = $${fixedMoved.toExponential(2)}/t`);
-let vzMoved = 0;
-for (const m of mults) {
-  vzMoved = Math.max(vzMoved, Math.abs(vCostLive(vZeroDist, m) - vZeroDist));
-}
-ok("zero-distance v_cost is multiplier-invariant", vzMoved < 1e-12,
-   `worst |delta| = ${vzMoved.toExponential(2)}`);
+ok("zero-distance cost is gate + m*r*d0 for every group", worstFix < 1e-9,
+   `worst |delta| = $${worstFix.toExponential(2)}/t`);
 
 console.log();
-console.log("effect at a US-median-haul cell ($43/t delivered at defaults):");
-const vMed = 1 / (1 + (43 - C.gateUsdT) / C.haulScaleUsdT);
+console.log("effect at a US-median-haul cell ($42.5/t delivered at defaults):");
+const vMed = 1 / (1 + (42.5 - C.gateUsdT) / C.haulScaleUsdT);
 for (const m of mults) {
   console.log(`  x${m.toFixed(2)} -> $${costUsdT(vMed, C.gateUsdT, m).toFixed(0)}/t ` +
               `delivered, v_cost ${vCostLive(vMed, m).toFixed(3)}`);

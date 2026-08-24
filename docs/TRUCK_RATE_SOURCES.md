@@ -114,9 +114,13 @@ suitability-with-cost — in exactly the places the physics favours.
 ## 7. Recommendation — IMPLEMENTED 2026-08-24
 
 Both items below shipped the day this note was written: `constants.TRUCK_RATE_GROUPS`
-carries the regional table with per-entry sources and vintages, `HAUL_FIXED_USD_T`
-the fixed component, and `prep_feedstock.py --cost-only` rebuilds the cost surface
-from them. The text is kept as written for the record.
+carries the regional table with per-entry sources and vintages, and
+`prep_feedstock.py --cost-only` rebuilds the cost surface from them. The fixed
+component was first shipped as a flat $5/t and then, when it was regionalised,
+re-expressed as `HAUL_FIXED_KM_EQUIV = 50` km priced at the regional rate
+(F/r = 37–72 km from the table in §1; trip *time* is universal, its *price* is
+local), giving $2.25–5.50/t by region. The text below is kept as written for the
+record.
 
 1. **Regionalise the rate** rather than change the global default. A short
    country-group table (US/Canada 0.10, Europe 0.09, Brazil/Latin America 0.055,

@@ -5,6 +5,46 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## The fixed trip charge is regional now, as a km-equivalent
+
+One-commit-old design reversed, deliberately and on a user's question. The fixed
+per-trip haul component briefly shipped as a flat global $5/t that the haul-rate
+multiplier did not scale, argued as "a dearer trucking market does not make
+loading a truck proportionally dearer". That argument confused time with cost:
+the ~45 minutes of loading, tipping and positioning is roughly universal, but a
+global $5 priced an Indian driver's 45 minutes at US wages.
+
+The charge is now a km-equivalent priced at the regional rate:
+
+    haul = r(region) x (road_km + 50 km)
+
+The 50 km comes from the same USDA decomposition (implied F/r = 37-72 km across
+the three haul distances; at the US rate, 50 km = the previous $5.00/t exactly),
+and yields regional fixed charges of $5.00 (US/CA), $4.50 (EU), $3.50 (CN/SE
+Asia), $2.75 (BR/LatAm), $2.25 (IN/S Asia), $5.50 (Africa), $4.00 (elsewhere).
+
+Simplifications that fall out, all shipped:
+
+- The whole haul is again linear in the rate, so the browser rescale reverts to
+  the pure v' = v/(m + v(1-m)) -- the uHaulFix uniform, the a = v(1+F/S)
+  algebra, and the zero-distance monotonicity guard are all deleted. The
+  multiplier now scales the fixed charge too, coherently: m represents the
+  market's hourly cost level, which trip time shares.
+- v_cost peaks at 1/(1 + r*50/S), i.e. 0.948 (Africa) to 0.978 (India) by
+  region, replacing the single 0.952.
+- The harness gains a per-region coherence check: a zero-distance cell in rate
+  group r must report gate + m*r*50 at every multiplier. All checks pass; the
+  defaults-identity now holds on every encodable byte with no carve-outs.
+
+Measured: cropland delivered cost p10/p50/p90 $17/$35/$100 -> **$16/$34/$100**
+(cheaper trip charges across the Global South). The gate sweep under the
+$100/tCO2 screen re-measured: $10 -> 0.76 GtCO2/yr on 0.22 Gha; $12 -> 0.63;
+$18 -> 0.23; $21.50 -> 0.04. Physics untouched, global gross 2.432 GtCO2/yr.
+
+Still a US-derived shape applied globally: the 37-72 km band is US data, and
+whether trip time is really ~45 min in an Indian or Brazilian quarry queue is
+unmeasured -- the level now scales regionally, the duration does not.
+
 ## The quarry gate at scale: sourced, and the slider now reaches it
 
 Companion research to the haul-rate work: docs/GATE_COST_AT_SCALE.md asks what

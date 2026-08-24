@@ -105,17 +105,18 @@ cited in `constants.py`).
 
 ## 5. Boundary with the fixed haul charge — no double count
 
-A fair question once both exist: is the $5/t fixed haul component already inside
-the gate price? No, and the boundary is clean. The gate is an **f.o.b. quarry**
-price — USGS unit values and the operator-reported prices alike — which by
-definition includes the *quarry's* loading service (its loader, its operator,
-its wear). The $5/t is decomposed from USDA **trucking** rates, which are what
-shippers pay haulers and exclude the commodity and its loading service: it is
-the *hauler's* fixed per-trip cost — truck and driver time while being loaded
-and while tipping at the field, plus positioning. Different party, different
-invoice, and it is exactly why the trucking per-mile rate falls with distance
-while the f.o.b. rock price does not. (What is in **neither**: spreading the
-rock on the field, which the model does not price at all.)
+A fair question once both exist: is the fixed trip charge (50 km-equivalent at
+the regional rate, $2.25–5.50/t) already inside the gate price? No, and the
+boundary is clean. The gate is an **f.o.b. quarry** price — USGS unit values and
+the operator-reported prices alike — which by definition includes the *quarry's*
+loading service (its loader, its operator, its wear). The trip charge is
+decomposed from USDA **trucking** rates, which are what shippers pay haulers and
+exclude the commodity and its loading service: it is the *hauler's* fixed
+per-trip cost — truck and driver time while being loaded and while tipping at
+the field, plus positioning. Different party, different invoice, and it is
+exactly why the trucking per-mile rate falls with distance while the f.o.b. rock
+price does not. (What is in **neither**: spreading the rock on the field, which
+the model does not price at all.)
 
 ## 6. Comparison table
 
@@ -137,12 +138,12 @@ while being roughly right for at-scale Brazil and generous for India.
    only), so none of this changes the colour. It changes every reported $/t and
    $/tCO₂ and the cost-screened headline total, and the sensitivity is severe —
    measured on the shipped build (regional haul, $100/tCO₂ screen over 10 yr at
-   5%): gate **$10 → 0.66 GtCO₂/yr on 0.19 Gha; $12 → 0.53 on 0.14; $18 → 0.12
-   on 0.03; $21.50 → 0.00**. At the US at-scale gate, the $100/tCO₂ screen
-   admits essentially nothing — gate + loading alone is $52/tCO₂ of year-one
-   carbon before any hauling, grinding, spreading or MRV. The at-scale question
-   is therefore not a parameter nicety; it decides whether the sub-$100 map has
-   any area in it.
+   5%): gate **$10 → 0.76 GtCO₂/yr on 0.22 Gha; $12 → 0.63 on 0.18; $18 → 0.23
+   on 0.06; $21.50 → 0.04 on 0.01**. At the US at-scale gate, the $100/tCO₂
+   screen collapses toward nothing — gate plus the fixed trip charge alone is
+   $42–54/tCO₂ (regionally) of year-one carbon before any hauling, grinding,
+   spreading or MRV. The at-scale question is therefore not a parameter nicety;
+   it decides whether the sub-$100 map has any area in it.
 2. **The gate slider now spans $0–25** so the at-scale US/European value is
    reachable; it previously capped at $15, below the observed US traprock
    average. The default stays $10/t — the current-procurement number — because a

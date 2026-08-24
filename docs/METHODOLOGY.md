@@ -556,7 +556,7 @@ showing numbers derived from the NaN fallback.
 | Soil pCO₂, flooded | 50,000 µatm | Isometric v1.2, mandated; this is the **floor** of the literature paddy range |
 | Flooded pH convergence | 6.7 | van Breemen 1987; submergence drives pH toward 6–7 |
 | Quarry gate cost | $10/t | operator-reported quarry-fines prices — a **current-procurement** (byproduct) price. At scale, dedicated basalt runs $15–22/t in the US/Europe (US traprock averages $21.33/t, USGS 2023); see `docs/GATE_COST_AT_SCALE.md`. Slider spans $0–25 |
-| Truck haul | regional $/t-km (US/CA 0.10, EU 0.09, BR/LatAm 0.055, IN/S Asia 0.045, CN/SE Asia 0.07, Africa 0.11, else 0.08) + $5/t fixed, × 1.35 tortuosity | per-entry sources and vintages in `constants.TRUCK_RATE_GROUPS` and `docs/TRUCK_RATE_SOURCES.md`; only the US rate is a current primary. Live multiplier under Advanced; see §3b |
+| Truck haul | regional $/t-km (US/CA 0.10, EU 0.09, BR/LatAm 0.055, IN/S Asia 0.045, CN/SE Asia 0.07, Africa 0.11, else 0.08) on road km + 50 km fixed-trip equivalent ($2.25–5.50/t regionally), × 1.35 tortuosity | per-entry sources and vintages in `constants.TRUCK_RATE_GROUPS` and `docs/TRUCK_RATE_SOURCES.md`; only the US rate is a current primary. Live multiplier under Advanced; see §3b |
 | Haul penalty scale S | $100/t | editorial choice, stated as such |
 | Headline cost screen | **$100/tCO₂**, 10 yr at 5% | applies to the footer total when economics is on; acquisition and haul only, not a levelised cost |
 | SOC exclusion | 5 wt%, P > 0.9 | Puro.earth rule 3.9.1(c) |
@@ -584,42 +584,52 @@ China and Europe rest on 2007 corridor prices inflated by US CPI, India on a 202
 national average, and the `elsewhere` default of $0.08 is a judgment call, not a
 sourced figure.
 
-**2. Haul has a fixed component.** The USDA per-mile rate falls with distance —
-$0.187/t-km at 25 miles, $0.120 at 100, $0.102 at 200 — exactly the signature of
-a per-trip cost (loading, unloading, positioning) spread over more km.
-Decomposed: fixed **$3.6–6.0/t** plus $0.083–0.098/t-km marginal. The model now
-prices `cost = gate + F + r(region)·d` with `F = $5/t`. A pure `rate × distance`
-model understates short hauls and overstates long ones; this changes the shape
-independently of any regional level, and it means `v_cost` peaks at
-`1/(1 + F/S) = 0.952` at zero distance rather than 1 — even a farm beside the
-quarry pays the truck's loading and tipping time. **No double count with the
-gate:** the gate price is f.o.b. quarry, which includes the *quarry's* loading
-service; `F` is the *hauler's* fixed per-trip cost (truck and driver time under
-the loader, tipping, positioning), decomposed from trucking rates that exclude
-the commodity. Different party, different invoice. The gate still cancels
+**2. Haul has a fixed component, priced regionally.** The USDA per-mile rate
+falls with distance — $0.187/t-km at 25 miles, $0.120 at 100, $0.102 at 200 —
+exactly the signature of a per-trip cost (loading, unloading, positioning)
+spread over more km. Decomposed: fixed $3.6–6.0/t plus $0.083–0.098/t-km
+marginal, i.e. an implied `F/r` of 37–72 km. The model prices it at the
+midpoint, as a **km-equivalent**: `cost = gate + r(region)·(d + 50 km)`. The
+form matters: trip *time* (~45 min under the loader, tipping, positioning) is
+roughly universal, but its *price* follows the local hourly trucking cost —
+which is what `r` embodies — so the fixed charge is $5.00/t in the US, $4.50 in
+Europe, $2.75 in Brazil, $2.25 in India, $5.50 in Africa. (A first version
+shipped it as a flat global $5/t, which priced an Indian driver's half-hour at
+US wages; superseded the same week.) A pure `rate × distance` model understates
+short hauls and overstates long ones; the fixed charge fixes the shape, and it
+means `v_cost` peaks at `1/(1 + r·50/S)` — 0.948 (Africa) to 0.978 (India) — at
+zero distance rather than 1: even a farm beside the quarry pays the truck's
+loading and tipping time. **No double count with the gate:** the gate price is
+f.o.b. quarry, which includes the *quarry's* loading service; the trip charge is
+the *hauler's* fixed cost, decomposed from trucking rates that exclude the
+commodity. Different party, different invoice. The gate still cancels
 exactly.
 
-Measured on the shipped build: cropland delivered cost is **$17 / $35 / $100**
+Measured on the shipped build: cropland delivered cost is **$16 / $34 / $100**
 (p10/p50/p90), against $14/$43/$123 under the old model — cheaper across the
-Global South, floored at gate + F = $15/t near quarries. Per tonne of CO₂ that is
-$52 gross at gate-plus-loading and $121 at the cropland median.
+Global South, floored at gate + r·50 km ($12.25–15.50/t regionally) near
+quarries. Per tonne of CO₂ that is $42–54 gross at gate-plus-trip-charge and
+$118 at the cropland median.
 
 The two Advanced controls are deliberately asymmetric and the UI says so:
 
 - **The haul-rate multiplier moves the map.** It scales the regional per-km rates
-  together (×0.25–2.5; cropland median delivered cost runs $20–65/t across it).
-  The fixed charge is *not* multiplied: a dearer trucking market does not make
-  loading a truck proportionally dearer. The multiplier range is an **exploration
-  bracket, not a confidence interval**.
+  together (×0.25–2.5; cropland median delivered cost runs $16–70/t across it),
+  *including* the fixed trip charge — which is time priced at the market level
+  the multiplier represents. (A first version spared the fixed charge from the
+  multiplier, confusing universal *time* with regional *cost*; reversed when the
+  charge was regionalised.) The multiplier range is an **exploration bracket,
+  not a confidence interval**.
 - **The gate cost does not move the map**, because `v = 1/(1 + (cost − gate)/S)`
   is independent of the gate by construction. It moves the reported $/t and
   $/tCO₂, and through the $/tCO₂ screen it moves the headline total.
 
 `tests/cost_sliders.mjs` asserts: the multiplier rescale of the baked texture is
 the bit-exact identity at ×1; reported $/t at defaults reproduces the build's own
-decomposition; the gate shifts reported cost by exactly the gate delta and cannot
-touch `v_cost`; the fixed charge is multiplier-invariant; and the GLSL uses the
-same expression as the JS.
+decomposition on every encodable byte; the gate shifts reported cost by exactly
+the gate delta and cannot touch `v_cost`; a zero-distance cell in every rate
+group reports gate + m·r·50 km; and the GLSL uses the same expression as the
+JS.
 
 **Still unvalidated.** There is no cost gate in `build_v0.py` and no comparison
 against delivered costs in the verified-delivery fixture — benchmarked is not
@@ -638,8 +648,9 @@ routed.
   is bad, not impossible. It is the first genuinely tradeable factor in the model.
 - **The cost penalty applies to the haul increment only.** The gate cost cancels
   out of the map, because every site must buy and crush rock and that carries no
-  spatial information. With the fixed trucking charge the increment is
-  `F + r·d > 0` everywhere, so the multiplier peaks at 0.952 rather than 1. Note
+  spatial information. With the fixed trip charge the increment is
+  `r·(d + 50 km) > 0` everywhere, so the multiplier peaks at 0.948–0.978
+  (regionally) rather than 1. Note
   the cancellation is only coherent while the gate cost is globally uniform;
   regionalising it (BR $9, IN $3, US $12 are known) would make it real spatial
   information and require revisiting the logic. The *truck rate* being regional

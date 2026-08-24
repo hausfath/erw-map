@@ -1464,24 +1464,47 @@ TRUCK_RATE_ISO_DEFAULT = ["RU"]
 TRUCK_RATE_MULT_RANGE = (0.25, 2.5)   # the Advanced slider, a global multiplier
                                       # on the regional surface
 
-# The FIXED per-trip haul component, $/t: the HAULER'S fixed trip cost -- truck
-# and driver time while being loaded and while tipping, plus positioning --
-# paid once regardless of distance. NO DOUBLE COUNT WITH THE GATE, a question
-# worth answering precisely because the old label ("loading charge") invited
-# it: the gate price is f.o.b. quarry, which includes the QUARRY'S loading
-# service (its loader, its operator); F comes from USDA TRUCKING rates, which
-# are what shippers pay haulers and exclude the commodity and its loading
-# service entirely. Different party, different invoice. Decomposed from the
-# same USDA GTOR curve:
-# the per-mile rate falls with distance because this fixed cost is spread over
-# more km ($7.53/t total at 25 mi vs $19.36 at 100 mi implies fixed $3.6-6.0/t
-# plus $0.083-0.098/t-km marginal). Consequences, both deliberate:
-#   - v_cost no longer reaches 1.0 anywhere: at zero distance the transport
-#     penalty is F/S, i.e. v_max = 1/(1 + F/S) ~ 0.952. The old rule
-#     "v = 1 exactly at the gate" is superseded -- even a farm beside the
-#     quarry pays for the truck's loading and tipping time.
-#   - The gate still cancels exactly. F is transport, not gate.
-HAUL_FIXED_USD_T = 5.0
+# The FIXED per-trip haul component, expressed as a KM-EQUIVALENT and priced at
+# the regional rate:
+#
+#     haul = r(region) * (road_km + HAUL_FIXED_KM_EQUIV)
+#
+# i.e. every trip carries a fixed charge equal to ~50 km of driving at the local
+# rate. The physics: the fixed component is the HAULER'S trip time -- truck and
+# driver while being loaded, tipping, positioning -- and that TIME is roughly
+# universal (~45 min), while its PRICE follows the local hourly trucking cost,
+# which is exactly what the regional per-km rate embodies. Decomposed from the
+# USDA GTOR curve: the per-mile rate falls with distance because this fixed
+# cost is spread over more km ($7.53/t total at 25 mi vs $19.36 at 100 mi
+# implies fixed $3.6-6.0/t plus $0.083-0.098/t-km marginal, i.e. F/r = 37-72 km;
+# 50 is the midpoint, and at the US rate gives F = $5.0/t). Regional fixed
+# charges follow: US/CA $5.00, Europe $4.50, China/SE Asia $3.50, Brazil/LatAm
+# $2.75, India/S Asia $2.25, Africa $5.50, elsewhere $4.00.
+#
+# THIS SUPERSEDES A ONE-COMMIT-OLD DESIGN, and the reversal is deliberate. F
+# briefly shipped as a global $5/t that the haul-rate multiplier did NOT scale,
+# on the argument that "a dearer trucking market does not make loading a truck
+# proportionally dearer". That argument confused time with cost: the half-hour
+# under the loader is the same everywhere, but a global $5 priced an Indian
+# driver's half-hour at US wages. Once F is regional time-cost, it belongs
+# INSIDE the rate multiplication -- the multiplier represents the market's
+# hourly cost level, which the fixed component shares. This also collapses the
+# browser math back to the pure rescale v' = v/(m + v(1-m)) with no fixed-term
+# uniform and no zero-distance guard.
+#
+# NO DOUBLE COUNT WITH THE GATE: the gate price is f.o.b. quarry, which
+# includes the QUARRY'S loading service (its loader, its operator); this
+# charge comes from USDA TRUCKING rates, which are what shippers pay haulers
+# and exclude the commodity and its loading service entirely. Different party,
+# different invoice. Spreading on the field is in neither and is unpriced.
+#
+# Consequences, all deliberate:
+#   - v_cost never reaches 1.0: at zero distance the transport penalty is
+#     r*50km/S, so v_max runs 0.948 (Africa) to 0.978 (India) by region. The
+#     old rule "v = 1 exactly at the gate" stays superseded -- even a farm
+#     beside the quarry pays for the truck's loading and tipping time.
+#   - The gate still cancels exactly. The fixed charge is transport, not gate.
+HAUL_FIXED_KM_EQUIV = 50.0
 
 
 def truck_rate_for(iso_a2, continent):
