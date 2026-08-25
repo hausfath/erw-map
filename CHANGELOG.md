@@ -5,6 +5,36 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## The drainage limit ships ON, as a top-level control
+
+With the Mayer et al. 2025 corroboration on record (entry below), the
+drainage-concentration ceiling is applied by default: `FLUX_CEILING_ON = True`
+(Zeke's call, 2026-08-24, ending the hold that began 2026-08-03). Gate 12
+flips from a reported diagnostic to a hard PASS; gate 2b now reports the
+capped year-1 total, 0.708 GtCO2/yr, inside its pre-registered 0.5-4.0 band;
+the footer's steady-state basis reads 0.696 GtCO2/yr uncapped by economics,
+0.08 GtCO2/yr on 0.05 Gha under the $100/tCO2 lifetime-carbon screen -- the
+screened figure collapses because where the cap binds, carbon per hectare
+falls while delivered cost per tonne of rock does not.
+
+The toggle moved out of Advanced to its own top-level sidebar group
+("Drainage limit", between Feedstock grind and Economics): a control that
+moves the headline several-fold belongs in plain sight, and the
+limiting-factor layer colours the ceiling class it controls. Toggling it off
+shows the uncapped pre-review behaviour and is labelled as such. The Advanced
+summary tag now reads "Physics and economics" (it holds the term-exponent
+sliders and the delivered-cost assumptions alike; it read "Physics" from
+before the economics controls moved in).
+
+Copy that changed with the default: the toggle hint's On branch is now "the
+shipped default"; the Methods flagbox for the off state describes it as the
+historical pre-review behaviour rather than the shipped one; README,
+METHODOLOGY (SS2b status, aridity-bottleneck note, parameter table) and
+VALIDATION updated the same way. The caveats travel with the flip, stated in
+all of them: the corroboration is one company-funded preprint, and the bound
+is a maximum-EFFICIENT level -- carbonate precipitation past it halves
+marginal efficiency rather than stopping removal.
+
 ## The drainage ceiling gets its external anchor: Mayer et al. 2025
 
 The community weigh-in the ceiling was held out for has begun to arrive.

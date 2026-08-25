@@ -1209,51 +1209,43 @@ DAMKOHLER_TAU_SOURCE = (
 # claim impossible; the level problem is the lab-to-field rate discrepancy and
 # belongs to the kinetics item. See to_do.md items 0 and 2.
 # ---------------------------------------------------------------------------
-# ---- OFF BY DECISION, 2026-08-03. Not abandoned, and not reverted.
+# ---- ON BY DECISION, 2026-08-24 (Zeke's call). Held OFF 2026-08-03 to
+# 2026-08-24 pending review by the wider ERW community; the first external
+# corroboration arrived as Mayer et al. 2025 (see the block above: same bound,
+# published as "carrying capacity"; our solve reproduces their 54 PHREEQC cases
+# to 0.95-1.00 and their global integral to 6%). With that anchor on record the
+# bound is applied by default, in the derived products and in the state the
+# viewer lands in.
 #
-# The bound below is implemented, gated, documented and shipped in the texture --
-# it is simply not APPLIED, because it moves the map's absolute level several-fold
-# and Zeke wants the wider ERW community to weigh in before it does. Everything
-# needed to turn it back on is present and tested.
+# WHAT THIS FLAG CONTROLS. The viewer carries a runtime toggle for the ceiling
+# ("Apply the drainage limit", a TOP-LEVEL control since 2026-08-24, previously
+# under Advanced), because the bound is written to tex2.b either way and the
+# shader can switch it live. So this constant sets the SHIPPED DEFAULT -- the
+# state the map lands in -- rather than being the only way to change the bound.
+# The Python side follows it exactly: build_v0's `cdr` array, gate 12 and the
+# cost screen all key off this flag.
 #
-# TO RE-ENABLE: set this to True and re-run scripts/build_v0.py. That is the whole
-# procedure. The round trip is verified: gate 12 flips from a reported diagnostic
-# back to a hard PASS, the Methods panel swaps its "computed but not applied"
-# flagbox for the active description, the limiting-factor layer regains its fourth
-# class, and the hover readout regains its "Without the drainage limit" row. No
-# other file needs touching.
+# TO SWITCH OFF: set this to False and re-run scripts/build_v0.py. That is the
+# whole procedure; the round trip is verified in both directions. Gate 12 then
+# downgrades from a hard PASS to a reported diagnostic, the Methods panel swaps
+# the active description for the "computed but not applied" flagbox, the
+# limiting-factor layer drops its fourth class, and the hover readout loses its
+# "Without the drainage limit" row.
 #
-# WHAT STAYS LIVE WHILE IT IS OFF, deliberately:
-#   - the ceiling is still computed, still written to tex2.b, and still emitted in
-#     engine_constants.js, so re-enabling needs no data migration
-#   - gate 12 still REPORTS the exceedance (95.1% of cropland area, median 3.8x
-#     at the Mayer-central parameters) instead of vanishing along with the cap
-#   - the Methods panel carries a flagbox saying the CO2 layer is an upper bound on
-#     dissolution rather than carbon shown to leave
-#   - section 11 of analyse_deployments.py still runs the same test against the
-#     verified deliveries, since that is a finding about the deliveries and not a
-#     setting of this model
+# WHAT THE FLIP CHANGED, at the Mayer-central parameters (2026-08-24 build):
+# the ceiling binds on 95.1% of cropland area at a median exceedance of 3.8x;
+# global gross falls 2.432 -> ~0.71 GtCO2/yr on the year-1 basis (gate 2b,
+# still INSIDE the pre-registered 0.5-4.0 band) and 2.596 -> 0.696 on the
+# footer's steady-state basis; the $100/tCO2-screened footer falls 0.93 ->
+# ~0.08 GtCO2/yr, because where the cap binds the carbon per hectare drops
+# while the delivered cost per tonne of rock does not.
 #
-# WHAT THIS FLAG NOW CONTROLS. Since 2026-08-04 the viewer carries a runtime
-# toggle for the ceiling under Advanced ("Apply the drainage limit"), because the
-# bound is written to tex2.b whether or not it is applied and the shader can
-# therefore switch it live. So this constant sets the SHIPPED DEFAULT -- the state
-# the map lands in -- rather than being the only way to turn the bound on. The
-# Python side still follows it exactly: build_v0's `cdr` array, gate 12 and the
-# cost screen all key off this flag, so a reader who wants the bound applied in
-# the DERIVED PRODUCTS, not just in the browser, still flips it here and rebuilds.
-#
-# Keep it False while the bound is out for review. Flipping it to True makes an
-# unreviewed bound the headline figure, which is the thing the review exists to
-# avoid; the toggle lets anyone see the consequence without that.
-#
-# The one thing to know if you re-enable: gate 2b reports the global total
-# INSIDE its pre-registered 0.5-4.0 band (~0.71 GtCO2/yr year-1 basis, 0.696 on
-# the steady-state footer basis, at the Mayer-central parameters adopted
-# 2026-08-24; it was 0.910 under the old Omega=10/f_ca defaults). It was below
-# the band until the drainage variable was corrected to total runoff -- see
-# DRAINAGE_VARIABLE, which moved the bounded total 2.5x.
-FLUX_CEILING_ON = False
+# Kept in view even while ON: the corroboration is one company-funded preprint
+# (all six Mayer et al. authors hold Terradot equity; not yet peer-reviewed),
+# and their own framing says this is the MAXIMUM-EFFICIENT level -- past it,
+# calcite precipitation halves marginal efficiency rather than stopping
+# removal -- so the cap is a conservative reading of what lies beyond it.
+FLUX_CEILING_ON = True
 # Omega = 10^0.5 (calcite SI = 0.5) is the shipped central since 2026-08-24 --
 # Mayer et al. 2025's central case, grounded in Buckingham & Henderson 2024
 # (STOTEN 907, 167701): pore waters under aglime/basalt amendment observed

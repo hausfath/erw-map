@@ -49,6 +49,15 @@
       <button class="mini" id="btn-psd-reset" style="margin-top:10px">Reset grind</button>
     </section>
 
+    <section class="group" id="flux-group">
+      <h2>Drainage limit</h2>
+      <div id="flux-block">
+        <label class="check"><input type="checkbox" id="chk-flux">
+          <span>Apply the drainage limit</span></label>
+        <p class="hint" id="flux-hint"></p>
+      </div>
+    </section>
+
     <section class="group" id="econ-group">
       <h2>Economics <span class="tag" id="econ-tag"></span></h2>
       <p class="hint">Discounts suitability by delivered rock cost
@@ -63,13 +72,8 @@
 
     <section class="group" id="weights-group">
       <details id="advanced">
-        <summary>Advanced <span class="tag" id="weight-tag">Physics</span></summary>
+        <summary>Advanced <span class="tag" id="weight-tag">Physics and economics</span></summary>
         <div id="adv-psd-slider"></div>
-        <div id="flux-block" style="margin-top:14px">
-          <label class="check"><input type="checkbox" id="chk-flux">
-            <span>Apply the drainage limit</span></label>
-          <p class="hint" id="flux-hint"></p>
-        </div>
         <div id="econ-assumptions" style="margin-top:14px">
           <p class="hint">Delivered-cost assumptions. Haul is priced with
             regional rates plus a fixed per-trip trucking charge &mdash; <b>benchmarked,

@@ -289,15 +289,13 @@ to judge: it spans only 4.4× wet-to-dry, but delivered carbon spans **9.9×**
 uncapped, because the dissolution response to X is nonlinear. Second and more
 important, **with the ceiling applied the contrast is 125× and does not depend on
 `D_w` at all** — 125.3× at 0.001 against 124.8× at 0.03. The ceiling is linear in
-`q` and binds on 91% of cropland area, so it has already taken the aridity signal
+`q` and binds on 95.1% of cropland area, so it has already taken the aridity signal
 over.
 
 So the aridity bottleneck *is* represented in this model, by the
-drainage-concentration ceiling described in §2b — which is computed, gated, and
-written to the texture, but **off by default** pending review. The lever is
-`FLUX_CEILING_ON`, which is a review question rather than a parameter question.
-`D_w` matters only for the uncapped map, and the uncapped map is the default only
-because the ceiling is switched off.
+drainage-concentration ceiling described in §2b — **applied by default since
+2026-08-24**. `D_w` matters only for the uncapped map, which is now the
+sensitivity case (the top-level toggle, off) rather than the default.
 
 **`D_w` is therefore not being retuned.** Maher & Chamberlain state 0.3 m/yr as a
 global maximum, the shipped 0.03 is their craton/collisional divide, and there is
@@ -312,27 +310,26 @@ Calabrese et al.'s Budyko formulation rather than emerging from a q-linear
 ceiling. That needs the paper read and PET as an input; neither is done. (The
 citation itself is still unverified — see `constants.py`.)
 
-## 2b. The drainage-concentration ceiling — COMPUTED BUT NOT APPLIED
+## 2b. The drainage-concentration ceiling — APPLIED BY DEFAULT SINCE 2026-08-24
 
-> **Status: switched OFF by default, pending review by the wider ERW community.**
-> Everything below is implemented, gated and shipped; it is simply not applied to
-> the CO₂ layer by default.
+> **Status: ON.** Held out of the defaults 2026-08-03 → 2026-08-24 pending
+> review by the wider ERW community; applied by default once the first external
+> corroboration arrived (Mayer et al. 2025 — see the validation subsection
+> below). The CO₂ layer, the footer totals, the cost screen and every derived
+> product are now capped at this bound.
 >
-> **In the viewer** the bound is a live toggle — Advanced → *Apply the drainage
+> **In the viewer** the bound is a live top-level toggle — *Apply the drainage
 > limit*. The ceiling is written to `tex2.b` whether or not it is applied, so the
 > shader switches it without a rebuild, and every dependent readout follows: the
 > footer total, the limiting-factor class, the hover box's "without the drainage
-> limit" row, the legend and the Methods text. Turning it on live reproduces the
-> build's own figure to the digit (0.89 GtCO₂/yr against the build's 0.888).
+> limit" row, the legend and the Methods text. Switching it off shows the
+> uncapped pre-review behaviour, in which the map's CO₂ figures exceed this
+> bound on **95.1% of cropland by a median factor of 3.8×** and should be read
+> as an upper bound on dissolution rather than carbon shown to leave the field.
 >
 > **In the derived products** — the `cdr` array, gate 12, the cost screen —
-> `constants.FLUX_CEILING_ON = False` remains the switch; flip it to `True` and
-> rebuild to apply the bound outside the browser too.
-> While it is off, the map's CO₂ figures are **above this bound on 91.0% of
-> cropland, by a median factor of 2.9×**, so they should be read as an upper bound
-> on dissolution rather than as carbon that can be shown to leave the field. Gate 12
-> reports that exceedance on every build rather than letting it disappear with the
-> cap. The numbers quoted in this section are what the ceiling *would* impose.
+> `constants.FLUX_CEILING_ON = True` is the switch; set it to `False` and
+> rebuild to remove the bound outside the browser too.
 
 
 The carbon reported has to leave the field dissolved in the water that leaves the
@@ -599,7 +596,7 @@ showing numbers derived from the NaN fallback.
 
 | Parameter | Value | Basis |
 |---|---|---|
-| Flux ceiling applied? | **No — off pending review** | `FLUX_CEILING_ON = False`; computed and reported, not applied |
+| Flux ceiling applied? | **Yes — since 2026-08-24** | `FLUX_CEILING_ON = True`; held off 2026-08-03 → 2026-08-24 pending review, applied once Mayer et al. 2025 corroborated the bound |
 | Application rate | **30 t/ha/yr** | stated assumption; raised from 20 in Aug 2026 to sit nearer commercial practice |
 | Feedstock | `delivered_basalt`, 0.289 tCO₂/t | mean implied CO₂ potential of n = 3 verified deliveries, one operator |
 | Reference grind | d50 150 µm, Rosin–Rammler width 1.5 | mid-range of observed 67–600 µm p50; **width is assumed** and is narrow for a commercial crush |

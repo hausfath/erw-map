@@ -240,25 +240,25 @@ observationally. That ratio is the argument to put to operators.
 
 ## 5. Known asymmetries and open audit items
 
-- **The drainage-concentration ceiling is OFF pending external review (2026-08-03),
-  so the shipped map violates a bound this repo computes and documents.** On 95.1%
-  of cropland area the CO₂ layer exceeds what the drainage could carry, by a median
-  factor of 3.8× (at the Mayer-central parameters adopted 2026-08-24: calcite
-  SI 0.5, Mg 1 mM, Davies activities; under the earlier Ω = 10 defaults it was
-  91.0% at 2.9×, and on the pre-August recharge drainage 98.9% at 6.2×). This is a
-  deliberate, reported state, not an oversight: gate 12
-  prints the exceedance on every build, the Methods panel carries a flagbox, the
-  viewer exposes the bound as a live toggle under Advanced so a reader can see its
-  consequence without a rebuild, and `FLUX_CEILING_ON = True` restores enforcement
-  in the derived products in one line. The reason to hold it
-  is that it moves the absolute level several-fold and that judgement is worth
-  outside scrutiny — but while it is off, **no absolute CO₂ figure from this map
-  should be quoted without that caveat.** The outside scrutiny has begun to
-  arrive: Mayer et al. 2025 (doi:10.21203/rs.3.rs-7811095/v1, Terradot preprint)
-  independently publish the same bound as "carrying capacity", our carbonate
-  solve reproduces their 54 PHREEQC cases to 0.95–1.00 (gate 13d), and our grid
-  evaluated under their central configuration gives 0.359 GtCO₂/yr against their
-  published 0.34 — but it is one company-funded preprint, not yet peer review.
+- **The drainage-concentration ceiling is APPLIED by default since 2026-08-24.**
+  It was held out of the defaults 2026-08-03 → 2026-08-24 pending outside review;
+  the first review arrived as Mayer et al. 2025
+  (doi:10.21203/rs.3.rs-7811095/v1, Terradot preprint), which independently
+  publishes the same bound as "carrying capacity". Our carbonate solve reproduces
+  their 54 PHREEQC cases to 0.95–1.00 (gate 13d), and our grid evaluated under
+  their central configuration gives 0.359 GtCO₂/yr against their published 0.34.
+  On that anchor the cap ships on (Zeke's call, 2026-08-24). At the shipped
+  parameters (calcite SI 0.5, Mg 1 mM, Davies activities) the cap binds on 95.1%
+  of cropland area; the unbounded model exceeds it by a median 3.8× (under the
+  earlier Ω = 10 defaults: 91.0% at 2.9×; on the pre-August recharge drainage:
+  98.9% at 6.2×). Gate 12 enforces the bound on every build, the Methods panel
+  describes it, and the viewer's top-level *Apply the drainage limit* toggle
+  shows the uncapped historical behaviour without a rebuild. Two caveats travel
+  with the flip: the corroboration is one company-funded preprint (all six
+  authors hold Terradot equity, not yet peer-reviewed), and it is a
+  *maximum-efficient* bound — past it, calcite precipitation halves marginal
+  efficiency rather than stopping removal, so the cap is a conservative reading
+  of what lies beyond it.
 - **The ceiling-on total now sits INSIDE its pre-registered Tier 2 band, and the
   band was never widened to achieve that.** With the ceiling imposed, global gross
   removal is **0.711 GtCO₂/yr** against a pre-registered 0.5–4.0 (0.910 under the

@@ -182,7 +182,7 @@ window.ERW = {
     "hi": 3.0
   },
   "fluxCeiling": {
-    "on": false,
+    "on": true,
     "enc": {
       "lo": -4.0,
       "hi": 0.3
@@ -1615,7 +1615,7 @@ window.ERW = {
   "stats": {
     "croplandGha": 1.215,
     "evaluatedGha": 1.209,
-    "cdrMedian": 1.4,
+    "cdrMedian": 0.4,
     "quarryPoints": 5295
   },
   "provenance": {

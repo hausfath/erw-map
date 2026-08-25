@@ -1041,19 +1041,19 @@
   function syncFlux() {
     const om = FC.omega ? Number(FC.omega).toFixed(2) : "—";
     $("flux-hint").innerHTML = ceilOn
-      ? `<b>On.</b> Gross CO₂ is capped at q·[HCO₃⁻]<sub>max</sub>·44 — `
-        + `the carbon has to leave dissolved in the water that leaves, so it is `
-        + `bounded by carbonate saturation (calcite Ω = ${om}, Mg ${FC.mgMM ?? 1} mM) `
-        + `no matter how fast the rock dissolves. <i>Fraction weathered</i> stays `
-        + `uncapped on purpose: rock can dissolve without the carbon being exported. `
-        + `Watch the total below. Independently corroborated as "carrying capacity" `
-        + `by Mayer et al. 2025 (preprint) — see Methods.`
-      : `<b>Off — the shipped default.</b> Nothing bounds the reported carbon by `
-        + `the water available to carry it, so the CO₂ layer is an upper limit on `
-        + `dissolution rather than carbon shown to leave the field. Turning this on `
-        + `applies the drainage-concentration ceiling; it cuts the level several-fold `
-        + `and changes which term limits most cropland. Independently corroborated `
-        + `by Mayer et al. 2025 (preprint); still held off by default — see Methods.`;
+      ? `<b>On — the shipped default.</b> Gross CO₂ is capped at `
+        + `q·[HCO₃⁻]<sub>max</sub>·44 — the carbon has to leave dissolved in the `
+        + `water that leaves, so it is bounded by carbonate saturation (calcite `
+        + `Ω = ${om}, Mg ${FC.mgMM ?? 1} mM) no matter how fast the rock dissolves. `
+        + `<i>Fraction weathered</i> stays uncapped on purpose: rock can dissolve `
+        + `without the carbon being exported. Independently corroborated as `
+        + `"carrying capacity" by Mayer et al. 2025 (preprint) — see Methods.`
+      : `<b>Off.</b> Nothing bounds the reported carbon by the water available `
+        + `to carry it, so the CO₂ layer becomes an upper limit on dissolution `
+        + `rather than carbon shown to leave the field — the map's pre-review `
+        + `historical behaviour. The limit is the shipped default; switching it `
+        + `off raises the level several-fold and changes which term limits most `
+        + `cropland. See Methods.`;
   }
 
   function syncSliders() {
@@ -1434,7 +1434,7 @@
       $("stability").textContent = "At the physical defaults.";
       // Set the tag on this path too. The early return skipped it at first, which
       // left the summary reading "Down-weighted" after a Reset to physics.
-      $("weight-tag").textContent = "Physics";
+      $("weight-tag").textContent = "Physics and economics";
       return;
     }
     const nw = CRIT.map((c) => termExp[c.key]);
@@ -1460,7 +1460,7 @@
         ? "At the physical defaults."
         : `${(pct * 100).toFixed(0)}% of cropland area ranks in a different `
           + `decile than under the physical defaults.`;
-    $("weight-tag").textContent = pct < 0.001 ? "Physics" : "Down-weighted";
+    $("weight-tag").textContent = pct < 0.001 ? "Physics and economics" : "Down-weighted";
   }
 
   /* ---------------- methods modal ---------------- */
@@ -1656,28 +1656,24 @@
       target="_blank" rel="noopener">Mayer et&nbsp;al.&nbsp;2025</a>
       (Terradot; preprint), whose 54 PHREEQC cases this model's carbonate
       solve reproduces to 0.95–1.00.</p>`
-      : `<div class="flagbox"><p><b>A drainage limit on the carbon is computed but
-      deliberately NOT applied, pending review by the wider ERW community.</b> The
-      carbon reported here has to leave the field dissolved in the water that leaves
-      the field, which bounds it at roughly
-      ${FC.medianTco2HaYr ? FC.medianTco2HaYr.toFixed(2) : "0.22"} tCO₂/ha/yr at the
-      median cell. Every figure on this map is above that bound — on
-      <b>${FC.bindsAreaFrac ? (FC.bindsAreaFrac * 100).toFixed(0) : "99"}% of
-      cropland</b>, by a median factor of about
-      ${FC.exceedMedian ? FC.exceedMedian.toFixed(0) : "5"}× — so the CO₂ layer
-      should be read as an upper bound on dissolution, not as carbon that can be
-      shown to leave. The bound is implemented, gated and documented; it is switched
-      off only because it moves the map's absolute level by several-fold and that is
-      worth outside scrutiny before it ships. That scrutiny has begun to arrive:
-      <a href="https://doi.org/${FC.mayerDoi ?? "10.21203/rs.3.rs-7811095/v1"}"
-      target="_blank" rel="noopener">Mayer et&nbsp;al.&nbsp;2025</a> (Terradot;
-      preprint, not yet peer-reviewed) independently publish the same bound as
-      "carrying capacity" — recharge × maximum DIC at calcite saturation — and
-      this model's carbonate solve reproduces their 54 PHREEQC cases to
-      0.95–1.00 (gate&nbsp;13d). Its parameters now sit at their central case.
-      They frame it as the <i>maximum-efficient</i> level: past it, calcite
-      precipitation halves marginal efficiency rather than stopping removal.
-      See the changelog for the analysis and how to re-enable it.</p></div>`}
+      : `<div class="flagbox"><p><b>The drainage limit is switched OFF in this
+      session — the shipped default applies it.</b> With it off, nothing bounds
+      the reported carbon by the water available to carry it: the CO₂ layer
+      becomes an upper limit on dissolution, not carbon that can be shown to
+      leave the field. The bound it ignores is roughly
+      ${FC.medianTco2HaYr ? FC.medianTco2HaYr.toFixed(2) : "0.40"} tCO₂/ha/yr at
+      the median cell, and the unbounded figures exceed it on
+      <b>${FC.bindsAreaFrac ? (FC.bindsAreaFrac * 100).toFixed(0) : "95"}% of
+      cropland</b> by a median factor of about
+      ${FC.exceedMedian ? FC.exceedMedian.toFixed(0) : "4"}×. This off state is
+      the map's pre-review historical behaviour (the bound was held out of the
+      defaults 2026-08-03 to 2026-08-24 pending outside scrutiny, which arrived
+      as <a href="https://doi.org/${FC.mayerDoi ?? "10.21203/rs.3.rs-7811095/v1"}"
+      target="_blank" rel="noopener">Mayer et&nbsp;al.&nbsp;2025</a> — Terradot;
+      preprint, not yet peer-reviewed — whose "carrying capacity" is the same
+      bound, and whose 54 PHREEQC cases this model's carbonate solve reproduces
+      to 0.95–1.00, gate&nbsp;13d). Turn the toggle back on to restore the
+      shipped behaviour.</p></div>`}
       <p><b>The kinetics over-predict an independent laboratory test.</b> Against
       Gudbrandsson et al. (2011) crystalline-basalt dissolution (pH 2–11,
       5–75 °C), the Ca+Mg charge sum the map actually uses over-predicts by
@@ -1849,11 +1845,12 @@
     // category error.
     //
     // Advanced itself now stays open in every mode, and only the TERM-EXPONENT
-    // block is mode-specific. The drainage limit lives in Advanced and has to be
-    // reachable from the limiting-factor layer above all -- that layer gives the
-    // ceiling its own colour when it binds, so hiding the switch would hide the
-    // control for a class the legend is showing. The distribution-width slider
-    // comes along, which is right: grind feeds `frac`, so it moves what binds.
+    // block is mode-specific. The drainage limit is a TOP-LEVEL group (since
+    // 2026-08-24, when it became the shipped default) and stays visible in every
+    // mode -- the limiting-factor layer gives the ceiling its own colour when it
+    // binds, so hiding the switch would hide the control for a class the legend
+    // is showing. The distribution-width slider stays under Advanced, which is
+    // right: grind feeds `frac`, so it moves what binds.
     $("term-sensitivity").classList.toggle("hidden", m === "limiting");
     $("psd-group").classList.toggle("hidden", false);
     $("econ-group").classList.toggle("hidden", m !== "score" || !E.cost);
@@ -2010,9 +2007,11 @@
       `a quarry, and says nothing about whether the rock is permitted, crushed ` +
       `or for sale.`;
     // Drainage limit. The bound is shipped in the texture whether or not it is
-    // applied, so this is a real switch rather than a request for a rebuild. It is
-    // an Advanced control on purpose: it moves the absolute level several-fold and
-    // it is the one term in the model that is out for external review.
+    // applied, so this is a real switch rather than a request for a rebuild. A
+    // top-level control since 2026-08-24, when the bound became the shipped
+    // default on the back of Mayer et al. 2025's independent corroboration --
+    // it moves the absolute level several-fold, which is exactly why the switch
+    // is in plain sight rather than under Advanced.
     const fx = $("chk-flux");
     fx.checked = ceilOn;
     fx.addEventListener("change", (e) => {
