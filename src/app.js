@@ -41,7 +41,7 @@
   const FACTOR_COLORS = ["#e0704f", "#4f9fe0", "#8fd14f", "#cb8ce6"];
   const CEIL_LABEL = "Drainage cannot carry it";
 
-  let gl, prog, quad, texA, texB, texC, texD, texRamp, texRampFrac, cpu = null;
+  let gl, prog, quad, texA, texB, texC, texD, texE, texRamp, texRampFrac, cpu = null;
   let mode = "score";
   let showQuarries = false;
   let showMafic = false;
@@ -79,6 +79,12 @@
      Read through this variable, never FC.on, or half the map applies the bound and
      half does not. FC.enc and FC.omega stay on FC: those are data, not the switch. */
   let ceilOn = !!FC.on;
+  /* Paddy-field view: re-evaluate every paddy-bearing cell at 100% paddy (the
+     cell's observed inundation months kept, sub-cell rice AREA -> 1). tex5
+     carries L1/eta_DIC/ceiling on exactly the baseline encodings, so this flag
+     is a byte-source swap, not a second model. Off-paddy cells are
+     byte-identical in tex5 by build-time assertion. */
+  let paddyView = false;
 
   // Data extent, from the generated grid constants.
   const DATA = {
@@ -176,7 +182,8 @@
   in vec2 vUV;
   out vec4 fragColor;
 
-  uniform sampler2D uA, uB, uC, uD, uRamp, uRampFrac;
+  uniform sampler2D uA, uB, uC, uD, uE, uRamp, uRampFrac;
+  uniform int uPaddyView;      // 1 = swap L1/eta/ceiling bytes from tex5
   uniform int uShowMafic;         // 1 = tint GLiM mafic outcrop
   uniform vec4 uGeo;              // lon0, lat0, lonSpan, latSpan of the visible box
   uniform vec4 uGrid;             // west, north, dlon, dlat of the data grid
@@ -249,6 +256,12 @@
     vec4 a = vec4(texelFetch(uA, px, 0));
     vec4 b = vec4(texelFetch(uB, px, 0));
     vec4 cc = vec4(texelFetch(uC, px, 0));
+    if (uPaddyView == 1) {
+      // Paddy-field view: same three quantities, cell re-evaluated at 100%
+      // paddy. Identical encodings, so only the byte source changes.
+      vec4 pv = vec4(texelFetch(uE, px, 0));
+      a.r = pv.r; a.g = pv.g; b.b = pv.b;
+    }
     float mafic = uShowMafic == 1 ? texelFetch(uD, px, 0).r : 0.0;
 
     int flags = int(b.g * 255.0 + 0.5);
@@ -531,7 +544,7 @@
   }
 
   /* ---------------- CPU-side copy for the readout ---------------- */
-  function decodeToCPU(bmpA, bmpB, bmpC) {
+  function decodeToCPU(bmpA, bmpB, bmpC, bmpE) {
     const cv = document.createElement("canvas");
     cv.width = G.width; cv.height = G.height;
     const ctx = cv.getContext("2d", { willReadFrequently: true });
@@ -540,7 +553,7 @@
       ctx.drawImage(bmp, 0, 0);
       return ctx.getImageData(0, 0, cv.width, cv.height).data;
     };
-    return { A: grab(bmpA), B: grab(bmpB), C: grab(bmpC) };
+    return { A: grab(bmpA), B: grab(bmpB), C: grab(bmpC), E: grab(bmpE) };
   }
 
   /* ---------------- geometry of the current view ---------------- */
@@ -595,6 +608,7 @@
     gl.uniform2f(u("uL1Enc"), E.l1Enc.lo, E.l1Enc.hi);
     gl.uniform2f(u("uCeilEnc"), FC.enc.lo, FC.enc.hi);
     gl.uniform1i(u("uCeilOn"), ceilOn ? 1 : 0);
+    gl.uniform1i(u("uPaddyView"), paddyView ? 1 : 0);
     const gslice = gSlice();
     gl.uniform1fv(u("uG[0]"), gslice);
     gl.uniform2f(u("uGLogU"), E.dissolution.uLog.lo, E.dissolution.uLog.hi);
@@ -616,6 +630,7 @@
     gl.uniform1i(u("uC"), 2);
     gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, texD);
     gl.uniform1i(u("uD"), 5);
+    gl.uniform1i(u("uE"), 6);
     gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, texRamp);
     gl.uniform1i(u("uRamp"), 3);
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, texRampFrac);
@@ -738,12 +753,17 @@
 
   /* Decode the raw physical terms at a cell index. */
   function termsAt(i) {
-    const A = cpu.A, B = cpu.B, C3 = cpu.C;
+    const A = cpu.A, B = cpu.B, C3 = cpu.C, P = cpu.E;
     const raw = (b) => clamp(0, (b - 5) / 250, 1);
-    const l1 = E.l1Enc.lo + raw(A[i]) * (E.l1Enc.hi - E.l1Enc.lo);   // no grind term
+    // Paddy-field view swaps the three affected bytes; eta_transport and cost
+    // are unchanged by design (same water flux, same haul).
+    const bL1 = paddyView ? P[i] : A[i];
+    const bEd = paddyView ? P[i + 1] : A[i + 1];
+    const bCl = paddyView ? P[i + 2] : B[i + 2];
+    const l1 = E.l1Enc.lo + raw(bL1) * (E.l1Enc.hi - E.l1Enc.lo);   // no grind term
     const fl = E.cost ? E.cost.floor : 1;
-    return {rel: Math.pow(10, l1), l1, eDic: raw(A[i + 1]), eTr: raw(A[i + 2]),
-            ceil: decodeCeil(B[i + 2]),
+    return {rel: Math.pow(10, l1), l1, eDic: raw(bEd), eTr: raw(A[i + 2]),
+            ceil: decodeCeil(bCl),
             vCost: fl + raw(C3[i + 2]) * (1 - fl)};
   }
 
@@ -1057,6 +1077,23 @@
         + `cropland. See Methods.`;
   }
 
+  function syncPaddy() {
+    const el = $("paddy-hint");
+    if (!el) return;
+    const af = E.paddyView ? (E.paddyView.areaFrac * 100).toFixed(0) : "?";
+    el.innerHTML = paddyView
+      ? `<b>On.</b> Every cell with any paddy (${af}% of cropland area) is `
+        + `re-evaluated as if its fields were 100% paddy — flooded-soil pCO₂ `
+        + `for the cell’s observed inundation months lifts η<sub>DIC</sub> and `
+        + `the drainage ceiling. For assessing paddy projects, whose fields `
+        + `are all paddy while the cell average is not. Non-paddy cells are `
+        + `untouched (bit-identical).`
+      : `Off. Map cells average paddy and non-paddy fields, which understates `
+        + `flooded-soil chemistry for a project whose fields are all paddy. `
+        + `This view re-evaluates every paddy-bearing cell (${af}% of cropland `
+        + `area) at 100% paddy.`;
+  }
+
   function syncSliders() {
     CRIT.forEach((c) => {
       const inp = $("s-" + c.key);
@@ -1263,7 +1300,8 @@
         if (!(B[i + 1] & 1)) continue;
         const crop = B[i] / 255;
         if (crop < 0.01) continue;
-        out.push([A[i], A[i + 1], A[i + 2], crop * wLat, cpu.C[i + 2], B[i + 2]]);
+        out.push([A[i], A[i + 1], A[i + 2], crop * wLat, cpu.C[i + 2], B[i + 2],
+                  cpu.E[i], cpu.E[i + 1], cpu.E[i + 2]]);
       }
     }
     sample = out;
@@ -1275,12 +1313,14 @@
      the decile edges and the global total in the footer, so those three can never
      disagree about what is being drawn. */
   function xOfRow(row, exps) {
-    const rel = Math.pow(10, E.l1Enc.lo + rawByte(row[0]) * (E.l1Enc.hi - E.l1Enc.lo));
+    const b0 = paddyView && row[6] !== undefined ? row[6] : row[0];
+    const rel = Math.pow(10, E.l1Enc.lo + rawByte(b0) * (E.l1Enc.hi - E.l1Enc.lo));
     return Math.exp(exps[0] * Math.log(Math.max(rel, 1e-12))
                   + exps[2] * Math.log(Math.max(rawByte(row[2]), 1e-12)));
   }
   const eDicOfRow = (row, exps) =>
-    Math.pow(Math.max(rawByte(row[1]), 1e-12), exps[1]);
+    Math.pow(Math.max(rawByte(
+      paddyView && row[7] !== undefined ? row[7] : row[1]), 1e-12), exps[1]);
 
   function cdrOfRow(row, exps) {
     const X = xOfRow(row, exps), eDic = eDicOfRow(row, exps);
@@ -1288,7 +1328,10 @@
     // Same ceiling as the shader and the hover readout. Without it here the
     // stability metric and the decile edges would be computed on a different
     // model from the one being drawn.
-    if (ceilOn && row[5] !== undefined) cdr = Math.min(cdr, decodeCeil(row[5]));
+    if (ceilOn && row[5] !== undefined) {
+      cdr = Math.min(cdr, decodeCeil(
+        paddyView && row[8] !== undefined ? row[8] : row[5]));
+    }
     return cdr;
   }
 
@@ -1340,7 +1383,8 @@
       const X = xOfRow(r, exps), eDic = eDicOfRow(r, exps);
       const u1 = kU * X;
       const l10u1 = X > 0 ? Math.log10(u1) : -Infinity;
-      const ceil = (ceilOn && r[5] !== undefined) ? decodeCeil(r[5]) : Infinity;
+      const ceil = (ceilOn && r[5] !== undefined)
+        ? decodeCeil(paddyView && r[8] !== undefined ? r[8] : r[5]) : Infinity;
       // Steady-state removal, capped at one application per year and at the
       // drainage ceiling.
       let cdr = Math.min(1, u1 / iInf) * eDic * CPF;
@@ -1421,6 +1465,7 @@
   let baseScores = null, baseEdges = null, baseKey = null;
   function neutralBase() {
     const key = ssaShift().toFixed(6) + "|" + econ.costExp + "|" + (ceilOn ? 1 : 0)
+              + "|" + (paddyView ? 1 : 0)
               + "|" + econ.gate.toFixed(4) + "|" + econ.truckMult.toFixed(6);
     if (baseKey !== key || !baseScores) {
       baseScores = scoresFor(CRIT.map(() => 1));
@@ -1556,7 +1601,11 @@
       of Bertagni &amp; Porporato (2022), with zero free parameters. Fast
       dissolution in very acid soil stores little carbon; this term is why. Soil
       pCO₂ is raised in rice paddies, mapped as Landsat inundation months ×
-      SPAM all-technology rice area (all rice, not irrigated-only, since 2026-08-24 — rainfed lowland paddy is flooded too).</li>
+      SPAM all-technology rice area (all rice, not irrigated-only, since 2026-08-24 — rainfed lowland paddy is flooded too).
+      The Advanced <i>paddy-field view</i> re-evaluates every paddy-bearing cell
+      at 100% paddy (observed inundation months kept) — the like-for-like basis
+      for a project whose fields are all paddy, since the cell mean dilutes
+      flooded-soil chemistry by the cell’s non-rice share.</li>
       <li><b>Drainage.</b> η = q/(q + D_w) on ${E.provenance.drainage}
       (Maher &amp; Chamberlain 2014; D_w = ${p.dw ? p.dw.value : "?"} m/yr):
       bicarbonate has to leave the field in the drainage water to count as
@@ -1816,7 +1865,9 @@
           : `steady-state gross removal holding ${E.feedstock.rateTHaYr} t/ha of `
             + `rock${ceilOn ? " (less where the drainage limit binds)" : ""}, `
             + `over ${gha.toFixed(2)} Gha of cropland`)
-        + (ceilOn ? "" : ", drainage limit not applied");
+        + (ceilOn ? "" : ", drainage limit not applied")
+        + (paddyView ? " — paddy-field view: cells with any paddy evaluated "
+                     + "at 100% paddy" : "");
   }
 
   /* The two whole-sample statistics -- the stability sentence and the footer total
@@ -1984,13 +2035,14 @@
     initGL();
     texRamp = makeRampTexture(E.ramp, gl.TEXTURE3);
     texRampFrac = makeRampTexture(E.rampFrac, gl.TEXTURE4);
-    const [a, b, cTex, , dTex] = await Promise.all([
+    const [a, b, cTex, , dTex, , eTex] = await Promise.all([
       loadTexture("textures/tex1.png", 0), loadTexture("textures/tex2.png", 1),
       loadTexture("textures/tex3.png", 2), loadAdminIds(),
       loadTexture("textures/tex4.png", 5), loadCropMix(),
+      loadTexture("textures/tex5.png", 6),
     ]);
     texA = a.tex; texB = b.tex; texC = cTex.tex; texD = dTex.tex;
-    cpu = decodeToCPU(a.bmp, b.bmp, cTex.bmp);
+    cpu = decodeToCPU(a.bmp, b.bmp, cTex.bmp, eTex.bmp);
     $("loading").remove();
     buildSample();
 
@@ -2039,6 +2091,20 @@
       refresh();
     });
     syncFlux();
+
+    // Paddy-field view. A byte-source swap (tex5), so it composes with every
+    // other control; off-paddy cells are byte-identical by build assertion.
+    const pv = $("chk-paddy");
+    if (pv) {
+      pv.checked = paddyView;
+      pv.addEventListener("change", (e) => {
+        paddyView = e.target.checked;
+        $("method-body").innerHTML = methodsHTML();
+        syncPaddy();
+        refresh();
+      });
+      syncPaddy();
+    }
 
     $("btn-reset").onclick = () => {
       CRIT.forEach((c) => { termExp[c.key] = 1; }); refresh();

@@ -181,6 +181,10 @@ window.ERW = {
     "lo": -3.0,
     "hi": 3.0
   },
+  "paddyView": {
+    "areaFrac": 0.1503,
+    "source": "GRPI months x SPAM all-rice fraction"
+  },
   "fluxCeiling": {
     "on": true,
     "enc": {

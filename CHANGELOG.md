@@ -5,6 +5,32 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## A paddy-field view in the viewer
+
+For assessing paddy projects against a map built on cell means: an Advanced
+toggle re-evaluates every cell with any paddy as if its fields were 100%
+paddy -- the sub-cell rice AREA fraction goes to 1, the cell's observed GRPI
+inundation months stay. Flooded-soil pCO2 for those months lifts eta_DIC and
+the drainage ceiling together.
+
+Implementation: a fifth texture carries L1, eta_DIC and the ceiling
+recomputed on the paddy basis, in EXACTLY the baseline encodings (L1_ENC,
+linear eta, CEIL_ENC), so the toggle is a byte-source swap in the shader and
+the JS mirrors -- no second model, and it composes with the grind sliders,
+the drainage limit, economics and the footer for free. Off-paddy cells are
+byte-identical to baseline BY CONSTRUCTION (baseline bytes are copied in;
+recomputation is only allowed to differ by float-summation ulps, asserted at
+build time -- it differed on 4 of 5M cells before the copy).
+
+Effect: on the 41,711 paddy-bearing cells (15% of cropland area weighted, 10.3%
+with >5% flooded cell-time) the ceiling rises x1.59 at the median and the
+"drainage cannot carry it" class clears on 23% -- the Bengal delta and much of
+SE Asia flip; central India stays drainage-limited even at full paddy
+chemistry, because its dissolution outruns the protocol-pCO2 ceiling
+(consistent with the field-level analysis: claimed dissolution there sits at
+roughly 1x carrying capacity). The $100-screened footer reads 0.25 baseline,
+0.28 GtCO2/yr with the view on, labelled in the footer text.
+
 ## Paddies: the mask was zeroing rainfed lowland rice, and a field-level ceiling for projects
 
 Prompted by a central-India paddy project evaluation. Four literature threads

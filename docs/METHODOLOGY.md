@@ -476,6 +476,22 @@ exported (§6 item 1). The ceiling is a rail that makes an impossible
 claim impossible; the level is a lab-to-field rate problem and belongs to the
 kinetics work.
 
+**Paddy-field view (Advanced toggle, 2026-08-24).** The map's f_flood is a cell
+mean — GRPI inundation months × SPAM rice area — which is correct for a cell
+average and systematically dilute for a *project*, whose fields are all paddy.
+The viewer therefore carries a second texture (tex5) with L1, η_DIC and the
+ceiling recomputed at 100% paddy area (the cell's observed inundation months
+kept), on exactly the baseline encodings, so the toggle is a byte-source swap
+that composes with every other control. On the 41,711 paddy-bearing cells the
+ceiling rises ×1.59 (median) and the drainage class clears on 23% of them
+(concentrated where inundation runs most of the year: the Bengal delta, SE
+Asia); central India stays drainage-limited even at full paddy chemistry,
+because dissolution there outruns the protocol-pCO₂ ceiling. Off-paddy cells
+are byte-identical by construction and asserted at build time. For
+field-level project screening beyond the toggle (pathway-split water, measured
+pCO₂ range, baseline netting), see `scripts/analysis/paddy_ceiling_india.py`
+and `docs/PADDY_CEILING_INDIA.md`.
+
 **Known limitation.** On saturated (paddy) cells the protocol-mandated 50,000 µatm
 lifts the ceiling to 9.6–13.3 mmol/L at the shipped central (6.6–13.3 including
 the strict case), at or above every anchor above, and no measured paddy drainage

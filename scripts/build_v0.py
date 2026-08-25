@@ -307,9 +307,11 @@ def main() -> int:
         parea = np.nan_to_num(onto_grid(pa, transform, w, h, crs,
                                         resampling=Resampling.average), nan=0.0)
         f_flood = np.clip(parea, 0, 1) * np.clip(months / 12.0, 0, 1)
+        paddy_months = months
         paddy_source = "GRPI months x SPAM all-rice fraction"
     else:
         f_flood = np.zeros_like(ph)
+        paddy_months = None
         paddy_source = "NONE -- run prep_layers.py"
 
     # Continuous interpolation, not a binary switch: a cell flooded three months
@@ -396,11 +398,55 @@ def main() -> int:
         q, pco2, T_ceil_K, omega=C.FLUX_CEILING_OMEGA_STRICT)
     alk_ceiling = K.alkalinity_ceiling_mol_l(pco2, T_ceil_K)
 
+    # ---- PADDY-FIELD VIEW (2026-08-24): the same three baked quantities with
+    # every paddy-bearing cell treated as 100% paddy -- the sub-cell AREA
+    # fraction goes to 1, the cell's observed inundation MONTHS stay. A
+    # project's fields are all paddy; the cell mean dilutes their chemistry by
+    # the cell's non-rice share, which is correct for the map and wrong for
+    # the project. Shipped as tex5 in the SAME encodings as the baseline
+    # channels (L1 -> L1_ENC, eta_DIC -> linear, ceiling -> CEIL_ENC), so the
+    # viewer's toggle is a texture swap and every downstream path (grind,
+    # drainage limit, economics, footer, hover) is unchanged. Cells without
+    # paddy (f_flood = 0, including GRPI's known holes) are BYTE-IDENTICAL to
+    # the baseline, asserted at write time.
+    if paddy_months is not None:
+        f_pad = np.where(f_flood > 0,
+                         np.clip(paddy_months / 12.0, 0.0, 1.0), f_flood)
+    else:
+        f_pad = f_flood
+    pco2_pad = (C.PCO2_UNSATURATED_UATM
+                + f_pad * (C.PCO2_SATURATED_UATM - C.PCO2_UNSATURATED_UATM))
+    ph_pad = ph + f_pad * (C.PH_FLOODED_CONVERGENCE - ph)
+    if monthly:
+        # Accumulators rather than a second 12-month stack: mirrors the
+        # nanmean / rate-weighted-eta semantics above without doubling peak
+        # memory.
+        r_sum = np.zeros_like(ph); re_sum = np.zeros_like(ph)
+        n_fin = np.zeros_like(ph)
+        for i in range(12):
+            r_i = K.rate_ca_mg_release(
+                C.FEEDSTOCK_DEFAULT, ph_pad, soilT_K[i]) * sat_m[i]
+            e_i = K.eta_dic(ph_pad, pco2_pad, soilT_K[i])
+            fin = np.isfinite(r_i)
+            r_sum += np.where(fin, r_i, 0.0)
+            re_sum += np.where(fin & np.isfinite(e_i), r_i * e_i, 0.0)
+            n_fin += fin
+        with np.errstate(invalid="ignore"):
+            reactivity_pad = np.where(n_fin > 0, r_sum / np.maximum(n_fin, 1),
+                                      np.nan)
+            eta_pad = re_sum / np.maximum(r_sum, 1e-30)
+    else:
+        reactivity_pad = K.rate_ca_mg_release(
+            C.FEEDSTOCK_DEFAULT, ph_pad, T_K) * wet
+        eta_pad = K.eta_dic(ph_pad, pco2_pad, T_K)
+    ceiling_pad = K.flux_ceiling_t_ha_yr(q, pco2_pad, T_ceil_K)
+
     ref = K.rate_ca_mg_release(
         C.FEEDSTOCK_DEFAULT, C.L1_REF["pH"], C.L1_REF["T_soil_C"] + 273.15
     ) * C.L1_REF["saturation"]
     with np.errstate(divide="ignore", invalid="ignore"):
         L1 = np.log10(reactivity / float(ref))
+        L1_pad = np.log10(reactivity_pad / float(ref))
 
     cascade = K.cascade_baseline_index(ph, T_K, wet)
 
@@ -507,6 +553,22 @@ def main() -> int:
         cdr = np.minimum(cdr_uncapped, ceiling)
     else:
         cdr = cdr_uncapped
+
+    # Paddy-view effect, REPORTED: what the toggle changes on paddy cells.
+    u_pad = delta_ref * np.clip((10.0 ** L1_pad) * eta_tr, 0.0, None) \
+        / C.PSD_REF_D50_UM
+    cdr_un_pad = (np.interp(u_pad, u_grid, g_grid) * eta_pad
+                  * C.APPLICATION_RATE_T_HA_YR * ceil_t)
+    pad_sel = f_flood > 0
+    if pad_sel.any():
+        n_pad = int(pad_sel.sum())
+        binds_b = cdr_uncapped > ceiling * 1.000001
+        binds_p = cdr_un_pad > ceiling_pad * 1.000001
+        flip = pad_sel & binds_b & ~binds_p
+        print(f"  paddy-field view: {n_pad:,} cells carry paddy; on them the "
+              f"ceiling rises x{np.nanmedian((ceiling_pad / np.maximum(ceiling, 1e-12))[pad_sel]):.2f} "
+              f"(median) and the drainage class clears on "
+              f"{int(flip.sum()):,} cells ({flip.sum() / max(n_pad, 1):.0%})")
 
     suit_phys = piecewise(np.log10(np.maximum(cdr, 1e-9)),
                           [(np.log10(x), y) for x, y in C.CDR_SUITABILITY_KNOTS])
@@ -891,7 +953,9 @@ def main() -> int:
                    cascade=cascade, ph=ph, L1=L1, eta=eta, eta_tr=eta_tr,
                    v_cost=v_cost, cost_conf=cost_conf, ceiling=ceiling,
                    cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
-                   no_input=no_input, mafic_frac=mafic_frac)
+                   no_input=no_input, mafic_frac=mafic_frac,
+                   L1_pad=L1_pad, eta_pad=eta_pad, ceiling_pad=ceiling_pad,
+                   paddy_sel=f_flood > 0)
     gha_eval = float(((crop * area)[m & np.isfinite(L1)]).sum() * 100.0 / 1e9)
     emit_js(transform, w, h, gha, p50,
             cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
@@ -899,7 +963,10 @@ def main() -> int:
             gha_eval=gha_eval, soc_excluded=excl, soc_marginal=marg,
             crop_codes=crop_codes,
             ceiling_binds=bound, ceiling_med=wq(ceiling, (0.5,))[0],
-            warm_cool=wc_ratio, exceed_med=e50)
+            warm_cool=wc_ratio, exceed_med=e50,
+            paddy_area_frac_of_cropland=float(
+                (aw * (f_flood > 0)[m]).sum() / aw.sum()),
+            paddy_source=paddy_source)
     print()
     print("done. Open src/index.html over HTTP:")
     print("  python3 -m http.server 8000 --directory src")
@@ -1009,7 +1076,8 @@ def write_crop_texture(transform, w, h, crs, valid, ha_cell):
 
 def write_textures(crop, p_soc, ph_warn, cdr, valid,
                    *, cascade, ph, L1, eta, eta_tr, v_cost, cost_conf,
-                   ceiling, cdr_per_frac, no_input, mafic_frac) -> None:
+                   ceiling, cdr_per_frac, no_input, mafic_frac,
+                   L1_pad, eta_pad, ceiling_pad, paddy_sel) -> None:
     from PIL import Image
     out = SRC / "textures"
     out.mkdir(parents=True, exist_ok=True)
@@ -1109,8 +1177,42 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
     r4 = np.rint(np.clip(np.nan_to_num(mafic_frac, nan=0.0), 0, 1) * 255).astype("uint8")
     z4 = np.zeros_like(r4)
 
+    # tex5: the PADDY-FIELD VIEW -- L1, eta_DIC and the ceiling recomputed with
+    # every paddy-bearing cell at 100% paddy (area fraction -> 1, observed
+    # inundation months kept). Same encodings as the baseline channels ON
+    # PURPOSE: r matches tex1.r (L1_ENC), g matches tex1.g (linear eta), b
+    # matches tex2.b (CEIL_ENC), so the viewer's toggle is a plain texture swap
+    # and the grind/ceiling/economics machinery needs no second code path.
+    l1p = np.clip((np.nan_to_num(L1_pad, nan=lo) - lo) / (hi - lo), 0.0, 1.0)
+    r5 = np.where(valid, np.rint(5 + l1p * 250.0), 0).astype("uint8")
+    g5 = np.where(valid, enc(eta_pad), 0).astype("uint8")
+    with np.errstate(divide="ignore", invalid="ignore"):
+        cp = np.log10(np.maximum(ceiling_pad / max(cdr_per_frac, 1e-12), 1e-30))
+    cp = np.clip((np.nan_to_num(cp, nan=lo_c, neginf=lo_c) - lo_c)
+                 / (hi_c - lo_c), 0.0, 1.0)
+    b5 = np.where(valid, np.rint(5 + cp * 250.0), 0).astype("uint8")
+    # Off paddy cells the view is a no-op BY DEFINITION, so baseline bytes are
+    # copied in rather than recomputed -- float summation order in the paddy
+    # accumulators can differ from nanmean by one ulp, which crosses an 8-bit
+    # rounding boundary on a handful of cells. The assertion below is the
+    # drift ALARM, not the guarantee: recomputation must agree with baseline
+    # to <=1 byte on <=0.01% of off-paddy cells, or something real broke
+    # (e.g. a misaligned f_pad), and then the bytes are forced identical.
+    off = valid & ~paddy_sel
+    n_off = max(int(off.sum()), 1)
+    for name_, a_, b_ in (("L1", r5, r1), ("eta", g5, g1), ("ceil", b5, b2)):
+        d = np.abs(a_[off].astype(int) - b_[off].astype(int))
+        bad, worst = int((d > 0).sum()), int(d.max()) if d.size else 0
+        assert worst <= 1 and bad <= n_off // 10_000, (
+            f"paddy view differs off-paddy in {name_}: {bad} cells, worst "
+            f"{worst} byte(s) -- more than ulp drift, a real bug")
+    r5 = np.where(paddy_sel, r5, r1)
+    g5 = np.where(paddy_sel, g5, g1)
+    b5 = np.where(paddy_sel, b5, b2)
+
     for name, img in (("tex1", rgba(r1, g1, b1)), ("tex2", rgba(r2, flags, b2)),
-                      ("tex3", rgba(r3, g3, b3)), ("tex4", rgba(r4, z4, z4))):
+                      ("tex3", rgba(r3, g3, b3)), ("tex4", rgba(r4, z4, z4)),
+                      ("tex5", rgba(r5, g5, b5))):
         p = out / f"{name}.png"
         img.save(p, optimize=True)
         print(f"  wrote {p} ({p.stat().st_size / 1e6:.2f} MB)")
@@ -1200,7 +1302,9 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
             clim_source="unknown", monthly=False, n_quarries=0,
             soc_excluded=0.0, soc_marginal=0.0,
             ceiling_binds=0.0, ceiling_med=0.0,
-            warm_cool=(None, None), exceed_med=0.0, crop_codes=()) -> None:
+            warm_cool=(None, None), exceed_med=0.0, crop_codes=(),
+            paddy_area_frac_of_cropland=0.0,
+            paddy_source="unknown") -> None:
     if gha_eval is None:
         gha_eval = gha
     # PASS THESE IN, never reach for main()'s locals. Reading a caller local from
@@ -1253,6 +1357,13 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
         # Drainage-concentration ceiling. ceilEnc decodes tex2.b, which stores
         # log10(ceiling / cdrPerFrac); the shader and the JS readout both need it
         # because the grind slider recomputes CDR live.
+        # Paddy-field view: tex5 swaps in L1/eta/ceiling with paddy-bearing
+        # cells at 100% paddy. The viewer only needs to know the view exists
+        # and how much area it can touch; all encodings are shared.
+        "paddyView": {
+            "areaFrac": round(float(paddy_area_frac_of_cropland), 4),
+            "source": paddy_source,
+        },
         "fluxCeiling": {
             "on": C.FLUX_CEILING_ON,
             "enc": {"lo": CEIL_ENC[0], "hi": CEIL_ENC[1]},

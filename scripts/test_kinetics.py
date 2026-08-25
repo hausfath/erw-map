@@ -482,6 +482,11 @@ def gate8_browser_constants_match_python() -> None:
                 problems.append(f"fluxCeiling.{key} differs or missing")
         if bool(fc.get("activities")) != bool(C.FLUX_CEILING_ACTIVITIES):
             problems.append("fluxCeiling.activities differs")
+    # Paddy-field view (tex5): the viewer trusts the encodings are shared with
+    # the baseline channels, so the payload block must exist and be sane.
+    pvw = payload.get("paddyView")
+    if pvw is None or not (0.0 <= pvw.get("areaFrac", -1) <= 1.0):
+        problems.append("paddyView missing or invalid")
 
     # Bilinear-interpolate the emitted table the way app.js does, and compare
     # against the exact integral at points deliberately BETWEEN grid nodes.
