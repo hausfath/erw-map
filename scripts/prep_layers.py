@@ -217,22 +217,43 @@ def prep_paddy_months() -> bool:
 
 
 def prep_paddy_area() -> bool:
-    """SPAM2010 irrigated rice physical area (ha per cell) -> fraction of cell.
+    """SPAM2010 ALL-technology rice physical area (ha per cell) -> cell fraction.
 
-    This is the conservative half of the paddy layer. Without it, a cell with 5%
-    paddy and 95% upland wheat would be assigned the flooded soil pCO2 in full,
-    which would inflate exactly the paddy prediction we are trying to test. The
-    standing rule is to prefer the option conservative toward the claim being
-    critiqued.
+    ALL rice, not irrigated-only, since 2026-08-24. The layer used
+    irrigated-only through that date on a conservatism argument, and it was a
+    genuine defect, found because every verified India-paddy deployment cell
+    (central India and north Bengal, all bunded transplanted paddy) sat at
+    f_flood ~ 0: kharif rice there is RAINFED LOWLAND -- flooded for the
+    season by bunded monsoon water, just not counted as irrigated. Rainfed
+    lowland is roughly a third of global rice area, concentrated exactly where
+    the map's paddy chemistry matters (eastern/central India, Bangladesh,
+    Thailand, Myanmar). Misclassifying it as drained assigned 4,000 uatm soil
+    pCO2 to fields that spend months at ~50,000+, understating both eta_DIC
+    and the drainage ceiling there ~2x.
+
+    The sub-cell area fraction is still the guard against over-assignment (a
+    cell with 5% paddy and 95% upland wheat must not get flooded pCO2 in
+    full), and truly upland (never-flooded) rice is screened by the OTHER
+    factor: GRPI months-flooded is CH4-presence-based, and unflooded rice
+    emits no paddy CH4, so months = 0 zeroes f_flood regardless of area.
     """
-    src = RAW / "spam2010V2r0_global_A_RICE_I.tif"
+    src = RAW / "spam2010V2r0_global_A_RICE_A.tif"
     if not src.exists():
-        alt = sorted(RAW.glob("*RICE_I.tif"))
-        if not alt:
-            print("  SKIP paddy area: SPAM irrigated-rice GeoTIFF missing")
-            return False
-        src = alt[0]
-    print(f"paddy: SPAM irrigated-rice area fraction ({src.name})")
+        alt = sorted(RAW.glob("*RICE_A.tif"))
+        if alt:
+            src = alt[0]
+        else:
+            # Fall back to the irrigated-only layer rather than building
+            # nothing, loudly: better a conservative paddy mask than none.
+            alt = sorted(RAW.glob("*RICE_I.tif"))
+            if not alt:
+                print("  SKIP paddy area: SPAM rice GeoTIFF missing")
+                return False
+            src = alt[0]
+            print("  WARNING: all-technology rice raster missing; falling back "
+                  "to IRRIGATED-only, which zeroes rainfed lowland paddy "
+                  "(central India, Bengal, Thailand). Re-fetch spam2010.zip.")
+    print(f"paddy: SPAM rice area fraction ({src.name})")
     with rasterio.open(src) as s:
         ha = s.read(1).astype("float64")
         if s.nodata is not None:
@@ -250,7 +271,7 @@ def prep_paddy_area() -> bool:
         cell_ha = np.repeat((km2 * 100.0)[:, None], w, axis=1)
         frac = np.clip(ha / np.maximum(cell_ha, 1e-9), 0.0, 1.0).astype("float32")
         v = frac[frac > 0]
-        print(f"  cells with irrigated rice: {int((frac > 0).sum()):,}; "
+        print(f"  cells with rice: {int((frac > 0).sum()):,}; "
               f"median fraction where present: {np.median(v):.3f}; "
               f"total {ha.sum() / 1e6:.1f} Mha")
         # Compare against PHYSICAL area, not harvested area: harvested area

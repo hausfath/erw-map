@@ -975,7 +975,7 @@ def gate13c_paddy_ceiling_is_unvalidated() -> None:
     This is not resolvable here, and deliberately not tolerance-fudged into a
     pass. The literature contains NO measured floodwater alkalinity or paddy
     lateral DIC export flux: every ERW-in-paddy trial reached measured only
-    solid-phase carbon. So on the 7.6% of cropland with material flooded
+    solid-phase carbon. So on the 10.3% of cropland with material flooded
     cell-time the ceiling is an extrapolation, not a bound checked against
     anything. It is also the loosest part of the term, so it constrains those
     cells least -- which is the honest way round, but it means paddy CDR in this
@@ -993,7 +993,7 @@ def gate13c_paddy_ceiling_is_unvalidated() -> None:
            f"at the mandated {C.PCO2_SATURATED_UATM:.0f} uatm the ceiling is "
            f"{min(probes):.2f}-{max(probes):.2f} mmol/L against an anchor "
            f"envelope topping out at {hi_env:.2f}; no measured paddy drainage "
-           f"DIC exists to check it. Unvalidated on ~7.6% of cropland area")
+           f"DIC exists to check it. Unvalidated on ~10.3% of cropland area")
 
 
 def gate13d_ceiling_reproduces_mayer_phreeqc() -> None:

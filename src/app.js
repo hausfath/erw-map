@@ -1556,7 +1556,7 @@
       of Bertagni &amp; Porporato (2022), with zero free parameters. Fast
       dissolution in very acid soil stores little carbon; this term is why. Soil
       pCO₂ is raised in rice paddies, mapped as Landsat inundation months ×
-      SPAM irrigated-rice area.</li>
+      SPAM all-technology rice area (all rice, not irrigated-only, since 2026-08-24 — rainfed lowland paddy is flooded too).</li>
       <li><b>Drainage.</b> η = q/(q + D_w) on ${E.provenance.drainage}
       (Maher &amp; Chamberlain 2014; D_w = ${p.dw ? p.dw.value : "?"} m/yr):
       bicarbonate has to leave the field in the drainage water to count as

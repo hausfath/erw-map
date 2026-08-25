@@ -246,6 +246,22 @@ def write_docx(path, big2, rest2, world2, screens, i_inf, w90, us_cap):
 
     doc.add_heading("Caveats", level=1)
     doc.add_paragraph(
+        "Paddy rows carry extra uncertainty in both directions. The rows for "
+        "rice-dominated geographies (India, Thailand, Myanmar, Indonesia, "
+        "parts of China) depend on flooded-soil carbonate chemistry that no "
+        "measured paddy drainage-DIC flux exists to validate (Atlas gate "
+        "13c), and the mapped cell values dilute paddy chemistry by each "
+        "cell's non-rice share. The protocol soil pCO2 used for flooded "
+        "cells (50,000 uatm) sits at the BOTTOM of the measured range in "
+        "submerged rice soils (5-70 kPa; Kirk et al. 2019), so the paddy "
+        "ceiling is likely conservative. A field-level central-India paddy "
+        "analysis (docs/PADDY_CEILING_INDIA.md in the repo) puts the "
+        "carrying capacity of a 100%-paddy field at 0.9-7.3 tCO2/ha/yr "
+        "gross (central 2.6), well above the mapped cell means. As of "
+        "2026-08-24 the paddy mask uses all-technology rice (rainfed "
+        "lowland included); earlier exports used irrigated-only and "
+        "understated India by ~10%.")
+    doc.add_paragraph(
         "Gross, not net. Year-1 kinetics come from a rate law that "
         "over-predicts an independent laboratory test; absolute levels are "
         "upper bounds and rank orderings are more robust than magnitudes. "

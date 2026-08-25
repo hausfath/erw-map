@@ -219,12 +219,12 @@ window.ERW = {
         0.75
       ]
     },
-    "bindsAreaFrac": 0.9508,
-    "medianTco2HaYr": 0.3977,
-    "warmCoolUncapped": 4.75,
-    "warmCoolCeiling": 1.47,
-    "exceedMedian": 3.77,
-    "realisedShareOfStoich": 0.0458
+    "bindsAreaFrac": 0.9484,
+    "medianTco2HaYr": 0.3995,
+    "warmCoolUncapped": 4.76,
+    "warmCoolCeiling": 1.5,
+    "exceedMedian": 3.73,
+    "realisedShareOfStoich": 0.046
   },
   "dissolution": {
     "model": "shrinking_core",

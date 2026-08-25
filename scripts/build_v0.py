@@ -290,10 +290,16 @@ def main() -> int:
 
     # ---- Paddy: flooded fraction of cell-time, from two independent halves.
     # months/12 comes from GRPI inundation presence (robust to CH4 emission
-    # factor); the sub-cell area fraction comes from SPAM irrigated rice.
-    # Multiplying them is deliberately conservative: it refuses to treat a cell
-    # that is 5% paddy as fully flooded, which would inflate the very paddy
-    # prediction this project needs to test rather than assume.
+    # factor); the sub-cell area fraction comes from SPAM ALL-technology rice
+    # (all rice since 2026-08-24 -- irrigated-only zeroed the rainfed lowland
+    # paddies of central/eastern India and SE Asia, see prep_layers). Truly
+    # upland never-flooded rice is screened by GRPI months = 0. Multiplying
+    # the halves is deliberately conservative: it refuses to treat a cell that
+    # is 5% paddy as fully flooded, which would inflate the very paddy
+    # prediction this project needs to test rather than assume. Known
+    # residual: GRPI's 0.1-deg presence grid has holes (one verified paddy
+    # deployment site reads months = 0 while every neighbour reads 6), so
+    # f_flood is a floor at paddy sites, not an unbiased estimate.
     pm, pa = INTERIM / "paddy_months_flooded.tif", INTERIM / "paddy_area_frac.tif"
     if pm.exists() and pa.exists():
         months = np.nan_to_num(onto_grid(pm, transform, w, h, crs,
@@ -301,7 +307,7 @@ def main() -> int:
         parea = np.nan_to_num(onto_grid(pa, transform, w, h, crs,
                                         resampling=Resampling.average), nan=0.0)
         f_flood = np.clip(parea, 0, 1) * np.clip(months / 12.0, 0, 1)
-        paddy_source = "GRPI months x SPAM irrigated-rice fraction"
+        paddy_source = "GRPI months x SPAM all-rice fraction"
     else:
         f_flood = np.zeros_like(ph)
         paddy_source = "NONE -- run prep_layers.py"

@@ -5,6 +5,48 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Paddies: the mask was zeroing rainfed lowland rice, and a field-level ceiling for projects
+
+Prompted by a central-India paddy project evaluation. Four literature threads
+(paddy water DIC, India paddy water balance, central-India baseline
+chemistry, paddy pCO2/carbonate behaviour) plus an audit of the map's own
+paddy inputs; full note with verification tags in docs/PADDY_CEILING_INDIA.md.
+
+The audit found a real input defect: f_flood multiplied GRPI inundation
+months by SPAM IRRIGATED-rice area, and central/eastern India's kharif paddy
+is rainfed lowland -- flooded all season, not irrigated -- so every verified
+India-paddy deployment cell sat at f_flood ~ 0 with drained-soil chemistry.
+Fixed to SPAM all-technology rice (113.8 Mha globally vs ~65 irrigated-only,
+matching the 110-120 Mha literature check; truly upland rice still zeroed by
+GRPI months = 0). Deployment cells now read f_flood 0.16-0.17 (central
+India) / 0.65 (north Bengal); flooded>5% cropland 7.6 -> 10.3%; India
+drainage-limited steady state 94 -> 103 Mt; world 696 -> 717 Mt; screened
+239 -> 252 Mt. Known residual: GRPI's 0.1-degree grid has holes (one
+verified paddy site reads 0 months, all neighbours 6), so cell f_flood is a
+floor at paddy sites.
+
+The research established (verified primaries): flooded-soil CO2 measured at
+5-70 kPa with ~20 kPa bulk (Kirk 2019) -- the protocol's 50,000 uatm sits at
+the BOTTOM of that range, so the paddy ceiling is conservative on pCO2; a
+paddy exports through two pathways at order-of-magnitude different
+concentrations (percolation at porewater DIC through the amendment, surface
+drainage at ~1 mM degassed floodwater), which one blended q misprices;
+measured analog percolation 831-963 mm/season (Delhi silt/clay loam),
+central-India heavy soils bounded 300-600; regional baseline field drainage
+~1-3 mmol/L with deep groundwater already 4-11 mmol/L and commonly
+calcite-saturated (durability caveat, unpriced by any model). And a
+confirmed global gap: NO paddy DIC export flux has ever been measured under
+ERW -- field-data ask #6 stands.
+
+New: scripts/analysis/paddy_ceiling_india.py -- a field-level (100% paddy)
+two-pathway, baseline-netted carrying capacity for central India. Central
+gross 2.6 tCO2/ha/yr (conservative 0.9, optimistic 7.3); additional after
+baseline 2.2 (0.5-7.0). The verified central-India deployments' claimed
+dissolution (2.1-4.3 tCO2/ha/yr) sits at 0.8-1.6x the central gross -- AT
+carrying capacity, not the 1.6-4.9x over that the pre-fix cell ceiling
+implied. One season of site drainage chemistry discriminates the whole
+range.
+
 ## The cost screen prices the drainage-optimal application (variant B)
 
 Zeke caught an interaction the same day the drainage limit shipped on: the
