@@ -8,8 +8,8 @@ technical potential exceeds 50 MtCO2/yr (plus a rest-of-world row):
   TECHNICAL potential   gross year-1 CO2 removal at the map's application rate
                         (APPLICATION_RATE_T_HA_YR t/ha/yr) summed over cropland
                         -- the map's cdr_uncapped layer, i.e. no drainage
-                        ceiling. A second column applies the ceiling, since it
-                        is computed and gated even though it ships off.
+                        ceiling. A second column applies the ceiling, which the
+                        Atlas ships ON by default since 2026-08-24.
   ECONOMIC potential    the subset passing the map's cost screen: acquisition
                         plus haul under COST_SCREEN_USD_PER_TCO2 per tonne,
                         costed over COST_SCREEN_YEARS years of weathering
@@ -141,11 +141,19 @@ def write_docx(path, big2, rest2, world2, screens, i_inf, w90, us_cap):
         "reapplying as the modelled kinetics dissolve it, capped at one full "
         "application per year (renewal basis; mean-lifetime constant "
         f"I_inf = {i_inf:.3f}). With drainage limit: the steady state bounded "
-        "by the drainage-concentration ceiling (computed and gated in the "
-        "Atlas, OFF by default pending community review). Economic: the "
-        "steady-state potential on cells where delivered rock (gate + "
-        "regional trucking) costs less than the screen per tonne of CO2, "
-        "against each application's discounted lifetime carbon at 5%.")
+        "by the drainage-concentration ceiling -- APPLIED BY DEFAULT in the "
+        "Atlas since 2026-08-24, when Mayer et al. 2025 "
+        "(doi:10.21203/rs.3.rs-7811095/v1) independently corroborated the "
+        "bound as 'carrying capacity'. Economic: the drainage-limited steady "
+        "state on cells where delivered rock (gate + regional trucking) costs "
+        "less than the screen per tonne of CO2, against each application's "
+        "discounted lifetime carbon at 5%. The screen is a UNIT cost and is "
+        "deliberately not reduced by the drainage limit: carbon is linear in "
+        "application rate, so $/tCO2 is unchanged when an operator on a "
+        "cap-bound cell scales the application down to what the drainage can "
+        "carry. The screen therefore decides where hauling rock is economic; "
+        "the drainage limit decides how much carbon each hectare then "
+        "yields.")
     doc.add_paragraph(
         "Cost scenarios (sources: docs/TRUCK_RATE_SOURCES.md and "
         "docs/GATE_COST_AT_SCALE.md in the repo): OPTIMISTIC = current "
@@ -184,13 +192,13 @@ def write_docx(path, big2, rest2, world2, screens, i_inf, w90, us_cap):
     for scr in screens:
         doc.add_heading(
             f"Table {2 if scr == screens[0] else 3}. Economic potential at "
-            f"${scr:.0f}/tCO2 (steady-state basis)", level=1)
+            f"${scr:.0f}/tCO2 (drainage-limited steady-state basis)", level=1)
         t = doc.add_table(rows=1 + len(rows), cols=3)
         t.style = "Table Grid"
         for j, htxt in enumerate((
                 "Country",
                 "Economic potential, MtCO2/yr: central (scenario range)",
-                "Share of steady-state potential: central (range)")):
+                "Share of drainage-limited potential: central (range)")):
             t.rows[0].cells[j].text = htxt
         for i, r in enumerate(rows, start=1):
             c = t.rows[i].cells
@@ -204,7 +212,7 @@ def write_docx(path, big2, rest2, world2, screens, i_inf, w90, us_cap):
             # are both cheaper than $10.
             lo, hi = min(ec.values()), max(ec.values())
             c[1].text = f"{ec['central']:,.0f} ({lo:,.0f}–{hi:,.0f})"
-            base = max(r["cad"], 1e-9)
+            base = max(r["cad_ceil"], 1e-9)
             c[2].text = (f"{100 * ec['central'] / base:.0f}% "
                          f"({100 * lo / base:.0f}–{100 * hi / base:.0f}%)")
 
@@ -242,9 +250,13 @@ def write_docx(path, big2, rest2, world2, screens, i_inf, w90, us_cap):
         "over-predicts an independent laboratory test; absolute levels are "
         "upper bounds and rank orderings are more robust than magnitudes. "
         "Haul distances are great-circle x 1.35 tortuosity, not routed. The "
-        "drainage-concentration ceiling, if applied, is the binding long-run "
-        "constraint (WORLD steady state falls to the 'with drainage limit' "
-        "column regardless of economics). Reapplication-trigger sensitivity: "
+        "drainage-concentration ceiling is the binding long-run constraint "
+        "on almost all cropland (it caps 'steady state' down to the 'with "
+        "drainage limit' column, and the economic columns are on that capped "
+        "basis). It is a maximum-EFFICIENT bound: past it, calcite "
+        "precipitation halves marginal efficiency rather than stopping "
+        "removal, so the capped figures are a conservative reading of what "
+        "lies beyond. Reapplication-trigger sensitivity: "
         f"waiting for 90% dissolution instead of holding the inventory gives "
         f"a world steady state of {w90:.0f} MtCO2/yr.")
     doc.save(str(path))
@@ -390,11 +402,22 @@ def main() -> int:
     cad = R * eta * ct                                # tCO2/ha/yr
     cad_ceil = np.minimum(cad, ceil)
 
-    # Economic screen on the cadence basis, matching the tool's footer since
-    # Aug 2026: per-application NPV -- delivered $/t against the application's
-    # DISCOUNTED LIFETIME carbon (not a 10-year window), capped at 60 years,
-    # past which 5% discounting and the dissolved tail make increments
-    # negligible. Same three gate/haul scenarios as Table 1.
+    # Economic screen on the cadence basis, matching the tool's footer:
+    # per-application NPV -- delivered $/t against the application's DISCOUNTED
+    # LIFETIME carbon (not a 10-year window), capped at 60 years, past which 5%
+    # discounting and the dissolved tail make increments negligible. Same three
+    # gate/haul scenarios as Table 1.
+    #
+    # VARIANT B (2026-08-24, with the drainage limit shipped on): the screen is
+    # a UNIT cost and stays UNCLAMPED by the ceiling, because carbon is linear
+    # in the application rate, so $/tCO2 is rate-invariant -- an operator on a
+    # cap-bound cell applies less rock (down to what the drainage carries) at
+    # the same cost per tonne of carbon. The CARBON counted is the capped
+    # steady state (cad_ceil): the ceiling sets the quantity, the unclamped
+    # unit cost sets whether hauling rock there is worth it at all. Clamping
+    # the screen too (the tool's behaviour 2026-08-24 morning) priced a full
+    # 30 t/ha against carbon that cannot leave and collapsed the sub-$100
+    # world total 0.24 -> 0.08 Gt for no economic reason.
     dpt_life = np.zeros_like(u1)
     prev = np.zeros_like(u1)
     for t in range(1, 61):
@@ -409,7 +432,7 @@ def main() -> int:
             usd = cost / np.maximum(dpt_life, 1e-12)
         for scr in SCREENS:
             passes = mm & (usd < scr) & (dpt_life > 0)
-            econ_cad[(scn, scr)] = np.where(passes, cad, 0.0)
+            econ_cad[(scn, scr)] = np.where(passes, cad_ceil, 0.0)
     u90 = np.interp(0.9, gg, ug)
     with np.errstate(divide="ignore"):
         k90 = np.where(u1 > 0, u90 / np.maximum(u1, 1e-12), np.inf)
@@ -451,7 +474,9 @@ def main() -> int:
     print(f"\n\nTable 2: steady state maintaining a "
           f"{C.APPLICATION_RATE_T_HA_YR:.0f} t/ha standing rock inventory")
     print("(reapplication paced by modeled dissolution, capped at one full "
-          "application per year)\n")
+          "application per year;")
+    print(" econ columns count DRAINAGE-LIMITED carbon, screened on the "
+          "unclamped unit cost -- variant B)\n")
     print(hdr2)
     print(f"{'':<22}{'MtCO2/yr':>9}{'MtCO2/yr':>12}{'MtCO2/yr':>10}"
           f"{'MtCO2/yr':>10}{'MtCO2/yr':>10}{'MtCO2/yr':>10}"

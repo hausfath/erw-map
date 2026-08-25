@@ -1027,7 +1027,8 @@
     $("econ-readout").textContent = on
       ? (scr ? `Total below restricted to cells under $${scr}/tCO\u2082, costed `
               + `against each application\u2019s discounted lifetime carbon at `
-              + `${(E.cost.screenDiscount * 100).toFixed(0)}%. `
+              + `${(E.cost.screenDiscount * 100).toFixed(0)}% \u2014 a unit cost, `
+              + `so it prices the largest application the drainage can carry. `
              : "")
         + "Hover the map for cost per tonne of rock and per tCO\u2082."
       : "Off: the map shows physical potential only, and the total below is "
@@ -1350,11 +1351,19 @@
         let tonnes = 0, prev = 0;
         for (let t = 1; t <= TMAX; t++) {
           const cum = fracAtLog10u(l10u1 + l10t[t], g, D);
-          let yr = (cum - prev) * eDic * CPF;
+          const yr = (cum - prev) * eDic * CPF;
           prev = cum;
-          // The ceiling bounds EXPORT each year, so it must be applied per year
-          // rather than to the total -- extra years buy much less under it.
-          if (yr > ceil) yr = ceil;
+          // The ceiling is deliberately NOT applied inside the screen. The
+          // screen is a UNIT cost, and carbon is linear in the application
+          // rate, so $/tCO2 is rate-invariant: an operator on a cap-bound cell
+          // applies less rock (down to what the drainage can carry) at the
+          // same cost per tonne of carbon. Clamping each year here priced the
+          // full 30 t/ha against carbon the model says cannot leave, which
+          // roughly doubled median $/tCO2 and collapsed the sub-$100 area
+          // 0.27 -> 0.05 Gha for no economic reason (variant B, 2026-08-24).
+          // The QUANTITY of carbon stays capped -- cdr above -- so the cap
+          // sets how much carbon, and the unclamped unit cost sets whether it
+          // is worth hauling rock there at all.
           tonnes += yr / pow[t];
           if (cum > 0.9995) break;               // cohort spent
         }
@@ -1506,11 +1515,16 @@
       purpose, and every CO₂ figure is gross removal. Two time bases coexist:
       the <b>map layers and hover readout are year-1</b> (the quantity field
       trials can measure), while the <b>footer total is a steady state</b> —
-      hold ${E.feedstock.rateTHaYr} t/ha of undissolved rock on each field,
-      reapplying as the modelled kinetics dissolve it, capped at one full
-      application per year. Fast tropical cells run at the cap; slow cool cells
-      reapply every decade or two. The two bases nearly coincide globally
-      (within ~7%) but differ regionally with weathering speed.
+      hold ${E.feedstock.rateTHaYr} t/ha of undissolved rock on each field
+      (less where the drainage limit binds — carbon above the limit cannot
+      leave, so the operator holds only what drains), reapplying as the
+      modelled kinetics dissolve it, capped at one full application per year.
+      Fast tropical cells run at the cap; slow cool cells reapply every decade
+      or two. The two bases nearly coincide globally (within ~7%) but differ
+      regionally with weathering speed. The cost screen is a <i>unit</i> cost
+      — $/tCO₂ is unchanged by scaling the application down, so the screen
+      decides where hauling rock is worth it and the drainage limit decides
+      how much carbon each hectare then yields.
       ${ceilOn
         ? "Carbonate saturation enters only as an upper bound on what the drainage " +
           "can carry, not as a modelled precipitation loss; cation retention in the " +
@@ -1794,12 +1808,14 @@
       ? "cropland in scope"
       : (scr
           ? `steady-state gross removal holding ${E.feedstock.rateTHaYr} t/ha of `
-            + `rock, where delivered rock costs under `
+            + `rock${ceilOn ? " (less where the drainage limit binds)" : ""}, `
+            + `where delivered rock costs under `
             + `$${E.cost.screenUsdPerTco2}/tCO\u2082 against each application\u2019s `
             + `lifetime carbon at ${(E.cost.screenDiscount * 100).toFixed(0)}%, `
             + `on ${gha.toFixed(2)} Gha`
           : `steady-state gross removal holding ${E.feedstock.rateTHaYr} t/ha of `
-            + `rock, over ${gha.toFixed(2)} Gha of cropland`)
+            + `rock${ceilOn ? " (less where the drainage limit binds)" : ""}, `
+            + `over ${gha.toFixed(2)} Gha of cropland`)
         + (ceilOn ? "" : ", drainage limit not applied");
   }
 

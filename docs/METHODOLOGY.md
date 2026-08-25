@@ -504,6 +504,20 @@ and the footer must reproduce it to its ~0.5% sampling error. The economic
 screen moved with it: delivered cost is tested against each application's
 **discounted lifetime carbon** (5%, capped at 60 years), not a 10-year window.
 
+**The screen and the drainage limit compose deliberately (2026-08-24, with the
+limit shipped on).** The screen is a *unit* cost, and carbon is linear in the
+application rate, so $/tCO₂ is rate-invariant: an operator on a cap-bound cell
+applies less rock — down to the largest inventory the drainage can carry — at
+the same cost per tonne of carbon. The screen's lifetime carbon is therefore
+**not clamped by the ceiling** (clamping it priced a full 30 t/ha against
+carbon the model says cannot leave, roughly doubling median $/tCO₂ and
+collapsing the sub-$100 area 0.27 → 0.05 Gha for no economic reason), while
+the carbon *counted* in the footer **is capped**. The screen decides where
+hauling rock is economic at all; the drainage limit decides how much carbon
+each kept hectare then yields. Under the $100 screen: 0.24 GtCO₂/yr on
+0.27 Gha (the same 0.27 Gha the screen kept before the ceiling shipped, as
+the unit-cost argument requires).
+
 The rest of this section explains the year-1 basis the map layers keep.
 
 The CDR layer is the **first year's removal from one application**. Stating the
@@ -613,7 +627,7 @@ showing numbers derived from the NaN fallback.
 | Quarry gate cost | $10/t | operator-reported quarry-fines prices — a **current-procurement** (byproduct) price. At scale, dedicated basalt runs $15–22/t in the US/Europe (US traprock averages $21.33/t, USGS 2023); see `docs/GATE_COST_AT_SCALE.md`. Slider spans $0–25 |
 | Truck haul | regional $/t-km (US/CA 0.10, EU 0.09, BR/LatAm 0.055, IN/S Asia 0.045, CN/SE Asia 0.07, Africa 0.11, else 0.08) on road km + 50 km fixed-trip equivalent ($2.25–5.50/t regionally), × 1.35 tortuosity | per-entry sources and vintages in `constants.TRUCK_RATE_GROUPS` and `docs/TRUCK_RATE_SOURCES.md`; only the US rate is a current primary. Live multiplier under Advanced; see §3b |
 | Haul penalty scale S | $100/t | editorial choice, stated as such |
-| Headline cost screen | **$100/tCO₂** against each application's discounted lifetime carbon at 5% | applies to the footer total when economics is on; acquisition and haul only, not a levelised cost. Was a 10-yr window until Aug 2026 |
+| Headline cost screen | **$100/tCO₂** against each application's discounted lifetime carbon at 5% | applies to the footer total when economics is on; acquisition and haul only, not a levelised cost. Was a 10-yr window until Aug 2026. A unit cost, unclamped by the drainage limit (the counted carbon is capped) — prices the drainage-optimal application |
 | SOC exclusion | 5 wt%, P > 0.9 | Puro.earth rule 3.9.1(c) |
 
 ### 3b. The haul model: regional rates plus a fixed per-trip trucking charge

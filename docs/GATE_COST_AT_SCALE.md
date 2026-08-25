@@ -138,14 +138,18 @@ while being roughly right for at-scale Brazil and generous for India.
    only), so none of this changes the colour. It changes every reported $/t and
    $/tCO₂ and the cost-screened headline total, and the sensitivity is severe —
    measured on the shipped build (regional haul; $100/tCO₂ screen against each
-   application's discounted lifetime carbon at 5%, the steady-state footer basis
-   since Aug 2026): gate **$10 → 0.93 GtCO₂/yr on 0.27 Gha; $12 → 0.79 on 0.21;
-   $18 → 0.30 on 0.07; $21.50 → 0.06 on 0.01**. At the US at-scale gate, the
-   $100/tCO₂ screen collapses toward nothing — gate plus the fixed trip charge
-   alone is $42–54/tCO₂ of year-one carbon (less against lifetime carbon, but
-   the haul still stacks on top) before any grinding, spreading or MRV. The
-   at-scale question is therefore not a parameter nicety; it decides whether
-   the sub-$100 map has much area in it.
+   application's discounted lifetime carbon at 5%; drainage-limited carbon
+   counted, unit-cost screen unclamped — the footer basis since 2026-08-24):
+   gate **$10 → 0.24 GtCO₂/yr on 0.27 Gha; $12 → 0.20 on 0.21; $18 → 0.07 on
+   0.07; $21.50 → 0.02 on 0.02**. (On the pre-ceiling footer the same sweep
+   read 0.93 / 0.79 / 0.30 / 0.06 Gt — the *area* response to the gate is
+   nearly identical; the drainage limit rescales the carbon each kept hectare
+   yields.) At the US at-scale gate, the $100/tCO₂ screen collapses toward
+   nothing — gate plus the fixed trip charge alone is $42–54/tCO₂ of year-one
+   carbon (less against lifetime carbon, but the haul still stacks on top)
+   before any grinding, spreading or MRV. The at-scale question is therefore
+   not a parameter nicety; it decides whether the sub-$100 map has much area
+   in it.
 2. **The gate slider now spans $0–25** so the at-scale US/European value is
    reachable; it previously capped at $15, below the observed US traprock
    average. The default stays $10/t — the current-procurement number — because a

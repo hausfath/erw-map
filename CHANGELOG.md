@@ -5,6 +5,39 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## The cost screen prices the drainage-optimal application (variant B)
+
+Zeke caught an interaction the same day the drainage limit shipped on: the
+$100/tCO2 screen was pricing a full 30 t/ha application against per-year
+CEILING-CLAMPED lifetime carbon -- charging the operator for rock whose carbon
+the model says can never leave. That is the wrong economics. The screen is a
+UNIT cost, and carbon is linear in the application rate, so $/tCO2 is
+rate-invariant: an operator on a cap-bound cell applies less rock (down to
+the largest inventory the drainage can carry) at the same cost per tonne of
+carbon. Clamping the screen roughly doubled median $/tCO2 and collapsed the
+sub-$100 area from 0.27 to 0.05 Gha for no economic reason.
+
+The fix (variant B): the screen's lifetime carbon is UNCLAMPED -- it decides
+where hauling rock is economic at all -- while the carbon COUNTED stays
+capped, so the ceiling sets the quantity each kept hectare yields. Confirmed
+prediction: the kept area returns to exactly the pre-ceiling 0.27 Gha, as the
+unit-cost argument requires. The screened footer goes 0.08 -> 0.24 GtCO2/yr
+(python replication 0.239; browser reproduces to displayed precision). The
+footer and Methods copy now say "holding 30 t/ha of rock (less where the
+drainage limit binds)".
+
+The country tables (scripts/analysis/country_potential.py, the docx export)
+moved to the same basis: economic columns now count drainage-limited carbon
+screened on the unclamped unit cost, and the share column is against the
+drainage-limited steady state. World at $100/tCO2: 239 (178-319) MtCO2/yr,
+34% (26-46%) of the 696 Mt drainage-limited potential; at $150: 378
+(318-433). Notable: India 68 (68-93) at $100; the US screened potential (5,
+range 0-6) now sits at the same level as its byproduct-fines supply cap
+(2-6 Mt), so both constraints bind together at byproduct prices. The gate
+sweep in docs/GATE_COST_AT_SCALE.md was re-measured on the new basis: the
+area response to the gate is nearly identical to the pre-ceiling sweep; the
+ceiling rescales the carbon, not the economics.
+
 ## The drainage limit ships ON, as a top-level control
 
 With the Mayer et al. 2025 corroboration on record (entry below), the
