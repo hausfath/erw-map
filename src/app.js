@@ -968,26 +968,15 @@
     if (!E.cost || !host) return;
     const gr = E.cost.gateRange || [0, 15];
     const tr = E.cost.truckMultRange || [0.25, 2.5];
-    const rr = E.cost.truckRates || {};
-    const rateList = Object.keys(rr)
-      .map((k) => `${k} $${rr[k]}`).join(", ");
     const rows = [
       {k: "truckMult", label: "Haul rate \u00d7 regional baseline",
        min: tr[0], max: tr[1], step: 0.05,
-       why: "Multiplies the regional per-km rates baked into the map (" +
-            rateList + "; elsewhere $" + (E.cost.truckRateDefault || "?") +
-            "), on great-circle distance \u00d7 " + E.cost.tortuosity +
-            " tortuosity plus " + E.cost.haulFixedKm +
-            " km of fixed trip time priced at the same rate " +
-            "($2.25\u20135.50/t by region). Moves the map."},
+       why: "Scales the regional $/t-km rates, fixed trip charge included. " +
+            "Moves the map."},
       {k: "gate", label: "Quarry gate ($/t)",
        min: gr[0], max: gr[1], step: 0.5,
-       why: "Rock at the quarry before haulage. The default is today\u2019s " +
-            "byproduct-fines price; at scale, dedicated basalt runs " +
-            "$15\u201322/t in the US and Europe (US traprock averages " +
-            "$21.33/t, USGS 2023). Changes the reported cost and the " +
-            "$/tCO\u2082 screen, but not the map colour \u2014 the cost " +
-            "penalty applies to the haul increment only."},
+       why: "Rock price at the quarry (default: today\u2019s byproduct " +
+            "price). Moves reported $/t and the screen, not the map colour."},
     ];
     rows.forEach((r) => {
       const d = document.createElement("div");
@@ -1030,28 +1019,22 @@
     $("econ-tag").textContent = on ? "On" : "Off";
     const basis = $("econ-basis");
     if (basis) {
-      basis.innerHTML = `$${econ.gate.toFixed(0)}/t at the quarry gate, a ` +
-        `fixed trip charge worth ${E.cost.haulFixedKm} km of driving, plus ` +
-        `regional ` +
-        `rates ($${E.cost.truckRates ? E.cost.truckRates["India/South Asia"] : "?"}` +
-        `\u2013$${E.cost.truckRates ? E.cost.truckRates["Africa"] : "?"}/t-km; ` +
-        `US $${E.cost.truckRates ? E.cost.truckRates["US/Canada"] : "?"}) from ` +
-        `the nearest mafic quarry.` + (econAtRef() ? "" :
-          ` <b>Adjusted from the build\u2019s $${E.cost.gateUsdT}/t gate and ` +
-          `\u00d71.00 haul.</b>`);
+      basis.innerHTML = `$${econ.gate.toFixed(0)}/t gate + regional trucking ` +
+        `from the nearest mafic quarry ` +
+        `(US $${E.cost.truckRates ? E.cost.truckRates["US/Canada"] : "?"}/t-km, ` +
+        `India $${E.cost.truckRates ? E.cost.truckRates["India/South Asia"] : "?"}).` +
+        (econAtRef() ? "" : ` <b>Adjusted from the build\u2019s defaults.</b>`);
     }
     // Two distinct effects, and the second is easy to miss: the toggle discounts
     // the MAP by cost, and it also restricts the headline TOTAL to cells under the
     // $/tCO2 screen. Say both.
     const scr = E.cost && E.cost.screenUsdPerTco2;
     $("econ-readout").textContent = on
-      ? (scr ? `Total below restricted to cells under $${scr}/tCO\u2082, costed `
-              + `against each application\u2019s discounted lifetime carbon at `
-              + `${(E.cost.screenDiscount * 100).toFixed(0)}% \u2014 a unit cost, `
-              + `so it prices the largest application the drainage can carry. `
+      ? (scr ? `Footer total counts only cells under $${scr}/tCO\u2082 `
+              + `delivered (see Methods). `
              : "")
-        + "Hover the map for cost per tonne of rock and per tCO\u2082."
-      : "Off: the map shows physical potential only, and the total below is "
+        + "Hover the map for per-cell cost."
+      : "Off \u2014 the map shows physical potential; the footer total is "
         + "unrestricted.";
   }
 
@@ -1060,21 +1043,11 @@
      total recomputes live, so the size of the change is shown rather than asserted
      here. No number is hardcoded in this text. */
   function syncFlux() {
-    const om = FC.omega ? Number(FC.omega).toFixed(2) : "—";
     $("flux-hint").innerHTML = ceilOn
-      ? `<b>On — the shipped default.</b> Gross CO₂ is capped at `
-        + `q·[HCO₃⁻]<sub>max</sub>·44 — the carbon has to leave dissolved in the `
-        + `water that leaves, so it is bounded by carbonate saturation (calcite `
-        + `Ω = ${om}, Mg ${FC.mgMM ?? 1} mM) no matter how fast the rock dissolves. `
-        + `<i>Fraction weathered</i> stays uncapped on purpose: rock can dissolve `
-        + `without the carbon being exported. Independently corroborated as `
-        + `"carrying capacity" by Mayer et al. 2025 (preprint) — see Methods.`
-      : `<b>Off.</b> Nothing bounds the reported carbon by the water available `
-        + `to carry it, so the CO₂ layer becomes an upper limit on dissolution `
-        + `rather than carbon shown to leave the field — the map's pre-review `
-        + `historical behaviour. The limit is the shipped default; switching it `
-        + `off raises the level several-fold and changes which term limits most `
-        + `cropland. See Methods.`;
+      ? `<b>On — the default.</b> CO₂ is capped at what the drainage water `
+        + `can carry as bicarbonate (Mayer et al. 2025 agree — see Methods).`
+      : `<b>Off.</b> The CO₂ layer becomes an upper limit on dissolution, not `
+        + `carbon shown to leave the field — see Methods.`;
   }
 
   function syncPaddy() {
@@ -1082,16 +1055,11 @@
     if (!el) return;
     const af = E.paddyView ? (E.paddyView.areaFrac * 100).toFixed(0) : "?";
     el.innerHTML = paddyView
-      ? `<b>On.</b> Every cell with any paddy (${af}% of cropland area) is `
-        + `re-evaluated as if its fields were 100% paddy — flooded-soil pCO₂ `
-        + `for the cell’s observed inundation months lifts η<sub>DIC</sub> and `
-        + `the drainage ceiling. For assessing paddy projects, whose fields `
-        + `are all paddy while the cell average is not. Non-paddy cells are `
-        + `untouched (bit-identical).`
-      : `Off. Map cells average paddy and non-paddy fields, which understates `
-        + `flooded-soil chemistry for a project whose fields are all paddy. `
-        + `This view re-evaluates every paddy-bearing cell (${af}% of cropland `
-        + `area) at 100% paddy.`;
+      ? `<b>On.</b> Cells with any paddy (${af}% of cropland) are shown as `
+        + `100% paddy fields — the view a paddy project sees. Other cells are `
+        + `untouched.`
+      : `Shows paddy-bearing cells (${af}% of cropland) as 100% paddy fields, `
+        + `as a paddy project would see them.`;
   }
 
   function syncSliders() {
@@ -1855,19 +1823,13 @@
     const scr = econ.costExp > 0 && E.cost && E.cost.screenUsdPerTco2;
     $("stat-label").textContent = gt === null
       ? "cropland in scope"
-      : (scr
-          ? `steady-state gross removal holding ${E.feedstock.rateTHaYr} t/ha of `
-            + `rock${ceilOn ? " (less where the drainage limit binds)" : ""}, `
-            + `where delivered rock costs under `
-            + `$${E.cost.screenUsdPerTco2}/tCO\u2082 against each application\u2019s `
-            + `lifetime carbon at ${(E.cost.screenDiscount * 100).toFixed(0)}%, `
-            + `on ${gha.toFixed(2)} Gha`
-          : `steady-state gross removal holding ${E.feedstock.rateTHaYr} t/ha of `
-            + `rock${ceilOn ? " (less where the drainage limit binds)" : ""}, `
-            + `over ${gha.toFixed(2)} Gha of cropland`)
-        + (ceilOn ? "" : ", drainage limit not applied")
-        + (paddyView ? " — paddy-field view: cells with any paddy evaluated "
-                     + "at 100% paddy" : "");
+      : `steady-state gross removal \u00b7 ${E.feedstock.rateTHaYr} t/ha of `
+        + `rock held`
+        + (scr ? ` \u00b7 cells under $${E.cost.screenUsdPerTco2}/tCO\u2082 `
+               + `delivered` : "")
+        + ` \u00b7 ${gha.toFixed(2)} Gha`
+        + (ceilOn ? "" : " \u00b7 drainage limit OFF")
+        + (paddyView ? " \u00b7 paddy-field view" : "");
   }
 
   /* The two whole-sample statistics -- the stability sentence and the footer total
@@ -2070,10 +2032,7 @@
     });
     $("mafic-hint").innerHTML =
       `<span style="color:#8c7a63">\u25a0</span> GLiM mafic and ultramafic ` +
-      `outcrop, drawn on and off cropland. Where quarry coverage is thin this is ` +
-      `the better guide to whether feedstock is nearby \u2014 but outcrop is not ` +
-      `a quarry, and says nothing about whether the rock is permitted, crushed ` +
-      `or for sale.`;
+      `outcrop, on and off cropland. Outcrop is not a quarry \u2014 see Methods.`;
     // Drainage limit. The bound is shipped in the texture whether or not it is
     // applied, so this is a real switch rather than a request for a rebuild. A
     // top-level control since 2026-08-24, when the bound became the shipped

@@ -60,7 +60,8 @@ body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font); }
 .slider .name { font-size: 12.5px; }
 .slider .val { font-family: var(--mono); font-size: 11px; color: var(--accent); }
 .slider input[type=range] { width: 100%; margin: 5px 0 0; accent-color: var(--accent); }
-.slider .why { font-size: 11.5px; color: var(--ink3); margin-top: 2px; }
+.why { font-size: 11.5px; color: var(--ink3); line-height: 1.45; }
+.slider .why { margin-top: 2px; }
 
 /* advanced disclosure */
 #advanced summary {

@@ -5,6 +5,23 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Sidebar copy diet and a formatting bug
+
+The sidebar had drifted from the July convention (one short functional line
+per control group, rationale in Methods): the drainage-limit, paddy-view and
+economics hints had grown to paragraph length, and the footer label ran to
+three lines. All dynamic hints are back to one or two short sentences ending
+in "see Methods" where there is more to say; the assumption-slider captions
+are one line each; the footer label is now middot-separated fragments
+("steady-state gross removal - 30 t/ha of rock held - cells under $100/tCO2
+delivered - 0.27 Gha"), with " - drainage limit OFF" / " - paddy-field view"
+appended only in the non-default states. Nothing moved out of the app that
+was not already in the Methods modal or METHODOLOGY.md.
+
+One real bug: #econ-basis is a bare p.why outside any .slider, and .why was
+only styled as a descendant of .slider, so the delivered-cost basis line
+rendered at full body size. .why is now styled globally.
+
 ## A paddy-field view in the viewer
 
 For assessing paddy projects against a map built on cell means: an Advanced
