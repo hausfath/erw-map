@@ -37,6 +37,10 @@ Gate 13c REPORTED, not scored: on saturated (paddy) cells the mandated 50,000
         uatm lifts the ceiling above every anchor, and no measured paddy drainage
         DIC exists to check it against. Standing justification for field-data
         ask #6.
+Gate 13d The ceiling's Mg-explicit Davies solve reproduces all 54 independent
+        PHREEQC (wateq4f) cases of Mayer et al. 2025 Table S.1 within
+        [0.93, 1.02], with the expected small low bias from neglected ion
+        pairs, and matches their Fig. 4 temperature slope.
 
 Two gates fail, both informatively: 11 (the rate law over-predicts) and 6c (the
 archetypes' mineral modes do not mass-balance their stated oxides). Note that a
@@ -473,9 +477,11 @@ def gate8_browser_constants_match_python() -> None:
             problems.append("fluxCeiling.on differs")
         for key, val in (("omega", C.FLUX_CEILING_OMEGA),
                          ("omegaStrict", C.FLUX_CEILING_OMEGA_STRICT),
-                         ("fCa", C.FLUX_CEILING_F_CA)):
-            if abs(fc[key] - val) > 1e-9:
-                problems.append(f"fluxCeiling.{key} differs")
+                         ("mgMM", C.FLUX_CEILING_MG_MM)):
+            if key not in fc or abs(fc[key] - val) > 1e-9:
+                problems.append(f"fluxCeiling.{key} differs or missing")
+        if bool(fc.get("activities")) != bool(C.FLUX_CEILING_ACTIVITIES):
+            problems.append("fluxCeiling.activities differs")
 
     # Bilinear-interpolate the emitted table the way app.js does, and compare
     # against the exact integral at points deliberately BETWEEN grid nodes.
@@ -896,12 +902,14 @@ def gate13_flux_ceiling_chemistry() -> None:
     Omega = 1 must reproduce that, which tests the algebra, the calcite constant
     and the charge-balance coupling in one shot.
 
-    Neglecting activity coefficients and the CaHCO3+ ion pair biases the result
-    LOW by ~10-20% at these ionic strengths, so the tolerance is one-sided-ish
-    and the ceiling that ships is mildly conservative toward the flux it bounds.
+    The textbook figure is the infinite-dilution one, so activities are OFF
+    here to compare like with like (the shipped ceiling has them ON; gate 13d
+    validates that path against PHREEQC). Without them the CaHCO3+ ion pair and
+    activity neglect bias the result LOW by ~10-20% at these ionic strengths,
+    so the tolerance is one-sided-ish.
     """
     a = float(K.alkalinity_ceiling_mol_l(C.PCO2_ATMOSPHERIC_UATM, 298.15,
-                                        omega=1.0, f_ca=1.0))
+                                        omega=1.0, f_ca=1.0, activities=False))
     K1, _, KH, _ = K.carbonate_constants(298.15)
     pH = -math.log10(K1 * KH * C.PCO2_ATMOSPHERIC_UATM * 1e-6 / a)
     ok = (0.85e-3 <= a <= 1.05e-3) and (8.0 <= pH <= 8.4)
@@ -986,6 +994,65 @@ def gate13c_paddy_ceiling_is_unvalidated() -> None:
            f"{min(probes):.2f}-{max(probes):.2f} mmol/L against an anchor "
            f"envelope topping out at {hi_env:.2f}; no measured paddy drainage "
            f"DIC exists to check it. Unvalidated on ~7.6% of cropland area")
+
+
+def gate13d_ceiling_reproduces_mayer_phreeqc() -> None:
+    """The ceiling's carbonate solve must reproduce an independent PHREEQC grid.
+
+    Mayer et al. 2025 (doi:10.21203/rs.3.rs-7811095/v1, Table S.1, transcribed
+    in tests/fixtures/mayer2025_tableS1.csv) ran phreeqci 3.7.3 / wateq4f over
+    54 open-system cases: pCO2 x calcite SI x fixed Mg, at 25 C. That is
+    exactly the system alkalinity_ceiling_mol_l solves in its Mg-explicit form,
+    so every case is a free external check of the algebra, the constants, and
+    the Davies activity iteration at once -- by the strongest independent
+    geochemistry code there is, run by people who did not know this closed
+    form exists.
+
+    Tolerances: every case within [0.93, 1.02] of PHREEQC total alkalinity,
+    median within [0.95, 1.00], and the model's own pH within +/-0.20. The
+    expected signature is a SMALL LOW bias (neglected CaHCO3+/MgHCO3+ ion
+    pairs), so a median above 1.00 would mean something is wrong in the other
+    direction, not extra credit. Also asserts the temperature slope at their
+    central case: alkalinity must fall 22-30% from 5 C to 25 C (their Fig. 4
+    reports ~26% for DIC).
+    """
+    import csv
+    fx = Path(__file__).parent.parent / C.MAYER_2025_FIXTURE
+    if not fx.exists():
+        record("13d. Ceiling vs Mayer et al. 2025 PHREEQC grid", None,
+               f"fixture missing: {fx}")
+        return
+    rows = [r for r in csv.DictReader(
+        (ln for ln in fx.read_text().splitlines() if not ln.startswith("#")))]
+    T = 298.15
+    K1, _, KH, _ = (float(x) for x in K.carbonate_constants(T))
+    ratios, ph_errs = [], []
+    for r in rows:
+        a_ph = float(r["alk_mg_hco3_l"]) / 61.0168e3        # mg HCO3 -> mol/L
+        a = float(K.alkalinity_ceiling_mol_l(
+            float(r["pco2"]), T, omega=10.0 ** float(r["si"]),
+            mg_mM=float(r["mg_mM"]), activities=True))
+        ratios.append(a / a_ph)
+        ph_errs.append(-math.log10(K1 * KH * float(r["pco2"]) * 1e-6 / a)
+                       - float(r["ph"]))
+    ratios.sort()
+    med = ratios[len(ratios) // 2]
+    worst_ph = max(abs(e) for e in ph_errs)
+    ok = (len(rows) == 54 and ratios[0] >= 0.93 and ratios[-1] <= 1.02
+          and 0.95 <= med <= 1.00 and worst_ph <= 0.20)
+
+    mc = C.MAYER_2025_CENTRAL_CASE
+    a5 = float(K.alkalinity_ceiling_mol_l(mc["pco2_uatm"], 278.15,
+               omega=10.0 ** mc["si"], mg_mM=mc["mg_mM"]))
+    a25 = float(K.alkalinity_ceiling_mol_l(mc["pco2_uatm"], 298.15,
+                omega=10.0 ** mc["si"], mg_mM=mc["mg_mM"]))
+    slope = 1.0 - a25 / a5
+    ok = ok and (0.22 <= slope <= 0.30)
+    record("13d. Ceiling vs Mayer et al. 2025 PHREEQC grid", ok,
+           f"{len(rows)} cases: ours/PHREEQC {ratios[0]:.3f}-{ratios[-1]:.3f}, "
+           f"median {med:.3f} (expected small LOW bias: ion pairs neglected); "
+           f"pH within +/-{worst_ph:.2f}; 5->25 C alkalinity slope "
+           f"-{slope:.0%} vs their Fig. 4 ~-26%")
 
 
 def gate14_dissolution_table_matches_exact() -> None:
@@ -1121,6 +1188,7 @@ def main() -> int:
                gate13_flux_ceiling_chemistry,
                gate13b_flux_ceiling_within_observed_range,
                gate13c_paddy_ceiling_is_unvalidated,
+               gate13d_ceiling_reproduces_mayer_phreeqc,
                gate14_dissolution_table_matches_exact,
                gate15_no_grind_double_count):
         try:

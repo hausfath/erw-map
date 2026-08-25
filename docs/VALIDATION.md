@@ -241,23 +241,29 @@ observationally. That ratio is the argument to put to operators.
 ## 5. Known asymmetries and open audit items
 
 - **The drainage-concentration ceiling is OFF pending external review (2026-08-03),
-  so the shipped map violates a bound this repo computes and documents.** On 91.0%
+  so the shipped map violates a bound this repo computes and documents.** On 95.1%
   of cropland area the CO₂ layer exceeds what the drainage could carry, by a median
-  factor of 2.9×. (Both figures fell when the drainage variable changed from
-  groundwater recharge to total runoff in August 2026 — the ceiling scales with `q`,
-  so a larger water flux raises the bound faster than it raises the rate. On
-  recharge it was 98.9% of area at 6.2×.) This is a deliberate, reported state, not an oversight: gate 12
+  factor of 3.8× (at the Mayer-central parameters adopted 2026-08-24: calcite
+  SI 0.5, Mg 1 mM, Davies activities; under the earlier Ω = 10 defaults it was
+  91.0% at 2.9×, and on the pre-August recharge drainage 98.9% at 6.2×). This is a
+  deliberate, reported state, not an oversight: gate 12
   prints the exceedance on every build, the Methods panel carries a flagbox, the
   viewer exposes the bound as a live toggle under Advanced so a reader can see its
   consequence without a rebuild, and `FLUX_CEILING_ON = True` restores enforcement
   in the derived products in one line. The reason to hold it
   is that it moves the absolute level several-fold and that judgement is worth
   outside scrutiny — but while it is off, **no absolute CO₂ figure from this map
-  should be quoted without that caveat.**
+  should be quoted without that caveat.** The outside scrutiny has begun to
+  arrive: Mayer et al. 2025 (doi:10.21203/rs.3.rs-7811095/v1, Terradot preprint)
+  independently publish the same bound as "carrying capacity", our carbonate
+  solve reproduces their 54 PHREEQC cases to 0.95–1.00 (gate 13d), and our grid
+  evaluated under their central configuration gives 0.359 GtCO₂/yr against their
+  published 0.34 — but it is one company-funded preprint, not yet peer review.
 - **The ceiling-on total now sits INSIDE its pre-registered Tier 2 band, and the
   band was never widened to achieve that.** With the ceiling imposed, global gross
-  removal is **0.910 GtCO₂/yr** against a pre-registered 0.5–4.0; with it off, 2.488,
-  also inside. Reported by gate 2b in the build, not enforced.
+  removal is **0.711 GtCO₂/yr** against a pre-registered 0.5–4.0 (0.910 under the
+  pre-2026-08-24 Ω = 10 parameters); with it off, 2.432, also inside. Reported by
+  gate 2b in the build, not enforced.
 
   This is a reversal worth stating plainly. Through 2026-08-03 the ceiling-on total
   was **0.360 GtCO₂/yr**, below the band, and this document argued at length that
@@ -295,17 +301,18 @@ observationally. That ratio is the argument to put to operators.
   per-tonne efficiency is **sublinear** in application rate, so rescaling any trial
   to the map's rate by a simple ratio manufactures agreement that does not exist. In
   either direction. The one comparison that is rate-insensitive here is the flux
-  ceiling itself — the map's capped median moves only **0.478 → 0.510 tCO₂/ha/yr
-  from 20 to 30 t/ha**, because the ceiling does not scale with how much rock is
-  applied. (It was flat at 0.220 for both rates until the drainage variable was
-  corrected in August 2026; total runoff raises the ceiling, so it now binds on 91.0%
-  of area rather than 98.9% and leaves the rate a little room. Still an 8.6% gain in
-  capped global total for 50% more rock.) So conclusions that rest on the ceiling are
+  ceiling itself — the map's capped median moves only **0.385 → 0.396 tCO₂/ha/yr
+  from 20 to 30 t/ha** (+2.7%), because the ceiling does not scale with how much
+  rock is applied. (It was flat at 0.220 for both rates until the drainage variable
+  was corrected in August 2026; at the Mayer-central parameters the cap binds on
+  95.1% of area. A 6.3% gain in capped global total for 50% more rock.) So
+  conclusions that rest on the ceiling are
   nearly unaffected by the rate change; conclusions
   that rest on comparing absolute tonnages to trials are not, and need matched rates.
 - **Seven of the eight verified deliveries report CDR/ha above their own drainage-
-  concentration ceiling, by 0.6–7.8×** (1.3–3.9× restricting to the three
-  independently measured rows). The eighth is the wettest site in the set and its
+  concentration ceiling, by 0.8–10.2×** (1.6–4.9× restricting to the three
+  independently measured rows; at the Mayer-central ceiling parameters of
+  2026-08-24). The eighth is the wettest site in the set and its
   reported CDR *is* carryable in its own drainage. On the recharge-based drainage
   used until August 2026 the range was 3–19×, and all eight exceeded — so the
   qualitative claim weakened when the drainage variable was corrected, and

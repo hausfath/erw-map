@@ -127,9 +127,12 @@ GLASS_N_H_SENSITIVITY = (0.0, 1.0 / 3.0)   # pH-invariant (Al-buffered) .. appar
 # Verified: reproduces the standard 25 C values to <=0.0005 log units
 #   log K1 -6.352, log K2 -10.329, log KH -1.468, log Kw -14.000
 #
-# Ionic-strength (activity) corrections are deliberately omitted: soil-solution
-# ionic strength is 0.001-0.05 M and the correction is small relative to the
-# structural uncertainties. Documented in docs/METHODOLOGY.md.
+# Ionic-strength (activity) corrections: omitted in eta_DIC, where they enter
+# numerator and denominator alike and largely cancel; APPLIED (Davies, since
+# 2026-08-24) in the drainage-concentration ceiling, where they act once on the
+# level and their omission was a quantified 15% (median) low bias against
+# PHREEQC -- see FLUX_CEILING_ACTIVITIES and gate 13d. Documented in
+# docs/METHODOLOGY.md.
 # ---------------------------------------------------------------------------
 PB82_SOURCE = "Plummer & Busenberg 1982, GCA 46, 1011-1040"
 PB82_K1 = (-356.3094, -0.06091964, 21834.37, 126.8339, -1_684_915.0)
@@ -1167,8 +1170,29 @@ DAMKOHLER_TAU_SOURCE = (
 # observed to be negligible at Omega < 10" and run their own model over
 # Omega = 5-25, and soils carry far more DOC than rivers. Both are reported.
 #
-# FIVE INDEPENDENT ANCHORS on the resulting 3.0-6.5 mmol/L, none sharing
-# assumptions with the closed form:
+# EXTERNAL CORROBORATION, 2026-08-24: Mayer et al. (Terradot; Research Square
+# preprint doi:10.21203/rs.3.rs-7811095/v1, posted 2025-12-16) publish exactly
+# this bound as "carrying capacity": J_CDR = recharge x [DIC]_max, with
+# [DIC]_max from PHREEQC at fixed soil pCO2 (5,000-20,000 ppmv observed range),
+# calcite SI 0-1 (= our Omega 1-10, independently chosen), Mg 0-5 mM, and
+# temperature. Their global "maximum efficient CDR" is 0.15-0.85 GtCO2/yr on
+# cropland (central 0.34). Our closed form, with the Davies activity correction
+# added, reproduces all 54 of their PHREEQC cases to 0.95-1.00 (median 0.974)
+# -- gate 13d asserts it from tests/fixtures/mayer2025_tableS1.csv. The shipped
+# parameters below sit at THEIR central case (SI 0.5 after Buckingham &
+# Henderson 2024's observed saturated-to-slightly-supersaturated pore waters;
+# Mg 1 mM after Vienne 2022 / Amann 2020 / aglime porewater observations),
+# replacing the old Omega = 10, f_ca = 0.5, no-activities default. Their
+# framing is also adopted: this is the MAXIMUM EFFICIENT bound -- where calcite
+# precipitation begins, halving marginal efficiency (1 Ca then carries 1 HCO3-
+# instead of 2) -- not an absolute cap on CDR. Caveats: company-funded preprint,
+# not yet peer-reviewed; their J_CDR counts CO2(aq) in exported DIC (~5%
+# generous, ours counts alkalinity only) and nets out no BAU DIC export; and
+# their water flux is groundwater RECHARGE, our qr sensitivity case, not qtot
+# (see the qr/qtot bracket under DRAINAGE_VARIABLE).
+#
+# FIVE INDEPENDENT ANCHORS on the resulting 3.7-7.1 mmol/L (Omega 1-10 at
+# 4,000 uatm, 15 C), none sharing assumptions with the closed form:
 #   Zhang et al. 2022 riverine carbon transport potential, back-converted
 #     (7.1-21.3 GtCO2/yr over 37,288 km3/yr global discharge)   4.3-13.0 mmol/L
 #   Hamilton et al. 2007 Midwest agricultural TILE DRAINAGE and
@@ -1202,8 +1226,8 @@ DAMKOHLER_TAU_SOURCE = (
 # WHAT STAYS LIVE WHILE IT IS OFF, deliberately:
 #   - the ceiling is still computed, still written to tex2.b, and still emitted in
 #     engine_constants.js, so re-enabling needs no data migration
-#   - gate 12 still REPORTS the exceedance (98.9% of cropland area, median 6.2x)
-#     instead of vanishing along with the cap
+#   - gate 12 still REPORTS the exceedance (95.1% of cropland area, median 3.8x
+#     at the Mayer-central parameters) instead of vanishing along with the cap
 #   - the Methods panel carries a flagbox saying the CO2 layer is an upper bound on
 #     dissolution rather than carbon shown to leave
 #   - section 11 of analyse_deployments.py still runs the same test against the
@@ -1223,27 +1247,66 @@ DAMKOHLER_TAU_SOURCE = (
 # unreviewed bound the headline figure, which is the thing the review exists to
 # avoid; the toggle lets anyone see the consequence without that.
 #
-# The one thing to know if you re-enable: gate 2b now reports the global total
-# INSIDE its pre-registered 0.5-4.0 band (0.910 GtCO2/yr). It was below the band
-# until the drainage variable was corrected to total runoff -- see
+# The one thing to know if you re-enable: gate 2b reports the global total
+# INSIDE its pre-registered 0.5-4.0 band (~0.71 GtCO2/yr year-1 basis, 0.696 on
+# the steady-state footer basis, at the Mayer-central parameters adopted
+# 2026-08-24; it was 0.910 under the old Omega=10/f_ca defaults). It was below
+# the band until the drainage variable was corrected to total runoff -- see
 # DRAINAGE_VARIABLE, which moved the bounded total 2.5x.
 FLUX_CEILING_ON = False
-FLUX_CEILING_OMEGA = 10.0                  # shipped default, kinetically inhibited
+# Omega = 10^0.5 (calcite SI = 0.5) is the shipped central since 2026-08-24 --
+# Mayer et al. 2025's central case, grounded in Buckingham & Henderson 2024
+# (STOTEN 907, 167701): pore waters under aglime/basalt amendment observed
+# saturated to slightly supersaturated. The old default of 10 (Zhang et al.
+# 2022's river-inhibition threshold) becomes the permissive end of the range:
+# a soil-porewater observation beats a river-column inhibition argument for a
+# soil ceiling. Shipped ceiling at 4,000 uatm: 5.78 / 5.00 / 4.37 mmol/L at
+# 5 / 15 / 25 C (strict SI 0: 3.26-4.15; permissive SI 1: 6.14-8.33).
+FLUX_CEILING_OMEGA = 10.0 ** 0.5           # shipped central, calcite SI = 0.5
 FLUX_CEILING_OMEGA_STRICT = 1.0            # thermodynamic reading, reported alongside
+FLUX_CEILING_OMEGA_PERMISSIVE = 10.0       # Zhang 2022 river-inhibition reading
 FLUX_CEILING_OMEGA_RANGE = (1.0, 10.0)
-# Share of the divalent-cation charge carried by Ca rather than Mg. Only Ca
-# constrains calcite; magnesite is kinetically inhibited at surface temperature,
-# so a lower f_Ca RAISES the ceiling. Basalt releases Ca and Mg in roughly equal
-# charge, so 0.5. Sensitivity at 10,000 uatm, Omega = 1: f_Ca 0.9 -> 3.38,
-# 0.5 -> 4.11, 0.2 -> 5.57, 0.05 -> 8.85 mmol/L.
+# Dissolved Mg, mM, held EXPLICIT rather than as a charge share since
+# 2026-08-24 (the structure of Mayer et al. 2025): Mg has no solubility control
+# at surface temperature, so it is set by feedstock release and BOUNDED BY
+# OBSERVATION -- ~1 mM in basalt mesocosm leachate (Vienne et al. 2022), up to
+# 5 mM for olivine-rich dunite (Amann et al. 2020), 0.3-1 mM under regular
+# aglime (Oh & Raymond 2006, Hamilton et al. 2007). Higher Mg raises the
+# ceiling (more of the charge escapes the calcite constraint): at 4,000 uatm,
+# 15 C the range 0 -> 5 mM spans 4.16 -> 10.8 mmol/L. The Mg-rich-feedstock
+# upside Mayer et al. flag in their discussion is therefore representable here
+# as mg_mM, and 1 mM is deliberately basalt-typical, not olivine-optimistic.
+FLUX_CEILING_MG_MM = 1.0
+FLUX_CEILING_MG_MM_RANGE = (0.0, 5.0)
+# Davies activity coefficients (iterated on I = 1.5*[HCO3-]) since 2026-08-24.
+# Without them the closed form runs 15% low at the median (25% worst) against
+# PHREEQC; with them 0.95-1.00 (gate 13d). The residual is neglected ion
+# pairing, so the ceiling stays mildly conservative.
+FLUX_CEILING_ACTIVITIES = True
+# LEGACY charge-share structure, superseded by FLUX_CEILING_MG_MM: passing
+# f_ca ties Mg to Ca ([Ca] = f_ca*A/2) with no observational bound on the
+# implied Mg. Kept because the textbook benchmark (gate 13, f_ca = 1 = no Mg)
+# and older sensitivity notes use it. Not used by the build.
 FLUX_CEILING_F_CA = 0.5
 FLUX_CEILING_F_CA_RANGE = (0.2, 0.9)
 FLUX_CEILING_SOURCE = (
     "calcite saturation at the cell's own soil pCO2 and temperature, with "
-    "charge balance 2[Ca]+2[Mg] = [HCO3-]; Plummer & Busenberg 1982 constants. "
-    "Omega < 10 inhibition after Zhang et al. 2022, Limnol. Oceanogr. 67, "
-    "doi:10.1002/lno.12244"
+    "charge balance 2[Ca]+2[Mg] = [HCO3-], [Mg] = 1 mM explicit, Davies "
+    "activities; Plummer & Busenberg 1982 constants. Central calcite SI = 0.5 "
+    "and Mg = 1 mM follow Mayer et al. 2025 (doi:10.21203/rs.3.rs-7811095/v1), "
+    "validated against their 54 PHREEQC cases (gate 13d); Omega range 1-10 "
+    "spans the thermodynamic reading to Zhang et al. 2022's inhibition bound"
 )
+# Mayer et al. 2025 reference values, for the replication diagnostic in
+# build_v0 and gate 13d. Global "maximum efficient CDR" on CROPLAND (Dynamic
+# World 2024, 13.4 Mkm2), GtCO2/yr: central = their simulation 26 (pCO2
+# 10,000 ppmv, SI 0.5, Mg 1 mM) over Mohan et al. 2018 recharge and MODIS
+# 2024 surface temperature; range = their full 54-case geochemical grid.
+MAYER_2025_DOI = "10.21203/rs.3.rs-7811095/v1"
+MAYER_2025_GLOBAL_GT = {"central": 0.34, "lo": 0.15, "hi": 0.85}
+MAYER_2025_CENTRAL_CASE = {"pco2_uatm": 10_000.0, "si": 0.5, "mg_mM": 1.0}
+MAYER_2025_CROPLAND_MKM2 = 13.4
+MAYER_2025_FIXTURE = "tests/fixtures/mayer2025_tableS1.csv"
 # Anchors above, as data so the app and the docs cannot drift from this file.
 FLUX_CEILING_ANCHORS_MMOL_L = {
     "Zhang 2022 riverine CTP, back-converted": (4.3, 13.0),

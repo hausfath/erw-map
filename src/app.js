@@ -1039,21 +1039,21 @@
      total recomputes live, so the size of the change is shown rather than asserted
      here. No number is hardcoded in this text. */
   function syncFlux() {
-    const om = FC.omega ?? "—";
+    const om = FC.omega ? Number(FC.omega).toFixed(2) : "—";
     $("flux-hint").innerHTML = ceilOn
       ? `<b>On.</b> Gross CO₂ is capped at q·[HCO₃⁻]<sub>max</sub>·44 — `
         + `the carbon has to leave dissolved in the water that leaves, so it is `
-        + `bounded by carbonate saturation (calcite Ω = ${om}) no matter how fast `
-        + `the rock dissolves. <i>Fraction weathered</i> stays uncapped on purpose: `
-        + `rock can dissolve without the carbon being exported. Watch the total below. `
-        + `<b>This bound is out for review by the ERW community and is not a settled `
-        + `part of the model</b> — see Methods.`
+        + `bounded by carbonate saturation (calcite Ω = ${om}, Mg ${FC.mgMM ?? 1} mM) `
+        + `no matter how fast the rock dissolves. <i>Fraction weathered</i> stays `
+        + `uncapped on purpose: rock can dissolve without the carbon being exported. `
+        + `Watch the total below. Independently corroborated as "carrying capacity" `
+        + `by Mayer et al. 2025 (preprint) — see Methods.`
       : `<b>Off — the shipped default.</b> Nothing bounds the reported carbon by `
         + `the water available to carry it, so the CO₂ layer is an upper limit on `
         + `dissolution rather than carbon shown to leave the field. Turning this on `
         + `applies the drainage-concentration ceiling; it cuts the level several-fold `
-        + `and changes which term limits most cropland. Held off pending outside `
-        + `review — see Methods.`;
+        + `and changes which term limits most cropland. Independently corroborated `
+        + `by Mayer et al. 2025 (preprint); still held off by default — see Methods.`;
   }
 
   function syncSliders() {
@@ -1611,11 +1611,17 @@
           ${E.cost.tortuosity} road tortuosity</td></tr>
         <tr><td>D_w (transport limitation)</td><td>${p.dw ? p.dw.value : "?"} m/yr
           (published range ${p.dw ? p.dw.range.join("–") : "?"})</td></tr>
-        <tr><td>Drainage ceiling, calcite Ω${ceilOn ? "" : " (not applied)"}</td><td>${FC.omega ?? "—"}
-          (strict case ${FC.omegaStrict ?? "—"}; precipitation is negligible below
-          Ω&nbsp;≈&nbsp;10, so the shipped value is the generous one)</td></tr>
-        <tr><td>Ca share of divalent charge</td><td>${FC.fCa ?? "—"}
-          (only Ca constrains calcite; a lower share raises the ceiling)</td></tr>
+        <tr><td>Drainage ceiling, calcite Ω${ceilOn ? "" : " (not applied)"}</td><td>${FC.omega ? Number(FC.omega).toFixed(2) : "—"}
+          (SI&nbsp;0.5, the central case of Mayer et&nbsp;al.&nbsp;2025 and the
+          saturation observed in amended pore waters; strict case
+          ${FC.omegaStrict ?? "—"}, permissive Ω&nbsp;=&nbsp;10)</td></tr>
+        <tr><td>Dissolved Mg</td><td>${FC.mgMM ?? "—"}&nbsp;mmol/L
+          (explicit, basalt-typical; Mg escapes the calcite constraint, so
+          Mg-rich feedstocks raise the ceiling — 5&nbsp;mmol/L for olivine
+          roughly doubles it)</td></tr>
+        <tr><td>Activity coefficients</td><td>${FC.activities ? "Davies, iterated"
+          : "none"} — the solve reproduces all 54 PHREEQC cases of
+          Mayer et&nbsp;al.&nbsp;2025 to 0.95–1.00 (gate&nbsp;13d)</td></tr>
       </table>
 
       <h3>Known limitations</h3>
@@ -1640,7 +1646,16 @@
       is transport-limited rather than raising the tonnage. At
       ${E.feedstock.rateTHaYr}&nbsp;t/ha the median cell realises just
       ${FC.realisedShareOfStoich ? (FC.realisedShareOfStoich * 100).toFixed(1) : "—"}%
-      of the feedstock's stoichiometric CO₂ potential as exported carbon.</p>`
+      of the feedstock's stoichiometric CO₂ potential as exported carbon.
+      This is a <i>maximum-efficient</i> bound, not an absolute one: past it,
+      calcite precipitation does not stop removal but halves its marginal
+      efficiency (a precipitated Ca carries one carbon instead of balancing
+      two bicarbonates). The same bound — recharge × maximum DIC — is
+      published independently as "carrying capacity" by
+      <a href="https://doi.org/${FC.mayerDoi ?? "10.21203/rs.3.rs-7811095/v1"}"
+      target="_blank" rel="noopener">Mayer et&nbsp;al.&nbsp;2025</a>
+      (Terradot; preprint), whose 54 PHREEQC cases this model's carbonate
+      solve reproduces to 0.95–1.00.</p>`
       : `<div class="flagbox"><p><b>A drainage limit on the carbon is computed but
       deliberately NOT applied, pending review by the wider ERW community.</b> The
       carbon reported here has to leave the field dissolved in the water that leaves
@@ -1653,8 +1668,16 @@
       should be read as an upper bound on dissolution, not as carbon that can be
       shown to leave. The bound is implemented, gated and documented; it is switched
       off only because it moves the map's absolute level by several-fold and that is
-      worth outside scrutiny before it ships. See the changelog for the analysis and
-      how to re-enable it.</p></div>`}
+      worth outside scrutiny before it ships. That scrutiny has begun to arrive:
+      <a href="https://doi.org/${FC.mayerDoi ?? "10.21203/rs.3.rs-7811095/v1"}"
+      target="_blank" rel="noopener">Mayer et&nbsp;al.&nbsp;2025</a> (Terradot;
+      preprint, not yet peer-reviewed) independently publish the same bound as
+      "carrying capacity" — recharge × maximum DIC at calcite saturation — and
+      this model's carbonate solve reproduces their 54 PHREEQC cases to
+      0.95–1.00 (gate&nbsp;13d). Its parameters now sit at their central case.
+      They frame it as the <i>maximum-efficient</i> level: past it, calcite
+      precipitation halves marginal efficiency rather than stopping removal.
+      See the changelog for the analysis and how to re-enable it.</p></div>`}
       <p><b>The kinetics over-predict an independent laboratory test.</b> Against
       Gudbrandsson et al. (2011) crystalline-basalt dissolution (pH 2–11,
       5–75 °C), the Ca+Mg charge sum the map actually uses over-predicts by

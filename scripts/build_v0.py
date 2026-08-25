@@ -379,10 +379,11 @@ def main() -> int:
     # saturation with pH ENDOGENOUS, and not the cell's pre-treatment pH.
     #
     # Temperature: the annual mean, because we have no monthly q to weight by.
-    # The dependence is weak (3.56/3.03/2.58 mmol/L at 5/15/25 C) and runs the
-    # opposite way to the rate law. Drainage is seasonally biased toward cool wet
-    # months, when the ceiling is HIGHER, so an annual mean is mildly strict --
-    # by less than the 1.4x that the full 5-25 C span spans.
+    # The dependence is weak (5.78/5.00/4.37 mmol/L at 5/15/25 C at the shipped
+    # central case -- a 26% fall over the span, matching Mayer et al. 2025
+    # Fig. 4) and runs the opposite way to the rate law. Drainage is seasonally
+    # biased toward cool wet months, when the ceiling is HIGHER, so an annual
+    # mean is mildly strict -- by less than the 1.3x the full 5-25 C span spans.
     T_ceil_K = (np.nanmean(soilT_m, axis=0) + 273.15) if monthly else T_K
     ceiling = K.flux_ceiling_t_ha_yr(q, pco2, T_ceil_K)
     ceiling_strict = K.flux_ceiling_t_ha_yr(
@@ -805,6 +806,34 @@ def main() -> int:
               f"-- the ceiling does not support a warm-climate advantage, because "
               f"C_eq FALLS with warming while the rate law rises")
 
+    # ---- Mayer et al. 2025 replication, REPORTED: evaluate OUR grid under
+    # THEIR configuration and compare with their published global. Their
+    # carrying capacity is recharge x [DIC]_max at uniform pCO2 = 10,000 uatm,
+    # calcite SI = 0.5, Mg = 1 mM (simulation 26), integrated over cropland.
+    # Closest match here: q = WaterGAP recharge (qr, their water-flux
+    # definition; Mohan et al. 2018 is a different recharge product but the
+    # same quantity), our annual-mean ceiling temperature, our cropland mask
+    # (SPAM-based, vs their Dynamic World 13.4 Mkm2). Datasets differ on every
+    # axis, so this is a corroboration check with a wide lens, not a gate:
+    # PASS means inside their full 54-case geochemical envelope.
+    q_mayer = q_sens if q_sens is not None else _load_drainage("qr")
+    if q_mayer is not None:
+        mc = C.MAYER_2025_CENTRAL_CASE
+        ceil_mayer = K.flux_ceiling_t_ha_yr(
+            q_mayer, mc["pco2_uatm"], T_ceil_K,
+            omega=10.0 ** mc["si"], mg_mM=mc["mg_mM"])
+        gt_mayer = float((ha * np.nan_to_num(ceil_mayer[m])).sum() / 1e9)
+        mg_ref = C.MAYER_2025_GLOBAL_GT
+        inside_m = mg_ref["lo"] <= gt_mayer <= mg_ref["hi"]
+        print(f"    Mayer et al. 2025 replication (their central case, sim 26, "
+              f"over OUR grid with qr recharge): {gt_mayer:.3f} GtCO2/yr vs "
+              f"their published central {mg_ref['central']:.2f} "
+              f"(range {mg_ref['lo']:.2f}-{mg_ref['hi']:.2f})  "
+              f"[{'inside their envelope' if inside_m else 'OUTSIDE their envelope'}]"
+              f"  doi:{C.MAYER_2025_DOI}")
+    else:
+        print("    Mayer et al. 2025 replication SKIPPED: no recharge (qr) tif")
+
     # ---- Quarry overlay: copy the point list into src/ so the page can draw it
     qp = INTERIM / "quarry_points.json"
     if qp.exists():
@@ -1224,7 +1253,9 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
             "omega": C.FLUX_CEILING_OMEGA,
             "omegaStrict": C.FLUX_CEILING_OMEGA_STRICT,
             "omegaRange": list(C.FLUX_CEILING_OMEGA_RANGE),
-            "fCa": C.FLUX_CEILING_F_CA,
+            "mgMM": C.FLUX_CEILING_MG_MM,
+            "activities": C.FLUX_CEILING_ACTIVITIES,
+            "mayerDoi": C.MAYER_2025_DOI,
             "source": C.FLUX_CEILING_SOURCE,
             "anchors": {k: list(v)
                         for k, v in C.FLUX_CEILING_ANCHORS_MMOL_L.items()},

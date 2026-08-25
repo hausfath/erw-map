@@ -5,6 +5,53 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## The drainage ceiling gets its external anchor: Mayer et al. 2025
+
+The community weigh-in the ceiling was held out for has begun to arrive.
+Mayer et al. 2025 (Terradot's science team; Research Square preprint,
+doi:10.21203/rs.3.rs-7811095/v1) independently publish the same bound as
+"carrying capacity" -- J_CDR = recharge x [DIC]_max, with the maximum DIC set
+by calcite solubility at fixed soil pCO2, saturation index and dissolved Mg,
+computed in PHREEQC over a 54-case grid. Their global "maximum efficient CDR"
+on cropland is 0.15-0.85 GtCO2/yr, central 0.34. Three things followed here:
+
+1. **Validation, both directions.** Our closed-form carbonate solve, extended
+   with Davies activity coefficients, reproduces all 54 of their PHREEQC
+   (wateq4f) cases to **0.949-0.996** (median 0.975), pH within +/-0.19, and
+   matches their Fig. 4 temperature slope (-26% from 5 to 25 C). New gate 13d
+   asserts this permanently from tests/fixtures/mayer2025_tableS1.csv. And
+   integrating OUR grid under THEIR central configuration (recharge, uniform
+   10,000 uatm, SI 0.5, Mg 1 mM) gives **0.359 GtCO2/yr against their
+   published 0.34** -- 6% agreement from disjoint datasets (WaterGAP vs Mohan
+   recharge, SPAM vs Dynamic World cropland, soil-T climatology vs MODIS).
+   The build reports this replication on every run.
+2. **The solve got better.** Davies activities (iterated on I = 1.5A) fix a
+   quantified 15%-median low bias against PHREEQC; dissolved Mg is now an
+   explicit, observation-bounded parameter (1 mM central, 0-5 mM range, the
+   dominant sensitivity in their grid and the representable "olivine upside")
+   instead of the old f_ca charge share, whose implied Mg tracked the ceiling
+   upward without an observational bound.
+3. **Parameters re-centred on their central case.** Calcite SI 0.5 (observed
+   saturated-to-slightly-supersaturated amended pore waters, Buckingham &
+   Henderson 2024) replaces Omega = 10 (Zhang 2022's river-inhibition
+   threshold), which becomes the permissive end. Net effect of all three
+   changes on the would-be ceiling: median [HCO3-]_max 5.09 mmol/L at the
+   cropland median (was ~6.5); the cap would bind on 95.1% of area (was
+   91.0%) at a median exceedance of 3.8x (was 2.9x); ceiling-applied global
+   gross 0.711 GtCO2/yr year-1 (was 0.910), 0.696 on the footer's
+   steady-state basis (was 0.871).
+
+Framing adopted from them, stated in the Methods modal and the toggle copy:
+this is the MAXIMUM-EFFICIENT level, not an absolute cap -- past it, calcite
+precipitation halves marginal efficiency rather than stopping removal.
+Differences kept, also stated: our q is total runoff (their recharge is our
+qr sensitivity), our export counts alkalinity only (theirs includes ~5%
+CO2(aq)), our pCO2 is per-cell rather than a uniform scenario. FLUX_CEILING_ON
+stays False -- one company-funded preprint is corroboration, not yet the
+review the hold was for -- but the toggle's "out for review" copy now points
+at the first arriving review. Caveat carried everywhere the preprint is
+cited: all six authors hold Terradot equity, and it is not yet peer-reviewed.
+
 ## Wheel zoom anchors on the cursor
 
 Scroll zoom now keeps the geographic point under the cursor fixed, instead of

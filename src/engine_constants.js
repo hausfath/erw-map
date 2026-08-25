@@ -187,14 +187,16 @@ window.ERW = {
       "lo": -4.0,
       "hi": 0.3
     },
-    "omega": 10.0,
+    "omega": 3.1622776601683795,
     "omegaStrict": 1.0,
     "omegaRange": [
       1.0,
       10.0
     ],
-    "fCa": 0.5,
-    "source": "calcite saturation at the cell's own soil pCO2 and temperature, with charge balance 2[Ca]+2[Mg] = [HCO3-]; Plummer & Busenberg 1982 constants. Omega < 10 inhibition after Zhang et al. 2022, Limnol. Oceanogr. 67, doi:10.1002/lno.12244",
+    "mgMM": 1.0,
+    "activities": true,
+    "mayerDoi": "10.21203/rs.3.rs-7811095/v1",
+    "source": "calcite saturation at the cell's own soil pCO2 and temperature, with charge balance 2[Ca]+2[Mg] = [HCO3-], [Mg] = 1 mM explicit, Davies activities; Plummer & Busenberg 1982 constants. Central calcite SI = 0.5 and Mg = 1 mM follow Mayer et al. 2025 (doi:10.21203/rs.3.rs-7811095/v1), validated against their 54 PHREEQC cases (gate 13d); Omega range 1-10 spans the thermodynamic reading to Zhang et al. 2022's inhibition bound",
     "anchors": {
       "Zhang 2022 riverine CTP, back-converted": [
         4.3,
@@ -217,12 +219,12 @@ window.ERW = {
         0.75
       ]
     },
-    "bindsAreaFrac": 0.91,
-    "medianTco2HaYr": 0.5171,
+    "bindsAreaFrac": 0.9508,
+    "medianTco2HaYr": 0.3977,
     "warmCoolUncapped": 4.75,
-    "warmCoolCeiling": 1.41,
-    "exceedMedian": 2.89,
-    "realisedShareOfStoich": 0.0595
+    "warmCoolCeiling": 1.47,
+    "exceedMedian": 3.77,
+    "realisedShareOfStoich": 0.0458
   },
   "dissolution": {
     "model": "shrinking_core",

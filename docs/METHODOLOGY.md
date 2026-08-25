@@ -350,24 +350,63 @@ EOLSS *Chemical Characteristics of Rivers*, Table 1A). A good baseline, and exac
 the wrong thing to use as a ceiling, because removing mineral-supply limitation is
 what ERW is for.
 
-The bound is where the rising pH meets **carbonate saturation**. Solving charge
-balance `2[Ca] + 2[Mg] = [HCO₃⁻]` simultaneously with fixed pCO₂ and calcite
-saturation state Ω gives
+The bound is where the rising pH meets **carbonate saturation**. Since 2026-08-24
+the solve is the structure of Mayer et al. 2025 (see below): dissolved Mg is held
+**explicit** at an observed value — it has no solubility control at surface
+temperature, so it is set by feedstock release and bounded by field measurements
+(~1 mM in basalt mesocosm leachate, up to 5 mM for olivine-rich dunite) — and only
+Ca is constrained by calcite. Charge balance `2[Ca] + 2[Mg] = [HCO₃⁻]` with fixed
+pCO₂ and calcite saturation state Ω gives the cubic
 
-    [HCO₃⁻]_max = ( 2 · Ω · K₁ · K_H · pCO₂ · K_sp / (f_Ca · K₂) ) ^ (1/3)
+    A³ − 2[Mg]·A² − 2 · Ω · K₁ · K_H · pCO₂ · K_sp / (γ₂ γ₁² · K₂) = 0,  A = [HCO₃⁻]_max
 
-The cube root is what makes this robust: being wrong about soil pCO₂ by 5× moves
-the ceiling only 1.7×.
+with Davies activity coefficients γ iterated on ionic strength (I = 1.5·A). At
+[Mg] = 0 and unit activities this reduces to the closed form the map used
+2026-08-03 to 2026-08-24 (with f_Ca tying Mg to Ca as a fixed charge share). The
+near-cube-root is what makes this robust: being wrong about soil pCO₂ by 5× moves
+the ceiling only ~1.7×.
 
-**Ω = 10 ships; Ω = 1 is the strict reading and is reported alongside.** Carbonate
-precipitation is kinetically inhibited by DOC and phosphate — Zhang et al. 2022
-state it "is generally observed to be negligible at Ω < 10" and run their own model
-over Ω = 5–25 — and soils carry far more DOC than rivers. The pair spans 0.240 to
-0.510 tCO₂/ha/yr at the cropland median, and that spread is the honest uncertainty
-on the level.
+**External validation and parameter centering — Mayer et al. 2025.** Terradot's
+science team independently published this same bound as "carrying capacity"
+(J_CDR = recharge × [DIC]_max; Research Square preprint,
+doi:10.21203/rs.3.rs-7811095/v1, posted 2025-12-16), with [DIC]_max from PHREEQC
+(wateq4f) over soil pCO₂ 5,000–20,000 ppmv × calcite SI 0–1 × Mg 0–5 mM ×
+temperature. Three points of contact, all checked:
 
-**Five independent anchors on the resulting 3.0–6.5 mmol/L**, none sharing
-assumptions with the closed form:
+1. **Chemistry.** Our solve reproduces all 54 of their PHREEQC cases to
+   **0.95–1.00** (median 0.974), pH within ±0.19, with the expected small low
+   bias from neglected ion pairs — gate 13d asserts it on every test run, from
+   `tests/fixtures/mayer2025_tableS1.csv`. The temperature slope matches their
+   Fig. 4 (−26% alkalinity from 5 → 25 °C at their central case).
+2. **Parameters.** The shipped central is now **their** central case: calcite
+   SI = 0.5 (Ω ≈ 3.16, the saturated-to-slightly-supersaturated state observed
+   in amended pore waters, Buckingham & Henderson 2024) and Mg = 1 mM
+   (basalt-typical). Ω = 1 remains the strict reading; Ω = 10 (Zhang et al.
+   2022's river-inhibition threshold, the shipped default until 2026-08-24)
+   becomes the permissive end. Strict-to-central spans 0.290–0.395 tCO₂/ha/yr
+   at the cropland median, and that spread is the honest uncertainty on the
+   level. pCO₂ stays per-cell (4,000 µatm drained → 50,000 saturated, the
+   Isometric protocol values), which brackets their 5,000–20,000 scenario band.
+3. **Global integral.** Evaluating our grid under their central configuration
+   (recharge for q, uniform 10,000 µatm, SI 0.5, Mg 1 mM) gives
+   **0.359 GtCO₂/yr on cropland against their published 0.34** (their full
+   geochemical range: 0.15–0.85) — a 6% agreement from disjoint datasets
+   (WaterGAP vs Mohan et al. 2018 recharge, SPAM vs Dynamic World cropland,
+   soil-T climatology vs MODIS 2024). Reported by the build on every run.
+
+Two framing points adopted from them, and two differences kept. Adopted: this is
+the **maximum-efficient** level, not an absolute cap — past it, calcite
+precipitation halves marginal efficiency (a precipitated Ca carries one carbon
+rather than balancing two bicarbonates) instead of stopping removal; and Mg-rich
+feedstocks raise the ceiling (their headline sensitivity; here that is the
+`mg_mM` parameter, 0 → 5 mM spans 4.2 → 10.8 mmol/L at 4,000 µatm, 15 °C). Kept:
+our q is total runoff (their recharge is our qr sensitivity case — see §on
+drainage variables), and our exported carbon counts alkalinity only, not their
+~5% CO₂(aq) inclusion. Caveat kept in view: it is a company-funded preprint, not
+yet peer-reviewed.
+
+**Five independent anchors on the resulting 3.7–7.1 mmol/L** (Ω 1–10 at
+4,000 µatm, 15 °C), none sharing assumptions with the closed form:
 
 | anchor | mmol/L |
 |---|---|
@@ -377,22 +416,23 @@ assumptions with the closed form:
 | Meybeck carbonate-terrain streams | 3.15 |
 | soil-pH backstop: holding 10 mmol/L needs pH 8.16 at 4,000 µatm | ~10 |
 
-**Effect, measured.** The ceiling binds on **91.0% of cropland area**; the median
-falls 1.589 → 0.510 tCO₂/ha/yr (3.1×). But the level is not the point:
+**Effect, measured** (at the Mayer-central parameters, 2026-08-24 build). The
+ceiling binds on **95.1% of cropland area**; the median falls 1.396 → 0.395
+tCO₂/ha/yr (3.5×). But the level is not the point:
 
 | mean soil T | uncapped | ceiling | exceedance |
 |---|---|---|---|
-| 0–10 °C | 0.777 | 0.410 | 1.9× |
-| 10–15 °C | 1.058 | 0.600 | 1.8× |
-| 15–20 °C | 1.566 | 0.447 | 3.5× |
-| 20–25 °C | 3.037 | 0.711 | 4.3× |
-| 25–45 °C | 3.067 | 0.578 | 5.3× |
+| 0–10 °C | 0.746 | 0.309 | 2.4× |
+| 10–15 °C | 1.026 | 0.458 | 2.2× |
+| 15–20 °C | 1.532 | 0.344 | 4.5× |
+| 20–25 °C | 3.021 | 0.554 | 5.5× |
+| 25–45 °C | 3.549 | 0.456 | 7.8× |
 
-`C_eq` **falls** with warming while the rate law rises, so the exceedance is
-monotonic in temperature and the warmest/coolest ratio of the median goes from
-**4.75× uncapped to 1.41× at the ceiling**. Imposing the bound therefore removes
-the map's warm-climate gradient rather than merely rescaling the level, and that is
-the most consequential thing about this term.
+`C_eq` **falls** with warming while the rate law rises, so the exceedance rises
+nearly monotonically with temperature and the warmest/coolest ratio of the median
+goes from **4.75× uncapped to 1.47× at the ceiling**. Imposing the bound therefore
+removes most of the map's warm-climate gradient rather than merely rescaling the
+level, and that is the most consequential thing about this term.
 
 **It also decouples carbon from application rate, which is the first place this
 term changes a deployment decision.** The ceiling depends on drainage and carbonate
@@ -402,24 +442,23 @@ from 20 to 30 t/ha in August 2026:
 | | 20 t/ha | 30 t/ha |
 |---|---|---|
 | uncapped median CDR | 0.931 | 1.396 (+50%, linear in rate) |
-| **capped median CDR** | **0.474** | **0.507 (+7.0%)** |
-| global gross, capped | 0.807 | **0.888 GtCO₂/yr (+10.0%)** |
-| cropland area where the cap binds | 79.6% | 91.0% |
-| realised carbon per tonne of rock, median cell | 8.2% of stoichiometric | **5.8%** |
+| **capped median CDR** | **0.385** | **0.396 (+2.7%)** |
+| global gross, capped | 0.669 | **0.711 GtCO₂/yr (+6.3%)** |
+| cropland area where the cap binds | 88.1% | 95.1% |
+| realised carbon per tonne of rock, median cell | 6.6% of stoichiometric | **4.6%** |
 
-**50% more rock bought 10.0% more carbon.** Adding feedstock past the point where
+**50% more rock bought 6.3% more carbon.** Adding feedstock past the point where
 drainage saturates raises the fraction of the map that is transport-limited instead
 of raising the tonnage, and it lowers the realised efficiency per tonne. That is a
 physical result, not a modelling artefact, and it is the kind of thing an uncapped
 rate law cannot say.
 
-The sublinearity was starker on the groundwater-recharge drainage this section was
-first written against — 50% more rock bought 1.8% more carbon, and the capped median
-did not move at all. Total runoff raises the ceiling in proportion, so it binds on
-91.0% of area rather than 98.9% and leaves the rate some room. The direction is
-robust to the drainage variable; the magnitude is not, and it is worth knowing that
-the most quotable version of this result was the one on the more conservative
-water flux.
+The strength of the sublinearity tracks the ceiling's level: on the
+groundwater-recharge drainage this section was first written against, 50% more rock
+bought 1.8% more carbon and the capped median did not move at all; on total runoff
+under the pre-2026-08-24 Ω = 10 parameters it bought 10.0%; at the Mayer-central
+parameters, whose lower ceiling binds on 95.1% of area, it buys 6.3%. The direction
+is robust to every parameterisation tried; the magnitude is not.
 
 Two caveats on it. The dissolved *fraction* is held at `DISSOLVED_FRAC_AT_REF`
 regardless of rate, so the uncapped layer scales linearly with rate. **Whether that
@@ -434,19 +473,17 @@ does not follow that the extra rock is wasted — it may weather and sit in the 
 which is the retention question in §6 item 1, not this one.
 
 **What it is not.** It is not why the map's level was high. Field trials achieve
-0.11–0.75 mmol/L, i.e. **9–60× *below*** this ceiling (median ceiling 6.65 mmol/L),
-because cations are retained rather than exported (§6 item 1). This read "5–10×"
-until August 2026, which was an arithmetic error rather than a stale number — the
-ceiling concentration does not depend on the drainage variable. Correcting it
-strengthens the point: trials sit further below the bound than stated, so the bound
-explains even less of the level. The ceiling is a rail that makes an impossible
+0.11–0.75 mmol/L, i.e. **7–46× *below*** this ceiling (median ceiling 5.09 mmol/L
+at the Mayer-central parameters), because cations are retained rather than
+exported (§6 item 1). The ceiling is a rail that makes an impossible
 claim impossible; the level is a lab-to-field rate problem and belongs to the
 kinetics work.
 
 **Known limitation.** On saturated (paddy) cells the protocol-mandated 50,000 µatm
-lifts the ceiling to 13–18 mmol/L at Ω = 10, above every anchor above, and no
-measured paddy drainage DIC exists to check it against. Reported by gate 13c rather
-than tolerance-fudged; it is the standing justification for field-data ask #6.
+lifts the ceiling to 9.6–13.3 mmol/L at the shipped central (6.6–13.3 including
+the strict case), at or above every anchor above, and no measured paddy drainage
+DIC exists to check it against. Reported by gate 13c rather than tolerance-fudged;
+it is the standing justification for field-data ask #6.
 
 Gates: **12** in `build_v0.py` (nothing may report more carbon than its drainage can
 carry), **13/13b/13c** in `test_kinetics.py`.
@@ -570,8 +607,9 @@ showing numbers derived from the NaN fallback.
 | Suitability = 100 at | **8.69 tCO₂/ha/yr** | the stoichiometric maximum, `rate × tCO₂/t`, computed. The old 10 was **above** the maximum and so unreachable in every build |
 | Fraction-weathered ramp top | **0.65** | readability: p50 is 15%, p90 59%. Clamps 7.3% of area, labelled "≥ 65" |
 | D_w | 0.03 m/yr | Maher & Chamberlain 2014, collisional/craton divide; published range 0.001–0.3 |
-| Flux-ceiling Ω (calcite) | 10, strict case 1 | precipitation "negligible at Ω < 10", Zhang et al. 2022; both reported |
-| Flux-ceiling f_Ca | 0.5 | basalt releases Ca and Mg in roughly equal charge; only Ca constrains calcite |
+| Flux-ceiling Ω (calcite) | 10^0.5 (SI 0.5), strict case 1, permissive 10 | central = Mayer et al. 2025 / Buckingham & Henderson 2024 observed pore-water saturation; permissive = Zhang et al. 2022 inhibition threshold |
+| Flux-ceiling dissolved Mg | 1 mM (range 0–5) | explicit, basalt-typical (Vienne 2022); Mg escapes the calcite constraint, so Mg-rich feedstock raises the ceiling |
+| Flux-ceiling activities | Davies, iterated | validated against Mayer et al. 2025's 54 PHREEQC cases to 0.95–1.00 (gate 13d) |
 | Soil pCO₂, unsaturated | 4,000 µatm | Isometric v1.2 §10.4.5.7, mandated |
 | Soil pCO₂, flooded | 50,000 µatm | Isometric v1.2, mandated; this is the **floor** of the literature paddy range |
 | Flooded pH convergence | 6.7 | van Breemen 1987; submergence drives pH toward 6–7 |

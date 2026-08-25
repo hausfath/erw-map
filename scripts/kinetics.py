@@ -288,7 +288,25 @@ def k_calcite(T_K):
 # ---------------------------------------------------------------------------
 # Drainage-concentration ceiling
 # ---------------------------------------------------------------------------
-def alkalinity_ceiling_mol_l(pco2_uatm, T_K, omega=None, f_ca=None):
+def _debye_huckel_a(T_K):
+    """Debye-Huckel A parameter, from the water dielectric constant of
+    Malmberg & Maryott 1956 (J. Res. NBS 56, 1). 0.509 at 25 C against the
+    standard 0.509-0.512."""
+    T = np.asarray(T_K, dtype=float)
+    t = T - 273.15
+    eps = 87.740 - 0.40008 * t + 9.398e-4 * t * t - 1.410e-6 * t ** 3
+    return 1.82483e6 * np.power(eps * T, -1.5)
+
+
+def _davies_log10_gamma_sq(I, T_K):
+    """Davies equation: log10 gamma for a charge-1 ion; charge-2 is 4x this.
+    Valid to I ~ 0.5 M; the ceiling's solutions sit at I <= ~0.025 M."""
+    sq = np.sqrt(np.clip(I, 0.0, None))
+    return -_debye_huckel_a(T_K) * (sq / (1.0 + sq) - 0.3 * I)
+
+
+def alkalinity_ceiling_mol_l(pco2_uatm, T_K, omega=None, f_ca=None,
+                             mg_mM=None, activities=None):
     """Maximum drainage [HCO3-] in mol/L, set by carbonate saturation.
 
     THIS IS NOT eta_dic READ BACKWARDS, and the difference is the whole point.
@@ -300,44 +318,89 @@ def alkalinity_ceiling_mol_l(pco2_uatm, T_K, omega=None, f_ca=None):
     median cropland cell, which is the observed alkalinity of streams draining
     UNAMENDED volcanic rock -- a baseline, not a bound.
 
-    Closed form. With A = [HCO3-] and pH free, fixed pCO2 gives
+    With A = [HCO3-] and pH free, fixed pCO2 gives (activities marked a_)
 
-        [H+]   = K1 * K_H * pCO2 / A                (open system, A dominates DIC)
-        [CO3--] = K2 * A / [H+] = K2 * A^2 / (K1 K_H pCO2)
+        a_H    = K1 * K_H * pCO2 / (g1 * A)         (open system, A dominates DIC)
+        a_CO3  = K2 * g1^2 * A^2 / (K1 K_H pCO2)
 
-    and charge balance on a basalt-derived solution, 2[Ca] + 2[Mg] = A, with
-    f_ca the Ca share of that divalent charge, gives [Ca] = f_ca * A / 2. Then
-    Omega = [Ca][CO3--]/Ksp yields
+    where g1, g2 are the Davies activity coefficients for charge 1 and 2. Two
+    structures are supported for the cations, selected by which argument is
+    given:
 
-        A = ( 2 * Omega * K1 * K_H * pCO2 * Ksp / (f_ca * K2) ) ** (1/3)
+    Mg EXPLICIT (the default since 2026-08-24, the structure of Mayer et al.
+    2025): [Mg] is fixed at mg_mM -- there is no solubility control on Mg at
+    surface temperature, so it is set by feedstock release and bounded by
+    observation (0.3-1 mM in field pore waters, to 5 mM for olivine-rich
+    feedstocks) -- and only Ca is constrained by calcite. Charge balance
+    2[Ca] + 2[Mg] = A with Omega = a_Ca * a_CO3 / Ksp gives the cubic
+
+        A^3 - 2[Mg] A^2 - 2 Omega Ksp K1 K_H pCO2 / (g2 g1^2 K2) = 0
+
+    solved by vectorised Newton from an upper-bound seed (monotone; the seed
+    cbrt(c) + 2[Mg] makes f >= 0, so convergence is one-sided).
+
+    f_ca CHARGE SHARE (legacy, used when f_ca is passed): [Ca] = f_ca * A / 2,
+    tying Mg to Ca in fixed proportion, which reduces to the closed form
+
+        A = ( 2 Omega K1 K_H pCO2 Ksp / (f_ca K2 g2 g1^2) ) ** (1/3)
+
+    and equals the Mg-explicit solve when mg_mM = (1 - f_ca) * A / 2. At the
+    old default f_ca = 0.5 the implied Mg tracked A upward without an
+    observational bound, which is why the explicit form replaced it.
+
+    Activities iterate on ionic strength I = 1.5 A (exact under either charge
+    balance) and converge in <= 5 rounds. VALIDATED against all 54 PHREEQC
+    (wateq4f) cases of Mayer et al. 2025 Table S.1 (gate 13d): ratio
+    ours/PHREEQC 0.95-1.00, median 0.974, pH within +/-0.13. The residual
+    shortfall is the neglected CaHCO3+/MgHCO3+ ion pairs, so the ceiling
+    remains mildly conservative toward the flux it bounds. With
+    activities=False the bias is 15% low at the median (25% worst), the
+    pre-2026-08-24 behaviour.
 
     The cube root is why this is robust: being wrong about soil pCO2 by 5x moves
-    the ceiling only 1.7x. Temperature is weaker and runs the OTHER WAY from the
-    rate law -- 3.56 / 3.03 / 2.58 mmol/L at 5 / 15 / 25 C -- so on the
-    water-limited limb warm cropland is slightly worse per unit drainage, not
-    better. That is the single most consequential consequence of this term.
-
-    Only Ca constrains calcite, so f_ca < 1 raises the ceiling; magnesite is
-    kinetically inhibited at surface temperature and is not imposed at all.
-
-    Validated in test_kinetics.py against the textbook open-system calcite
-    benchmark (pure water + calcite at 400 uatm -> ~1 mmol/L alkalinity, pH ~8.3)
-    and against five independent literature anchors. Activity coefficients are 1,
-    as everywhere else in this module; at these ionic strengths that biases the
-    ceiling LOW by ~10-20%, i.e. conservative toward the flux being critiqued.
+    the ceiling only 1.7x. Temperature runs the OTHER WAY from the rate law --
+    at the shipped central case (SI 0.5, Mg 1 mM) the ceiling falls 26% from
+    5 C to 25 C, matching Mayer et al. Fig. 4 -- so on the water-limited limb
+    warm cropland is slightly worse per unit drainage, not better. That is the
+    single most consequential consequence of this term.
     """
     if omega is None:
         omega = C.FLUX_CEILING_OMEGA
-    if f_ca is None:
-        f_ca = C.FLUX_CEILING_F_CA
+    if activities is None:
+        activities = C.FLUX_CEILING_ACTIVITIES
     K1, K2, KH, _ = carbonate_constants(T_K)
     Ksp = k_calcite(T_K)
     p = np.asarray(pco2_uatm, dtype=float) * 1e-6
-    f = max(float(f_ca), 1e-6)
-    return np.cbrt(2.0 * float(omega) * K1 * KH * p * Ksp / (f * K2))
+    c0 = 2.0 * float(omega) * K1 * KH * p * Ksp / K2
+
+    if f_ca is not None:                      # legacy charge-share structure
+        f = max(float(f_ca), 1e-6)
+        g_div = 1.0
+        A = np.cbrt(c0 / f)
+        if not activities:
+            return A
+        for _ in range(5):
+            g_div = np.power(10.0, 6.0 * _davies_log10_gamma_sq(1.5 * A, T_K))
+            A = np.cbrt(c0 / (f * g_div))
+        return A
+
+    mg = (C.FLUX_CEILING_MG_MM if mg_mM is None else float(mg_mM)) * 1e-3
+    g_div = np.ones_like(c0)
+    A = None
+    for _ in range(5 if activities else 1):
+        c = c0 / g_div
+        A = np.cbrt(c) + 2.0 * mg             # upper-bound seed, f(A) >= 0
+        for _ in range(25):                   # one-sided Newton
+            A = A - (A ** 3 - 2.0 * mg * A * A - c) / (3.0 * A * A - 4.0 * mg * A)
+        if not activities:
+            break
+        # gamma2 * gamma1^2: log10 = (4 + 2) * single-charge Davies term
+        g_div = np.power(10.0, 6.0 * _davies_log10_gamma_sq(1.5 * A, T_K))
+    return A
 
 
-def flux_ceiling_t_ha_yr(q_m_yr, pco2_uatm, T_K, omega=None, f_ca=None):
+def flux_ceiling_t_ha_yr(q_m_yr, pco2_uatm, T_K, omega=None, f_ca=None,
+                         mg_mM=None, activities=None):
     """Upper bound on gross CDR, tCO2/ha/yr, from what the drainage can carry.
 
     ceiling = q * [HCO3-]_max * 44.01, i.e. Maher & Chamberlain's W_max = q*c_eq
@@ -354,7 +417,8 @@ def flux_ceiling_t_ha_yr(q_m_yr, pco2_uatm, T_K, omega=None, f_ca=None):
     q in m/yr; 1 m/yr over 1 ha is 1e7 L/ha/yr.
     """
     q = np.clip(np.asarray(q_m_yr, dtype=float), 0.0, None)
-    alk = alkalinity_ceiling_mol_l(pco2_uatm, T_K, omega=omega, f_ca=f_ca)
+    alk = alkalinity_ceiling_mol_l(pco2_uatm, T_K, omega=omega, f_ca=f_ca,
+                                   mg_mM=mg_mM, activities=activities)
     return q * 1e7 * alk * C.M_CO2_G_MOL / 1e6
 
 
