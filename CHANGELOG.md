@@ -5,6 +5,35 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## A pH-target ceiling basis, as a viewer option
+
+Colleague feedback on the steady-state framing: holding 30 t/ha of rock
+drives soil solution to calcite saturation, which on drained cropland means
+pore-water pH 7.7-7.9 -- more basic than agronomy wants, and operating at
+Omega ~ 3 on a kinetic-inhibition argument. The counter-framing -- hold the
+soil at a target pH instead -- turns out to be the SAME equation as the
+drainage ceiling with the pH pinned instead of the saturation state, so it
+ships as a basis option on the drainage-limit control: "Calcite saturation"
+(default) vs "Hold pH <= 7.5".
+
+Numbers: pore water held at pH <= 7.5 (saturation where its pH is lower,
+i.e. paddies) gives a global steady state of 0.442 GtCO2/yr against 0.717 at
+saturation; drained-soil calcite Omega sits at ~0.27, eliminating
+precipitation risk by construction. Targets 7.0/7.25/7.75 give ~0.15/0.26/
+0.62 Gt. The cut falls on drained temperate cropland; paddies already
+operate at pH 7.2-7.4 under saturation and are barely touched. The HEADLINE
+stays on the saturation basis -- it is the published Mayer et al. 2025
+anchor -- and the footer appends "pH <= 7.5 basis" whenever the option is on.
+
+Implementation is the paddy-view pattern: tex4.g/b carry the pH-basis
+ceiling (baseline and paddy-view variants) on the same CEIL_ENC encoding, so
+the option is a byte-source swap that composes with every other control.
+New kinetics.alkalinity_at_ph_mol_l (Davies-consistent); gate 13e asserts it
+is the ceiling's own relation read at a pinned pH and that saturation binds
+first under paddy pCO2. The constant documents the conversion trap: the
+target is IN-SITU pore-water pH at field pCO2, ~0.5-1 unit below lab-paste
+soil pH, and alkalinity moves ~10x per unit.
+
 ## Sidebar copy diet and a formatting bug
 
 The sidebar had drifted from the July convention (one short functional line

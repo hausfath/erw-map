@@ -441,6 +441,23 @@ def main() -> int:
         eta_pad = K.eta_dic(ph_pad, pco2_pad, T_K)
     ceiling_pad = K.flux_ceiling_t_ha_yr(q, pco2_pad, T_ceil_K)
 
+    # ---- pH-TARGET BASIS (2026-08-26): the ceiling with pore water HELD AT
+    # pH <= FLUX_CEILING_PH_TARGET instead of rising to calcite saturation --
+    # the 'do not push soils basic' operating point. Saturation still binds
+    # first wherever its pH is lower than the target (high-pCO2 paddies), so
+    # the basis is min(A at target pH, A at saturation). A viewer OPTION: the
+    # headline and every default stay on the saturation basis.
+    qv = np.clip(np.nan_to_num(q, nan=0.0), 0.0, None)
+    alk_ph = np.minimum(
+        K.alkalinity_at_ph_mol_l(C.FLUX_CEILING_PH_TARGET, pco2, T_ceil_K),
+        alk_ceiling)
+    ceiling_ph = qv * 1e7 * alk_ph * C.M_CO2_G_MOL / 1e6
+    alk_ceil_pad = K.alkalinity_ceiling_mol_l(pco2_pad, T_ceil_K)
+    alk_ph_pad = np.minimum(
+        K.alkalinity_at_ph_mol_l(C.FLUX_CEILING_PH_TARGET, pco2_pad, T_ceil_K),
+        alk_ceil_pad)
+    ceiling_ph_pad = qv * 1e7 * alk_ph_pad * C.M_CO2_G_MOL / 1e6
+
     ref = K.rate_ca_mg_release(
         C.FEEDSTOCK_DEFAULT, C.L1_REF["pH"], C.L1_REF["T_soil_C"] + 273.15
     ) * C.L1_REF["saturation"]
@@ -719,6 +736,11 @@ def main() -> int:
     print(f"  steady-state reference (hold {C.APPLICATION_RATE_T_HA_YR:.0f} t/ha, "
           f"I_inf {i_inf:.4f}): {gt_ss:.3f} GtCO2/yr uncapped, "
           f"{gt_ss_cap:.3f} with the drainage limit  [reported; footer basis]")
+    gt_ph = float((ha * np.nan_to_num(
+        np.minimum(cdr_ss, ceiling_ph)[m])).sum() / 1e9)
+    print(f"    pH-target basis (pore water held at pH <= "
+          f"{C.FLUX_CEILING_PH_TARGET:g}, saturation where lower): "
+          f"{gt_ph:.3f} GtCO2/yr  [viewer option; headline stays saturation]")
 
     # ---- GATE 2c: no wet cell may be undrained. The gate that would have caught
     # the qr delta defect. Physically impossible rather than merely unlikely, so
@@ -955,7 +977,8 @@ def main() -> int:
                    cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
                    no_input=no_input, mafic_frac=mafic_frac,
                    L1_pad=L1_pad, eta_pad=eta_pad, ceiling_pad=ceiling_pad,
-                   paddy_sel=f_flood > 0)
+                   paddy_sel=f_flood > 0,
+                   ceiling_ph=ceiling_ph, ceiling_ph_pad=ceiling_ph_pad)
     gha_eval = float(((crop * area)[m & np.isfinite(L1)]).sum() * 100.0 / 1e9)
     emit_js(transform, w, h, gha, p50,
             cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
@@ -1077,7 +1100,8 @@ def write_crop_texture(transform, w, h, crs, valid, ha_cell):
 def write_textures(crop, p_soc, ph_warn, cdr, valid,
                    *, cascade, ph, L1, eta, eta_tr, v_cost, cost_conf,
                    ceiling, cdr_per_frac, no_input, mafic_frac,
-                   L1_pad, eta_pad, ceiling_pad, paddy_sel) -> None:
+                   L1_pad, eta_pad, ceiling_pad, paddy_sel,
+                   ceiling_ph, ceiling_ph_pad) -> None:
     from PIL import Image
     out = SRC / "textures"
     out.mkdir(parents=True, exist_ok=True)
@@ -1175,7 +1199,18 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
     # is not cropland, and "where is the nearest feedstock" is exactly a question
     # about the land the rest of the map ignores.
     r4 = np.rint(np.clip(np.nan_to_num(mafic_frac, nan=0.0), 0, 1) * 255).astype("uint8")
-    z4 = np.zeros_like(r4)
+
+    # tex4.g/b: the pH-TARGET ceiling (baseline and paddy-view variants), on
+    # the same CEIL_ENC as tex2.b / tex5.b, so the viewer's basis option is a
+    # byte-source swap like the paddy view. tex4.r stays the mafic overlay.
+    def enc_ceil(cv):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            x = np.log10(np.maximum(cv / max(cdr_per_frac, 1e-12), 1e-30))
+        x = np.clip((np.nan_to_num(x, nan=lo_c, neginf=lo_c) - lo_c)
+                    / (hi_c - lo_c), 0.0, 1.0)
+        return np.where(valid, np.rint(5 + x * 250.0), 0).astype("uint8")
+    g4 = enc_ceil(ceiling_ph)
+    b4 = np.where(paddy_sel, enc_ceil(ceiling_ph_pad), g4)
 
     # tex5: the PADDY-FIELD VIEW -- L1, eta_DIC and the ceiling recomputed with
     # every paddy-bearing cell at 100% paddy (area fraction -> 1, observed
@@ -1211,7 +1246,7 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
     b5 = np.where(paddy_sel, b5, b2)
 
     for name, img in (("tex1", rgba(r1, g1, b1)), ("tex2", rgba(r2, flags, b2)),
-                      ("tex3", rgba(r3, g3, b3)), ("tex4", rgba(r4, z4, z4)),
+                      ("tex3", rgba(r3, g3, b3)), ("tex4", rgba(r4, g4, b4)),
                       ("tex5", rgba(r5, g5, b5))):
         p = out / f"{name}.png"
         img.save(p, optimize=True)
@@ -1371,6 +1406,8 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
             "omegaStrict": C.FLUX_CEILING_OMEGA_STRICT,
             "omegaRange": list(C.FLUX_CEILING_OMEGA_RANGE),
             "mgMM": C.FLUX_CEILING_MG_MM,
+            "phTarget": C.FLUX_CEILING_PH_TARGET,
+            "phTargetRange": list(C.FLUX_CEILING_PH_TARGET_RANGE),
             "activities": C.FLUX_CEILING_ACTIVITIES,
             "mayerDoi": C.MAYER_2025_DOI,
             "source": C.FLUX_CEILING_SOURCE,

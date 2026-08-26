@@ -1289,6 +1289,21 @@ FLUX_CEILING_SOURCE = (
     "validated against their 54 PHREEQC cases (gate 13d); Omega range 1-10 "
     "spans the thermodynamic reading to Zhang et al. 2022's inhibition bound"
 )
+# pH-TARGET BASIS for the ceiling (viewer option since 2026-08-26; the
+# HEADLINE stays on calcite saturation). Colleagues' point, quantified and
+# adopted as a selectable operating point: holding soil solution at pH <= 7.5
+# instead of letting it rise to saturation keeps calcite Omega ~ 0.27 on
+# drained cropland (no precipitation risk by construction) at the cost of a
+# lower bound -- global steady state ~0.42 vs 0.717 GtCO2/yr at saturation,
+# with the cut falling on drained temperate cropland (paddies already operate
+# at pH 7.2-7.4 under the saturation basis, so they are barely touched;
+# saturation still binds first wherever its pH is BELOW the target). The
+# value is an IN-SITU PORE-WATER pH at field pCO2 -- roughly 0.5-1 unit BELOW
+# the same soil's lab-paste pH, and ~10x in alkalinity per unit -- so do not
+# retune it against agronomic (lab-basis) pH targets without converting.
+FLUX_CEILING_PH_TARGET = 7.5
+FLUX_CEILING_PH_TARGET_RANGE = (7.0, 8.0)
+
 # Mayer et al. 2025 reference values, for the replication diagnostic in
 # build_v0 and gate 13d. Global "maximum efficient CDR" on CROPLAND (Dynamic
 # World 2024, 13.4 Mkm2), GtCO2/yr: central = their simulation 26 (pCO2

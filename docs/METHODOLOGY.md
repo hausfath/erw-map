@@ -492,6 +492,26 @@ field-level project screening beyond the toggle (pathway-split water, measured
 pCO₂ range, baseline netting), see `scripts/analysis/paddy_ceiling_india.py`
 and `docs/PADDY_CEILING_INDIA.md`.
 
+**The pH-target basis (viewer option, 2026-08-26).** The saturation basis lets
+pore water rise to calcite saturation, which on drained cropland means
+pH 7.7–7.9 — agronomically basic, and operating at Ω ≈ 3 on a kinetic-
+inhibition argument. The sidebar therefore offers a stricter basis: pore water
+held at **pH ≤ 7.5** (in-situ at field pCO₂), which keeps calcite Ω ≈ 0.3 on
+drained cropland — no precipitation risk by construction — and reads the
+alkalinity off the same open-system relations with the pH pinned instead of Ω
+(`kinetics.alkalinity_at_ph_mol_l`, gate 13e asserts the two are the same
+relation). Saturation still binds first wherever its pH is below the target,
+which is the high-pCO₂ paddy case, so paddies are barely touched and the cut
+falls on drained temperate cropland. Global steady state on this basis:
+**0.442 GtCO₂/yr against 0.717 at saturation** (7.0 / 7.25 / 7.75 targets give
+roughly 0.15 / 0.26 / 0.62). The **headline stays on saturation** — it is the
+published Mayer et al. 2025 anchor — and the footer labels the basis whenever
+the option is selected. One conversion trap, stated in the constant and the
+function: the target is an in-situ pore-water pH at field pCO₂, roughly 0.5–1
+unit *below* the same soil's lab-paste pH, and alkalinity moves ~10× per pH
+unit — do not retune it against agronomic (lab-basis) pH targets without
+converting.
+
 **Known limitation.** On saturated (paddy) cells the protocol-mandated 50,000 µatm
 lifts the ceiling to 9.6–13.3 mmol/L at the shipped central (6.6–13.3 including
 the strict case), at or above every anchor above, and no measured paddy drainage
@@ -637,6 +657,7 @@ showing numbers derived from the NaN fallback.
 | Flux-ceiling Ω (calcite) | 10^0.5 (SI 0.5), strict case 1, permissive 10 | central = Mayer et al. 2025 / Buckingham & Henderson 2024 observed pore-water saturation; permissive = Zhang et al. 2022 inhibition threshold |
 | Flux-ceiling dissolved Mg | 1 mM (range 0–5) | explicit, basalt-typical (Vienne 2022); Mg escapes the calcite constraint, so Mg-rich feedstock raises the ceiling |
 | Flux-ceiling activities | Davies, iterated | validated against Mayer et al. 2025's 54 PHREEQC cases to 0.95–1.00 (gate 13d) |
+| Ceiling basis | calcite saturation (headline); pH ≤ 7.5 pore-water target as a viewer option | pH basis keeps Ω ≈ 0.3 (no precipitation risk); 0.442 vs 0.717 GtCO₂/yr |
 | Soil pCO₂, unsaturated | 4,000 µatm | Isometric v1.2 §10.4.5.7, mandated |
 | Soil pCO₂, flooded | 50,000 µatm | Isometric v1.2, mandated; this is the **floor** of the literature paddy range |
 | Flooded pH convergence | 6.7 | van Breemen 1987; submergence drives pH toward 6–7 |

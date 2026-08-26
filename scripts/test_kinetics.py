@@ -487,6 +487,9 @@ def gate8_browser_constants_match_python() -> None:
     pvw = payload.get("paddyView")
     if pvw is None or not (0.0 <= pvw.get("areaFrac", -1) <= 1.0):
         problems.append("paddyView missing or invalid")
+    if fc is not None and abs(fc.get("phTarget", -1)
+                              - C.FLUX_CEILING_PH_TARGET) > 1e-9:
+        problems.append("fluxCeiling.phTarget differs or missing")
 
     # Bilinear-interpolate the emitted table the way app.js does, and compare
     # against the exact integral at points deliberately BETWEEN grid nodes.
@@ -1060,6 +1063,43 @@ def gate13d_ceiling_reproduces_mayer_phreeqc() -> None:
            f"-{slope:.0%} vs their Fig. 4 ~-26%")
 
 
+def gate13e_ph_basis_consistent_with_ceiling() -> None:
+    """The pH-target alkalinity must be the ceiling's own relation read at a
+    pinned pH: evaluating alkalinity_at_ph_mol_l AT the pH the saturation
+    ceiling implies must reproduce the ceiling itself (same K1, K_H, Davies
+    loop -- only what is pinned differs), and the pH-7.5 value must sit BELOW
+    saturation on drained soil (that ordering is the whole point of the
+    basis) while capping at saturation under paddy pCO2, where saturation pH
+    is lower than the target."""
+    T = 288.15
+    for p_uatm in (C.PCO2_UNSATURATED_UATM, 10_000.0):
+        a_sat = float(K.alkalinity_ceiling_mol_l(p_uatm, T))
+        K1, _, KH, _ = K.carbonate_constants(T)
+        # pH at the ceiling, activity basis (gamma1 from the same Davies loop)
+        g1 = 10.0 ** K._davies_log10_gamma_sq(1.5 * a_sat, T)
+        ph_sat = -math.log10(K1 * KH * p_uatm * 1e-6 / (a_sat * g1))
+        a_back = float(K.alkalinity_at_ph_mol_l(ph_sat, p_uatm, T))
+        err = abs(a_back / a_sat - 1)
+        ok = err < 0.01
+        if not ok:
+            record("13e. pH basis consistent with the ceiling", False,
+                   f"round-trip at {p_uatm:.0f} uatm off by {err:.1%}")
+            return
+    a75 = float(K.alkalinity_at_ph_mol_l(
+        C.FLUX_CEILING_PH_TARGET, C.PCO2_UNSATURATED_UATM, T))
+    a_sat_d = float(K.alkalinity_ceiling_mol_l(C.PCO2_UNSATURATED_UATM, T))
+    a75_pad = float(K.alkalinity_at_ph_mol_l(
+        C.FLUX_CEILING_PH_TARGET, C.PCO2_SATURATED_UATM, T))
+    a_sat_p = float(K.alkalinity_ceiling_mol_l(C.PCO2_SATURATED_UATM, T))
+    ok = a75 < a_sat_d and a75_pad > a_sat_p
+    record("13e. pH basis consistent with the ceiling", ok,
+           f"round-trip < 1%; drained: A(pH {C.FLUX_CEILING_PH_TARGET:g}) = "
+           f"{a75 * 1e3:.2f} < saturation {a_sat_d * 1e3:.2f} mmol/L; paddy "
+           f"pCO2: A(target) {a75_pad * 1e3:.1f} > saturation "
+           f"{a_sat_p * 1e3:.1f}, so saturation binds first there (min() in "
+           f"the build)")
+
+
 def gate14_dissolution_table_matches_exact() -> None:
     """The browser's shrinking-core lookup must reproduce the exact integral.
 
@@ -1194,6 +1234,7 @@ def main() -> int:
                gate13b_flux_ceiling_within_observed_range,
                gate13c_paddy_ceiling_is_unvalidated,
                gate13d_ceiling_reproduces_mayer_phreeqc,
+               gate13e_ph_basis_consistent_with_ceiling,
                gate14_dissolution_table_matches_exact,
                gate15_no_grind_double_count):
         try:

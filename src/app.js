@@ -85,6 +85,11 @@
      is a byte-source swap, not a second model. Off-paddy cells are
      byte-identical in tex5 by build-time assertion. */
   let paddyView = false;
+  /* Ceiling basis: false = calcite saturation (the headline basis, and the
+     external anchor via Mayer et al. 2025); true = pore water held at
+     pH <= FC.phTarget, the agronomically-constrained option. tex4.g/b carry
+     the pH-basis ceiling (baseline / paddy view) on the same CEIL_ENC. */
+  let phBasis = false;
 
   // Data extent, from the generated grid constants.
   const DATA = {
@@ -184,6 +189,7 @@
 
   uniform sampler2D uA, uB, uC, uD, uE, uRamp, uRampFrac;
   uniform int uPaddyView;      // 1 = swap L1/eta/ceiling bytes from tex5
+  uniform int uPhBasis;        // 1 = ceiling held at the pH target (tex4.g/b)
   uniform int uShowMafic;         // 1 = tint GLiM mafic outcrop
   uniform vec4 uGeo;              // lon0, lat0, lonSpan, latSpan of the visible box
   uniform vec4 uGrid;             // west, north, dlon, dlat of the data grid
@@ -261,6 +267,12 @@
       // paddy. Identical encodings, so only the byte source changes.
       vec4 pv = vec4(texelFetch(uE, px, 0));
       a.r = pv.r; a.g = pv.g; b.b = pv.b;
+    }
+    if (uPhBasis == 1) {
+      // Ceiling basis: pore water held at the pH target instead of rising to
+      // calcite saturation. Same encoding, different byte source.
+      vec4 d4 = vec4(texelFetch(uD, px, 0));
+      b.b = uPaddyView == 1 ? d4.b : d4.g;
     }
     float mafic = uShowMafic == 1 ? texelFetch(uD, px, 0).r : 0.0;
 
@@ -544,7 +556,7 @@
   }
 
   /* ---------------- CPU-side copy for the readout ---------------- */
-  function decodeToCPU(bmpA, bmpB, bmpC, bmpE) {
+  function decodeToCPU(bmpA, bmpB, bmpC, bmpE, bmpD) {
     const cv = document.createElement("canvas");
     cv.width = G.width; cv.height = G.height;
     const ctx = cv.getContext("2d", { willReadFrequently: true });
@@ -553,7 +565,8 @@
       ctx.drawImage(bmp, 0, 0);
       return ctx.getImageData(0, 0, cv.width, cv.height).data;
     };
-    return { A: grab(bmpA), B: grab(bmpB), C: grab(bmpC), E: grab(bmpE) };
+    return { A: grab(bmpA), B: grab(bmpB), C: grab(bmpC), E: grab(bmpE),
+             D: grab(bmpD) };
   }
 
   /* ---------------- geometry of the current view ---------------- */
@@ -609,6 +622,7 @@
     gl.uniform2f(u("uCeilEnc"), FC.enc.lo, FC.enc.hi);
     gl.uniform1i(u("uCeilOn"), ceilOn ? 1 : 0);
     gl.uniform1i(u("uPaddyView"), paddyView ? 1 : 0);
+    gl.uniform1i(u("uPhBasis"), phBasis ? 1 : 0);
     const gslice = gSlice();
     gl.uniform1fv(u("uG[0]"), gslice);
     gl.uniform2f(u("uGLogU"), E.dissolution.uLog.lo, E.dissolution.uLog.hi);
@@ -759,7 +773,9 @@
     // are unchanged by design (same water flux, same haul).
     const bL1 = paddyView ? P[i] : A[i];
     const bEd = paddyView ? P[i + 1] : A[i + 1];
-    const bCl = paddyView ? P[i + 2] : B[i + 2];
+    const D = cpu.D;
+    const bCl = phBasis ? (paddyView ? D[i + 2] : D[i + 1])
+                        : (paddyView ? P[i + 2] : B[i + 2]);
     const l1 = E.l1Enc.lo + raw(bL1) * (E.l1Enc.hi - E.l1Enc.lo);   // no grind term
     const fl = E.cost ? E.cost.floor : 1;
     return {rel: Math.pow(10, l1), l1, eDic: raw(bEd), eTr: raw(A[i + 2]),
@@ -1044,10 +1060,16 @@
      here. No number is hardcoded in this text. */
   function syncFlux() {
     $("flux-hint").innerHTML = ceilOn
-      ? `<b>On — the default.</b> CO₂ is capped at what the drainage water `
-        + `can carry as bicarbonate (Mayer et al. 2025 agree — see Methods).`
+      ? (phBasis
+          ? `<b>On, pH-target basis.</b> Pore water is held at `
+            + `pH ≤ ${FC.phTarget ?? 7.5} — soils never approach calcite `
+            + `saturation (see Methods).`
+          : `<b>On — the default.</b> CO₂ is capped at what the drainage water `
+            + `can carry as bicarbonate (Mayer et al. 2025 agree — see Methods).`)
       : `<b>Off.</b> The CO₂ layer becomes an upper limit on dissolution, not `
         + `carbon shown to leave the field — see Methods.`;
+    const fb = $("flux-basis");
+    if (fb) fb.classList.toggle("hidden", !ceilOn);
   }
 
   function syncPaddy() {
@@ -1269,7 +1291,8 @@
         const crop = B[i] / 255;
         if (crop < 0.01) continue;
         out.push([A[i], A[i + 1], A[i + 2], crop * wLat, cpu.C[i + 2], B[i + 2],
-                  cpu.E[i], cpu.E[i + 1], cpu.E[i + 2]]);
+                  cpu.E[i], cpu.E[i + 1], cpu.E[i + 2],
+                  cpu.D[i + 1], cpu.D[i + 2]]);
       }
     }
     sample = out;
@@ -1290,6 +1313,13 @@
     Math.pow(Math.max(rawByte(
       paddyView && row[7] !== undefined ? row[7] : row[1]), 1e-12), exps[1]);
 
+  /* The ceiling byte for a row under the current basis and view. One
+     definition so the map, the stability metric and the footer cannot pick
+     different ceilings. */
+  const ceilByteOfRow = (row) => phBasis
+    ? (paddyView && row[10] !== undefined ? row[10] : row[9])
+    : (paddyView && row[8] !== undefined ? row[8] : row[5]);
+
   function cdrOfRow(row, exps) {
     const X = xOfRow(row, exps), eDic = eDicOfRow(row, exps);
     let cdr = fracOf(X) * eDic * E.cdrPerFrac;
@@ -1297,8 +1327,7 @@
     // stability metric and the decile edges would be computed on a different
     // model from the one being drawn.
     if (ceilOn && row[5] !== undefined) {
-      cdr = Math.min(cdr, decodeCeil(
-        paddyView && row[8] !== undefined ? row[8] : row[5]));
+      cdr = Math.min(cdr, decodeCeil(ceilByteOfRow(row)));
     }
     return cdr;
   }
@@ -1352,7 +1381,7 @@
       const u1 = kU * X;
       const l10u1 = X > 0 ? Math.log10(u1) : -Infinity;
       const ceil = (ceilOn && r[5] !== undefined)
-        ? decodeCeil(paddyView && r[8] !== undefined ? r[8] : r[5]) : Infinity;
+        ? decodeCeil(ceilByteOfRow(r)) : Infinity;
       // Steady-state removal, capped at one application per year and at the
       // drainage ceiling.
       let cdr = Math.min(1, u1 / iInf) * eDic * CPF;
@@ -1433,7 +1462,7 @@
   let baseScores = null, baseEdges = null, baseKey = null;
   function neutralBase() {
     const key = ssaShift().toFixed(6) + "|" + econ.costExp + "|" + (ceilOn ? 1 : 0)
-              + "|" + (paddyView ? 1 : 0)
+              + "|" + (paddyView ? 1 : 0) + "|" + (phBasis ? 1 : 0)
               + "|" + econ.gate.toFixed(4) + "|" + econ.truckMult.toFixed(6);
     if (baseKey !== key || !baseScores) {
       baseScores = scoresFor(CRIT.map(() => 1));
@@ -1653,6 +1682,18 @@
         <tr><td>Activity coefficients</td><td>${FC.activities ? "Davies, iterated"
           : "none"} — the solve reproduces all 54 PHREEQC cases of
           Mayer et&nbsp;al.&nbsp;2025 to 0.95–1.00 (gate&nbsp;13d)</td></tr>
+        <tr><td>Ceiling basis${phBasis ? "" : " (option)"}</td>
+          <td>${phBasis ? `<b>pH-target: pore water held at
+          pH&nbsp;≤&nbsp;${FC.phTarget ?? 7.5}</b> (in-situ at field pCO₂,
+          ~0.5–1 unit below lab soil pH), keeping calcite Ω&nbsp;≈&nbsp;0.3 on
+          drained cropland; saturation still binds first where its pH is lower
+          (paddies). Selected in the sidebar — the headline basis is
+          saturation.`
+          : `calcite saturation (the headline basis and the Mayer et&nbsp;al.
+          2025 anchor). The sidebar offers a stricter pH-target basis — pore
+          water held at pH&nbsp;≤&nbsp;${FC.phTarget ?? 7.5} — which keeps
+          soils clear of carbonate precipitation by construction
+          (Ω&nbsp;≈&nbsp;0.3) at a lower global total.`}</td></tr>
       </table>
 
       <h3>Known limitations</h3>
@@ -1829,6 +1870,8 @@
                + `delivered` : "")
         + ` \u00b7 ${gha.toFixed(2)} Gha`
         + (ceilOn ? "" : " \u00b7 drainage limit OFF")
+        + (ceilOn && phBasis
+            ? ` \u00b7 pH \u2264 ${FC.phTarget ?? 7.5} basis` : "")
         + (paddyView ? " \u00b7 paddy-field view" : "");
   }
 
@@ -2004,7 +2047,7 @@
       loadTexture("textures/tex5.png", 6),
     ]);
     texA = a.tex; texB = b.tex; texC = cTex.tex; texD = dTex.tex;
-    cpu = decodeToCPU(a.bmp, b.bmp, cTex.bmp, eTex.bmp);
+    cpu = decodeToCPU(a.bmp, b.bmp, cTex.bmp, eTex.bmp, dTex.bmp);
     $("loading").remove();
     buildSample();
 
@@ -2050,6 +2093,19 @@
       refresh();
     });
     syncFlux();
+
+    // Ceiling basis segment: calcite saturation (default, the headline and
+    // the Mayer et al. anchor) vs pore water held at the pH target.
+    document.querySelectorAll("#flux-basis .seg-btn").forEach((b) => {
+      b.addEventListener("click", () => {
+        phBasis = b.dataset.basis === "ph";
+        document.querySelectorAll("#flux-basis .seg-btn").forEach((x) =>
+          x.classList.toggle("active", x === b));
+        $("method-body").innerHTML = methodsHTML();
+        syncFlux();
+        refresh();
+      });
+    });
 
     // Paddy-field view. A byte-source swap (tex5), so it composes with every
     // other control; off-paddy cells are byte-identical by build assertion.

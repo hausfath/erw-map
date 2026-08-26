@@ -399,6 +399,38 @@ def alkalinity_ceiling_mol_l(pco2_uatm, T_K, omega=None, f_ca=None,
     return A
 
 
+def alkalinity_at_ph_mol_l(ph, pco2_uatm, T_K, activities=None):
+    """Alkalinity (mol/L, ~[HCO3-]) of pore water HELD AT a target pH under
+    fixed soil pCO2 -- the agronomically-constrained variant of the ceiling.
+
+    Where alkalinity_ceiling_mol_l pins calcite saturation and lets pH land
+    where it lands (pH 7.7-7.9 on drained cropland, 7.2-7.4 under paddy pCO2),
+    this pins the pH -- the 'do not push soils basic' operating point -- and
+    reads the alkalinity off the same open-system carbonate relations:
+
+        [HCO3-] = K1 K_H pCO2 / (a_H gamma1)
+
+    The CO3-- term is dropped (K2/a_H < 0.2% at pH <= 7.5); Davies gamma1
+    iterates on I = 1.5 A as everywhere else. NOTE THE BASIS: ph here is the
+    IN-SITU PORE-WATER pH at field pCO2, not a lab soil-paste measurement --
+    the two differ by ~0.5-1 unit (degassing raises lab pH) and alkalinity
+    moves ~10x per pH unit, so conflating them is a 2-10x error. Callers
+    should cap the result at the calcite ceiling: at high pCO2 (paddies) the
+    saturation pH falls BELOW 7.5, and saturation then binds first.
+    """
+    if activities is None:
+        activities = C.FLUX_CEILING_ACTIVITIES
+    K1, _, KH, _ = carbonate_constants(T_K)
+    h = 10.0 ** (-float(ph))
+    A = K1 * KH * np.asarray(pco2_uatm, dtype=float) * 1e-6 / h
+    if not activities:
+        return A
+    for _ in range(4):
+        g1 = np.power(10.0, _davies_log10_gamma_sq(1.5 * A, T_K))
+        A = K1 * KH * np.asarray(pco2_uatm, dtype=float) * 1e-6 / (h * g1)
+    return A
+
+
 def flux_ceiling_t_ha_yr(q_m_yr, pco2_uatm, T_K, omega=None, f_ca=None,
                          mg_mM=None, activities=None):
     """Upper bound on gross CDR, tCO2/ha/yr, from what the drainage can carry.

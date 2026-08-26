@@ -198,6 +198,11 @@ window.ERW = {
       10.0
     ],
     "mgMM": 1.0,
+    "phTarget": 7.5,
+    "phTargetRange": [
+      7.0,
+      8.0
+    ],
     "activities": true,
     "mayerDoi": "10.21203/rs.3.rs-7811095/v1",
     "source": "calcite saturation at the cell's own soil pCO2 and temperature, with charge balance 2[Ca]+2[Mg] = [HCO3-], [Mg] = 1 mM explicit, Davies activities; Plummer & Busenberg 1982 constants. Central calcite SI = 0.5 and Mg = 1 mM follow Mayer et al. 2025 (doi:10.21203/rs.3.rs-7811095/v1), validated against their 54 PHREEQC cases (gate 13d); Omega range 1-10 spans the thermodynamic reading to Zhang et al. 2022's inhibition bound",
