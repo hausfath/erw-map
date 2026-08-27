@@ -49,8 +49,9 @@ pipeline and still backs the comparison numbers quoted below, but it is no longe
 map layer: it answers a question about our method rather than about where to
 deploy.
 
-**Read the in-app Methods panel before drawing conclusions.** Two inputs in v0 are
-documented stand-ins and the kinetics fail their independent test. The most
+**Read the in-app Methods panel before drawing conclusions.** The grind
+distribution width is an assumption rather than a measurement and the kinetics
+fail their independent test. The most
 consequential known problems are listed under "Honest status of v0" below.
 
 > **Resolution, stated honestly.** v0 runs on a **0.1° grid (~11 km at the

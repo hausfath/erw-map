@@ -1528,10 +1528,10 @@
       <code>${E.eligibility.version}</code>.</p>
 
       <div class="flagbox"><p><b>This is a v0 preview.</b> The kinetics
-      over-predict an independent laboratory test, one input is a stand-in, and
-      the absolute CO₂ scale is uncertain to a factor of a few (see Known
-      limitations). Treat the map as a relative ranking, not a site-level
-      prediction.</p></div>
+      over-predict an independent laboratory test, the grind-width input is
+      assumed rather than measured, and the absolute CO₂ scale is uncertain to
+      a factor of a few (see Known limitations). Treat the map as a relative
+      ranking, not a site-level prediction.</p></div>
 
       <h3>What this map shows</h3>
       <p>For each ~11 km cell of the world's cropland, the map estimates how much
@@ -1599,7 +1599,7 @@
       <li><b>Alkalinity retained as DIC.</b> The carbonate-equilibrium efficiency
       of Bertagni &amp; Porporato (2022), with zero free parameters. Fast
       dissolution in very acid soil stores little carbon; this term is why. Soil
-      pCO₂ is raised in rice paddies, mapped as Landsat inundation months ×
+      pCO₂ is raised in rice paddies, mapped as GRPI inundation months ×
       SPAM all-technology rice area (all rice, not irrigated-only, since 2026-08-24 — rainfed lowland paddy is flooded too).
       The Advanced <i>paddy-field view</i> re-evaluates every paddy-bearing cell
       at 100% paddy (observed inundation months kept) — the like-for-like basis
@@ -1620,6 +1620,14 @@
       (${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}% weathered).
       At ${E.feedstock.rateTHaYr} t/ha of basalt holding
       ${E.feedstock.tco2PerT} tCO₂/t, that fraction becomes tCO₂/ha/yr.</li>
+      <li><b>Drainage limit.</b> Gross removal is then capped at
+      q·[HCO₃⁻]<sub>max</sub>·44: the carbon must leave dissolved in the water
+      that leaves the field, and the concentration is bounded by carbonate
+      saturation at each cell's own soil pCO₂ and temperature (or by the
+      pH-target basis when selected in the sidebar). Applied by default since
+      2026-08-24; it is the binding term on ~95% of cropland. The same bound is
+      published independently as "carrying capacity" (Mayer et al. 2025), whose
+      54 PHREEQC cases this solve reproduces to 0.95–1.00.</li>
       <li><b>Suitability.</b> A piecewise-linear score of gross CO₂ removal —
       ${knots} tCO₂/ha/yr — so zero removal scores zero by construction. The
       Advanced exponents lower one term at a time to test how much of the map
@@ -1788,14 +1796,16 @@
       the level is the dissolved-fraction anchor, calibrated to field-reported
       year-one weathering.</p>
       <p><b>Gross, not net.</b> In-soil carbonate precipitation, riverine
-      re-release and strong-acid competition plausibly claim 20–80% of gross
-      removal, and the gap is spatially variable. Nothing here is validated
-      against net measured removal.</p>
-      <p><b>The aridity contrast depends on a term that is off.</b> With the
-      drainage limit applied, gross removal spans ~125&times; from the wettest to
-      the driest 5% of cropland, close to the 141&times; contrast in the drainage
-      data. Without it — the default — the span is ~10&times;. The larger figure
-      is the defensible one.</p>
+      re-release and strong-acid competition plausibly claim more than 20% of
+      gross removal — the top of the published range (~80%) belongs to
+      particularly suboptimal siting — and the gap is spatially variable.
+      Nothing here is validated against net measured removal.</p>
+      <p><b>The aridity contrast comes from the drainage limit.</b> With it
+      applied — the default — gross removal spans ~125&times; from the wettest
+      to the driest 5% of cropland, close to the 141&times; contrast in the
+      drainage data itself. Switching the limit off collapses the span to
+      ~10&times;, which understates how strongly water availability
+      discriminates sites.</p>
       <p><b>Irrigation is half-visible.</b> Drainage includes irrigation return
       flow; the soil-water balance behind the moisture term does not. On irrigated
       land the two disagree about how wet the field is.</p>
