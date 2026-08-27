@@ -703,7 +703,8 @@
     // they should stay legible when zoomed out without becoming a solid blob.
     if (showQuarries && window.QUARRIES) {
       const pts = window.QUARRIES.points;
-      const src = {MRDS: "#e8734a", ANM: "#4ad2a8", OSM: "#c9a227"};
+      const src = {MRDS: "#e8734a", ANM: "#4ad2a8", OSM: "#c9a227",
+                   DENUE: "#8f7ae6"};
       const rad = Math.max(1.1, Math.min(3.4, 0.9 * dpr * Math.sqrt(view.zoom)));
       g.globalAlpha = 0.85;
       for (let i = 0; i < pts.length; i++) {
@@ -1170,6 +1171,7 @@
     let flagHtml = "";
     if (flags & 2) flagHtml += `<div class="flag bad">Excluded: soil organic carbon likely &gt; ${E.eligibility.socThreshold} wt%</div>`;
     if (flags & 8) flagHtml += `<div class="flag warn">Soil pH &lt; 5.2 — Isometric screens this at validation</div>`;
+    if (flags & 16) flagHtml += `<div class="flag">Delivered cost is an outcrop-based estimate — no quarry register within ~250 km</div>`;
 
     const region = regionNameAt(i);
     box.innerHTML =
@@ -1633,9 +1635,11 @@
       (sources and vintages in docs/TRUCK_RATE_SOURCES.md; only the US rate is
       current) \u2014 over
       ${E.cost.tortuosity}× great-circle distance to the nearest mafic-hosted
-      quarry (US MRDS, Brazil ANM, OSM). Where no quarry inventory is usable,
-      distance to mafic outcrop (GLiM) is scaled by ${E.cost.outcropToQuarry}×,
-      the quarry-to-outcrop ratio measured where both are known. The discount
+      quarry (US MRDS, Brazil ANM, Mexico DENUE, OSM) <i>or</i> to mafic
+      outcrop (GLiM) scaled by ${E.cost.outcropToQuarry}× — the
+      quarry-to-outcrop ratio measured where both are known — whichever is
+      nearer. Cells with no quarry register within ~250 km are flagged in the
+      hover readout as outcrop-based estimates. The discount
       applies to the haul increment only — every site must buy and crush rock, so
       the gate cost carries no spatial information — and it never zeroes a cell
       with real physical potential. Truck only, not network-routed.</li>
@@ -1801,9 +1805,12 @@
       live deployment setting, so addressable area is understated, mostly in the
       tropics.</p>
       <p><b>Quarry inventories are uneven.</b> MRDS is reliable mainly for the
-      US and static since 2011; mining titles (Brazil) and crowd-sourced points
-      overstate producing quarries. Haul distance is great-circle × tortuosity,
-      not road-routed.</p>
+      US and static since 2011; mining titles (Brazil), business directories
+      (Mexico DENUE) and crowd-sourced points overstate producing quarries, and
+      register coverage exists only for the US, Brazil, India and Mexico —
+      elsewhere the cost rests on the outcrop bound and is flagged per cell in
+      the hover. Haul distance is great-circle × tortuosity, not
+      road-routed.</p>
       <p><b>The haul rates are benchmarked, not calibrated.</b> Trucking is
       priced with regional rates (only the US entry is current — USDA grain-truck
       rates; Brazil, China and Europe rest on 2007 World Bank corridor prices
@@ -2024,12 +2031,14 @@
     if (nq) window.QUARRIES.points.forEach((p) => {
       bySrc[p[2]] = (bySrc[p[2]] || 0) + 1;
     });
-    const SRC_NAME = {MRDS: "US MRDS", ANM: "Brazil ANM", OSM: "OSM"};
+    const SRC_NAME = {MRDS: "US MRDS", ANM: "Brazil ANM", OSM: "OSM",
+                      DENUE: "Mexico DENUE"};
     $("quarry-hint").innerHTML = nq
       ? `${nq.toLocaleString()} mafic-hosted quarries (` +
         Object.entries(bySrc).map(([k, v]) =>
           `<span style="color:${{MRDS: "#e8734a", ANM: "#4ad2a8",
-            OSM: "#c9a227"}[k] || "#999"}">\u25cf</span> ${SRC_NAME[k] || k} ` +
+            OSM: "#c9a227", DENUE: "#8f7ae6"}[k] || "#999"}">\u25cf</span> ` +
+          `${SRC_NAME[k] || k} ` +
           `${v.toLocaleString()}`).join(", ") + `).`
       : "No quarry inventory built. Run scripts/fetch_quarries.py.";
     $("attrib").textContent =

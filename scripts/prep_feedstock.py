@@ -69,20 +69,28 @@ GLIM = RAW / "glim/LiMW_GIS 2015.gdb"
 MAFIC_CLASSES = ("vb", "pb")     # basic volcanic (basalt), basic plutonic (gabbro)
 FINE_DEG = 0.025                 # rasterise here, then average to the grid
 
-# Countries where MRDS coverage is dense enough to use the quarry layer at all.
-# Deliberately conservative: MRDS is a US product with incidental foreign records.
-MRDS_TRUSTED_BBOX = (-172.0, 18.0, -66.0, 72.0)     # continental US + AK
-
 # Confidence assigned to each inventory source, used to decide whether the quarry
-# distance is trustworthy enough to replace the outcrop bound. Graded rather than
-# binary, because an authoritative national register and a crowd-sourced layer are
-# not the same evidence.
+# distance is trustworthy enough to compete with the outcrop bound. Graded rather
+# than binary, because an authoritative national register and a crowd-sourced
+# layer are not the same evidence.
+#
+# Confidence is raised within ~250 km of a source's points -- FOR EVERY SOURCE,
+# MRDS included (2026-08-27). Until then MRDS confidence was a bounding box
+# commented "continental US + AK" that actually spanned all of Mexico north of
+# 18 N and the Caribbean, so 27 incidental MRDS records made the whole region
+# trust quarry distance over the outcrop bound: a Veracruz delivery sitting on
+# the Trans-Mexican Volcanic Belt priced as a 636 km haul to a lone Guanajuato
+# record. Coverage evidence is raised around ALL of a source's points (a
+# register that surveyed the ground is evidence about that ground even where
+# its points are not mafic); the quarry MASK still keeps only mafic-hosted.
 SOURCE_CONFIDENCE = {
     "MRDS": 1.0,   # US national register; stale since ~2011 but authoritative
     "ANM": 1.0,    # Brazilian national mining-title register, daily updated
+    "DENUE": 1.0,  # INEGI business directory (Mexico), geocoded, updated 2x/yr
     "OSM": 0.6,    # crowd-sourced, uneven coverage, but the only global option
 }
-CONF_USABLE = 0.5      # above this, prefer quarry distance over the outcrop bound
+CONF_USABLE = 0.5      # above this, quarry distance competes with the outcrop bound
+CONF_RADIUS_CELLS = 25 # ~250 km at 0.1 deg
 
 
 def grid():
@@ -317,8 +325,28 @@ def build_cost(transform, w, h, crs, mafic_km, quarry_km, conf) -> None:
     right for the US and ~2-2.5x high for Brazil and India.
     """
     print("indicative delivered cost")
-    haul_km = np.where(np.isfinite(quarry_km) & (conf > CONF_USABLE), quarry_km,
-                       mafic_km * C.OUTCROP_TO_QUARRY_FACTOR)
+    # The two candidate hauls COMPETE cell by cell (2026-08-27; previously an
+    # either/or on confidence, which let a 636 km haul to a register point beat
+    # the basalt field under the cell). The outcrop bound already carries the
+    # measured outcrop->quarry factor, so min() reads: the nearest KNOWN quarry,
+    # or the statistically expected quarry near mapped outcrop, whichever is
+    # closer. Where the register path wins nothing changes; where the outcrop
+    # path wins the cell is flagged low-confidence (cost_basis.tif -> the
+    # viewer's hover note).
+    quarry_path = np.where(np.isfinite(quarry_km) & (conf > CONF_USABLE),
+                           quarry_km, np.inf)
+    outcrop_path = np.where(np.isfinite(mafic_km),
+                            mafic_km * C.OUTCROP_TO_QUARRY_FACTOR, np.inf)
+    haul_km = np.minimum(quarry_path, outcrop_path)
+    basis = (quarry_path <= outcrop_path).astype("uint8")   # 1 = register quarry
+    land = np.isfinite(haul_km)
+    share = float(basis[land].mean()) if land.any() else 0.0
+    print(f"  haul basis: registered quarry on {share:.1%} of costed land, "
+          f"outcrop fallback (x{C.OUTCROP_TO_QUARRY_FACTOR:g} measured factor) "
+          f"on {1 - share:.1%}")
+    write_tif(INTERIM / "cost_basis.tif", basis.astype("float32"), transform,
+              crs, as_int=True)
+    haul_km = np.where(np.isfinite(haul_km), haul_km, np.nan)
     # Truck for the whole haul. Basalt is rarely railed for ERW today, and rail
     # still needs a first- and last-mile truck leg, so a rail rate would flatter
     # current practice. See constants.TRUCK_COST_USD_T_KM for why an earlier
@@ -414,38 +442,38 @@ def main() -> int:
         for i in np.where(on_mafic)[0]:
             kept_pts.append((pts[i, 0], pts[i, 1], "MRDS"))
 
-        # Confidence starts as the MRDS box: a US inventory frozen around 2011.
-        lon = transform.c + (np.arange(w) + 0.5) * abs(transform.a)
-        lat = transform.f + (np.arange(h) + 0.5) * transform.e
-        W, S, E, N = MRDS_TRUSTED_BBOX
-        inbox = ((lon >= W) & (lon <= E))[None, :] & ((lat >= S) & (lat <= N))[:, None]
-        conf = np.where(inbox, SOURCE_CONFIDENCE["MRDS"], 0.0).astype("float32")
+        # Points that raise confidence, per source level. MRDS contributes ALL
+        # its producers (coverage evidence), not only the mafic-hosted subset.
+        conf_cells = {}
+        def _conf_add(level, ex, ey):
+            conf_cells.setdefault(level, np.zeros((h, w), dtype=bool))[ey, ex] = True
+        for i in range(len(pts)):
+            _conf_add(SOURCE_CONFIDENCE["MRDS"], gx[i], gy[i])
 
         # Add the non-US inventory. ANM rows are selected on SUBSTANCE, so they
-        # need no lithology cross-filter; OSM rows mostly lack a rock type and are
-        # cross-filtered against the mafic map exactly as MRDS is.
-        added = {"ANM": 0, "OSM": 0}
+        # need no lithology cross-filter; OSM and DENUE rows mostly lack a rock
+        # type and are cross-filtered against the mafic map exactly as MRDS is.
+        added = {}
         for lo, la, source, country, subs in ext:
             ex = int((lo - transform.c) / abs(transform.a))
             ey = int((transform.f - la) / abs(transform.e))
             if not (0 <= ex < w and 0 <= ey < h):
                 continue
+            _conf_add(SOURCE_CONFIDENCE.get(source, 0.5), ex, ey)
             if source != "ANM" and frac[ey, ex] <= 0.02:
-                continue                      # OSM: require mapped mafic rock
+                continue                # non-ANM: require mapped mafic rock
             qmask[ey, ex] = True
             kept_pts.append((lo, la, source))
             added[source] = added.get(source, 0) + 1
-            # Raise confidence over the country this inventory covers. Done as a
-            # generous radius around each point rather than a country polygon,
-            # because a national register only tells you about the ground it
-            # actually surveyed.
-            c_new = SOURCE_CONFIDENCE.get(source, 0.5)
-            r = 25                             # ~250 km at 0.1 deg
-            y0, y1 = max(0, ey - r), min(h, ey + r + 1)
-            x0, x1 = max(0, ex - r), min(w, ex + r + 1)
-            np.maximum(conf[y0:y1, x0:x1], c_new, out=conf[y0:y1, x0:x1])
         print("  added to the mask: "
               + ", ".join(f"{k} {v:,}" for k, v in added.items() if v))
+
+        # Confidence: within CONF_RADIUS_CELLS of any point of a source, at that
+        # source's level; sources overlay by max.
+        conf = np.zeros((h, w), dtype="float32")
+        for level, mk in sorted(conf_cells.items()):
+            near_ = ndimage.distance_transform_edt(~mk) <= CONF_RADIUS_CELLS
+            conf = np.maximum(conf, np.where(near_, level, 0.0)).astype("float32")
 
         quarry_km = km_to_nearest(qmask, transform, h, w)
 

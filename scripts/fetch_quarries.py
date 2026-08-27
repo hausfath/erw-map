@@ -24,6 +24,17 @@ TWO SOURCES, with different strengths:
   usable one for India, where GSI Bhukosh and the National Geoscience Data
   Repository were both unreachable and no state portal yielded coordinates.
 
+  INEGI DENUE (Mexico, added 2026-08-27) -- authoritative business directory of
+  the national statistics agency, geocoded, updated twice a year. Sector-21
+  (mining) bulk CSV, no token needed. Stone SCIAN classes kept: 212319 (otras
+  piedras dimensionadas), 212321 (arena y grava), 212322 (tezontle y tepetate
+  -- volcanic scoria, definitionally mafic). Like OSM and MRDS, rows are
+  cross-filtered against mapped mafic lithology downstream; an establishment
+  is not necessarily an active pit, which overstates supply in the same
+  direction as every other source here. Added because the inventory hole made
+  Veracruz -- a delivery sitting on the Trans-Mexican Volcanic Belt -- price
+  as a 636 km haul to a Guanajuato MRDS record.
+
 A title is not a quarry and a quarry is not a producing quarry. ANM titles are
 legal boundaries, and a granted concession need not be active. OSM `landuse=quarry`
 polygons include disused pits unless tagged otherwise. Both therefore OVERSTATE
@@ -57,7 +68,14 @@ COUNTRY_BBOX = {
     "BR": (-74.0, -34.0, -34.0, 6.0),
     "ID": (95.0, -11.0, 141.0, 6.0),
     "CN": (73.0, 18.0, 135.0, 54.0),
+    "MX": (-118.0, 14.0, -86.0, 33.0),
 }
+
+DENUE_URL = ("https://www.inegi.org.mx/contenidos/masiva/denue/"
+             "denue_00_21_csv.zip")
+# SCIAN 2023 stone classes plausibly hosting basalt/aggregate; caliza, marmol,
+# yeso etc. are excluded as definitionally non-mafic.
+DENUE_SCIAN = {"212319", "212321", "212322"}
 TILE_DEG = 5.0
 
 
@@ -178,6 +196,42 @@ def fetch_osm(iso: str) -> list[dict]:
     return pts
 
 
+def fetch_denue() -> list[dict]:
+    """Mexico: INEGI DENUE sector-21 bulk CSV (national, geocoded)."""
+    import io as _io
+    import zipfile
+
+    print("Mexico: INEGI DENUE business directory, sector 21")
+    dst = RAW / "denue_mx_21.zip"
+    if not dst.exists():
+        r = subprocess.run(["curl", "-sSL", "--max-time", "300",
+                            "-A", "Mozilla/5.0", "-o", str(dst), DENUE_URL])
+        if r.returncode != 0 or not dst.exists():
+            print("  DENUE download failed; skipping")
+            return []
+    z = zipfile.ZipFile(dst)
+    name = [n for n in z.namelist()
+            if "conjunto_de_datos" in n and n.endswith(".csv")][0]
+    txt = z.read(name).decode("utf-8-sig", errors="replace")
+    rows = []
+    for r in csv.DictReader(_io.StringIO(txt)):
+        if (r.get("codigo_act") or "") not in DENUE_SCIAN:
+            continue
+        try:
+            lat, lon = float(r["latitud"]), float(r["longitud"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if not (14.0 < lat < 33.0 and -118.0 < lon < -86.0):
+            continue
+        rows.append({"lon": lon, "lat": lat, "source": "DENUE",
+                     "country": "MX",
+                     "substance": (r.get("nombre_act") or "")[:60],
+                     "area_ha": ""})
+    print(f"  {len(rows):,} stone/aggregate establishments "
+          f"(SCIAN {sorted(DENUE_SCIAN)})")
+    return rows
+
+
 def main() -> int:
     RAW.mkdir(parents=True, exist_ok=True)
     countries = ["BR", "IN"]
@@ -185,15 +239,26 @@ def main() -> int:
         if a.startswith("--country"):
             countries = a.split("=", 1)[1].split(",")
 
-    rows = []
-    if "BR" in countries:
-        rows += fetch_anm()
-    if "--skip-osm" not in sys.argv:
-        for iso in countries:
-            rows += fetch_osm(iso)
+    out = INTERIM / "quarries.csv"
+    if "--denue-only" in sys.argv:
+        # Incremental: keep the existing ANM/OSM rows (network-expensive to
+        # refetch), replace any prior DENUE rows.
+        rows = []
+        if out.exists():
+            with out.open() as fh:
+                rows = [r for r in csv.DictReader(fh)
+                        if r.get("source") != "DENUE"]
+        rows += fetch_denue()
+    else:
+        rows = []
+        if "BR" in countries:
+            rows += fetch_anm()
+        rows += fetch_denue()
+        if "--skip-osm" not in sys.argv:
+            for iso in countries:
+                rows += fetch_osm(iso)
 
     INTERIM.mkdir(parents=True, exist_ok=True)
-    out = INTERIM / "quarries.csv"
     with out.open("w", newline="") as fh:
         wr = csv.DictWriter(fh, ["lon", "lat", "source", "country",
                                  "substance", "area_ha"])

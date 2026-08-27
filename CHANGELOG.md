@@ -5,6 +5,41 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Mexico joins the quarry inventory, and the haul paths now compete
+
+Prompted by a Veracruz delivery that priced at $53-70/t while sitting on the
+Trans-Mexican Volcanic Belt. Two defects, both fixed:
+
+1. MRDS "trusted" coverage was a bounding box commented "continental US +
+   AK" that actually spanned all of Mexico north of 18 N and the Caribbean,
+   so 27 incidental MRDS records made the region prefer a 500-1,200 km haul
+   to a register point over the outcrop bound under the cell. Confidence is
+   now raised within ~250 km of a source's points, uniformly for every
+   source, MRDS included -- no more box.
+2. The haul was an either/or on confidence: inside "trusted" zones a distant
+   register point beat nearby mapped basalt. The two paths now COMPETE per
+   cell: haul = min(nearest registered quarry, outcrop distance x the
+   measured outcrop-to-quarry factor). Registered quarries win on 4.5% of
+   costed land; everywhere else the outcrop bound governs, and cells with no
+   register within ~250 km carry a new hover note ("outcrop-based
+   estimate") via flag bit 4 -- the previously dead cost_conf channel,
+   finally surfaced.
+
+New source: INEGI DENUE (Mexico's national business directory, sector-21
+bulk CSV, geocoded, no token): SCIAN 212319/212321/212322 (other dimension
+stone, sand & gravel, tezontle -- volcanic scoria), 1,337 establishments,
+400 mafic-hosted after the same lithology cross-filter every source gets,
+280 unique cells in the overlay. fetch_quarries gains --denue-only for
+incremental refresh and an MX bbox for future OSM pulls.
+
+Effect: Veracruz-region delivered cost $53-70 -> $13-19/t. Cropland medians:
+Mexico $44 -> $21, India $21 -> $19, US $60 -> $54 (outcrop now beats far
+registers where basalt is local), Europe unchanged ($41 -- it was already on
+the outcrop bound); world p50 $34 -> $32; 15% of cropland gets cheaper, 3.6%
+dearer (cells that lost box-conferred trust). Country tables: world
+$100-screened economics 252 -> 270 Mt central (405 at $150), India 76 -> 82.
+The inventory count is 5,575 mafic-hosted points across four sources.
+
 ## A pH-target ceiling basis, as a viewer option
 
 Colleague feedback on the steady-state framing: holding 30 t/ha of rock

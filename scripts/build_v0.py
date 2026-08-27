@@ -504,7 +504,7 @@ def main() -> int:
         # 1/(1 + F/S) ~ 0.95 at zero distance rather than 1.0.
         v_cost = np.clip(np.nan_to_num(C.cost_value(cost_usd_t),
                                        nan=C.COST_FLOOR), C.COST_FLOOR, 1.0)
-        feed_source = ("GLiM mafic outcrop + MRDS/ANM/OSM mafic-hosted "
+        feed_source = ("GLiM mafic outcrop + MRDS/ANM/DENUE/OSM mafic-hosted "
                        "quarries, truck only")
     else:
         cost_usd_t = np.full_like(ph, np.nan)
@@ -1144,6 +1144,10 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
     # that are actually inside the map.
     flags |= np.where(no_input & valid, 4, 0).astype("uint8")            # bit2 no input
     flags |= np.where(ph_warn, 8, 0).astype("uint8")                     # bit3 pH<5.2 note
+    # bit4: delivered cost is an outcrop-based estimate -- no quarry register
+    # within ~250 km (feedstock_conf below the usable threshold). Surfaced as a
+    # hover note; ~half of cropland, honestly.
+    flags |= np.where((cost_conf <= 0.5) & valid, 16, 0).astype("uint8")
 
     r2 = np.rint(np.clip(crop, 0, 1) * 255).astype("uint8")
 

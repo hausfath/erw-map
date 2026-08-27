@@ -1625,7 +1625,7 @@ window.ERW = {
     "croplandGha": 1.215,
     "evaluatedGha": 1.209,
     "cdrMedian": 0.4,
-    "quarryPoints": 5295
+    "quarryPoints": 5575
   },
   "provenance": {
     "crops": "IFPRI SPAM2010 v2.0 global physical area, doi:10.7910/DVN/PRFF8V (latest global release)",

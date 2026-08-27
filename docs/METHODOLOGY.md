@@ -867,7 +867,7 @@ likely effect on the map.
 
 ### Overlays
 
-**Quarry locations** — 5,295 mafic-hosted quarries from three national registers
+**Quarry locations** — 5,575 mafic-hosted quarries from four registers (US MRDS, Brazil ANM, Mexico DENUE, OSM)
 (US MRDS, Brazil ANM) and OSM. Coverage is very uneven: outside those countries the
 absence of a dot means the register does not exist, not that the rock does not.
 
