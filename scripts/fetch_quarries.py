@@ -60,7 +60,11 @@ ANM = ("https://geo.anm.gov.br/arcgis/rest/services/SIGMINE/dados_anm/"
 # REQUERIMENTO DE LAVRA is an application, so both are excluded.
 ANM_PHASES = ("CONCESSÃO DE LAVRA", "LICENCIAMENTO", "REGISTRO DE EXTRAÇÃO")
 
-OVERPASS = "https://overpass-api.de/api/interpreter"
+# Overridable because the public instance throttles hard after sustained
+# pulls -- kumi.systems runs a capable public mirror.
+import os
+OVERPASS = os.environ.get("OVERPASS_URL",
+                          "https://overpass-api.de/api/interpreter")
 # The public Overpass instance 504s on a whole-country quarry pull, so the query
 # is tiled. Tiles are ~5 degrees, which came back reliably in testing.
 COUNTRY_BBOX = {
@@ -69,10 +73,30 @@ COUNTRY_BBOX = {
     "ID": (95.0, -11.0, 141.0, 6.0),
     "CN": (73.0, 18.0, 135.0, 54.0),
     "MX": (-118.0, 14.0, -86.0, 33.0),
+    # Region pulls (2026-08-27): Europe and Asia were inventory holes -- zero
+    # register points -- leaving their delivered costs entirely on the outcrop
+    # bound. OSM tagging in Europe is the densest anywhere (a single 1-degree
+    # German tile returns ~200 quarry features), so a region pull is the
+    # highest-yield source available without national-register ingestion.
+    "EU": (-11.0, 35.0, 45.0, 71.0),      # Europe incl. UK, Nordics, Balkans
+    "SEA": (92.0, -11.0, 142.0, 28.0),    # Myanmar-Indonesia-Philippines
+    "JP": (124.0, 30.0, 146.0, 46.0),     # Japan + Korea
+    "CNE": (100.0, 20.0, 125.0, 42.0),    # east-China agricultural belt
+    "TRME": (26.0, 30.0, 60.0, 42.0),     # Turkey, Caucasus, N Middle East
 }
 
 DENUE_URL = ("https://www.inegi.org.mx/contenidos/masiva/denue/"
              "denue_00_21_csv.zip")
+
+# France: BRGM Observatoire des Materiaux WFS -- active extraction points,
+# national coverage (verified 2026-08-27: ~4,735 points, lat 41.6-50.8, lon
+# -4.6-9.5, WFS 2.0 paging; the service TITLE says "granulats marins" but the
+# layer is metropolitan-wide). The `produit` field is a coded nomenclature we
+# do not decode: like MRDS and OSM, rock type comes from the GLiM mafic
+# cross-filter downstream.
+BRGM_WFS = ("http://geoservices.brgm.fr/odmgm?service=WFS&version=2.0.0"
+            "&request=GetFeature&typeName=ms:EXPLOIT_ACTIVE_P"
+            "&count=1000&startIndex={i}")
 # SCIAN 2023 stone classes plausibly hosting basalt/aggregate; caliza, marmol,
 # yeso etc. are excluded as definitionally non-mafic.
 DENUE_SCIAN = {"212319", "212321", "212322"}
@@ -232,6 +256,37 @@ def fetch_denue() -> list[dict]:
     return rows
 
 
+def fetch_brgm() -> list[dict]:
+    """France: BRGM active extraction points over paged WFS 2.0."""
+    import re
+
+    print("France: BRGM Observatoire des Materiaux, EXPLOIT_ACTIVE_P")
+    rows, i = [], 0
+    while True:
+        txt = curl(BRGM_WFS.format(i=i), timeout=180)
+        if not txt:
+            print(f"  WARNING: page at startIndex={i} failed; partial pull")
+            break
+        feats = re.findall(
+            r"<gml:pos>([-\d.]+) ([-\d.]+)</gml:pos>(.*?)</ms:EXPLOIT_ACTIVE_P>",
+            txt, re.S)
+        if not feats:
+            break
+        for la, lo, body in feats:
+            m = re.search(r"<ms:produit>([^<]*)</ms:produit>", body)
+            rows.append({"lon": round(float(lo), 4),
+                         "lat": round(float(la), 4),
+                         "source": "BRGM", "country": "FR",
+                         "substance": (m.group(1) if m else "")[:40],
+                         "area_ha": ""})
+        if len(feats) < 1000:
+            break
+        i += 1000
+        time.sleep(1.0)
+    print(f"  {len(rows):,} active extraction points")
+    return rows
+
+
 def main() -> int:
     RAW.mkdir(parents=True, exist_ok=True)
     countries = ["BR", "IN"]
@@ -240,7 +295,26 @@ def main() -> int:
             countries = a.split("=", 1)[1].split(",")
 
     out = INTERIM / "quarries.csv"
-    if "--denue-only" in sys.argv:
+    osm_add = next((a.split("=", 1)[1].split(",") for a in sys.argv[1:]
+                    if a.startswith("--osm-add")), None)
+    if osm_add:
+        # Incremental: keep everything, append new OSM region pulls. Rows
+        # duplicated across overlapping boxes collapse to unique cells in
+        # prep_feedstock, so duplication is waste, not error.
+        rows = []
+        if out.exists():
+            with out.open() as fh:
+                rows = list(csv.DictReader(fh))
+        for key in osm_add:
+            rows += fetch_osm(key.strip())
+    elif "--brgm-only" in sys.argv:
+        rows = []
+        if out.exists():
+            with out.open() as fh:
+                rows = [r for r in csv.DictReader(fh)
+                        if r.get("source") != "BRGM"]
+        rows += fetch_brgm()
+    elif "--denue-only" in sys.argv:
         # Incremental: keep the existing ANM/OSM rows (network-expensive to
         # refetch), replace any prior DENUE rows.
         rows = []
@@ -254,6 +328,7 @@ def main() -> int:
         if "BR" in countries:
             rows += fetch_anm()
         rows += fetch_denue()
+        rows += fetch_brgm()
         if "--skip-osm" not in sys.argv:
             for iso in countries:
                 rows += fetch_osm(iso)

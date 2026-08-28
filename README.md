@@ -271,7 +271,7 @@ where the inventory is usable the quarry distance that actually sets cost. Insid
 the trusted area quarry distance is **2.0× outcrop distance**, and that *measured*
 ratio scales the bound elsewhere.
 
-The inventory is **5,575 mafic-hosted quarries** from four sources of differing
+The inventory is **13,602 mafic-hosted quarries** from five sources of differing
 standing. **USGS MRDS** (1,829) is the US national register, with no basalt
 commodity code, so producers are cross-filtered against lithology. **ANM SIGMINE**
 (1,681) is Brazil's mining-title register, queried over its ArcGIS REST endpoint;

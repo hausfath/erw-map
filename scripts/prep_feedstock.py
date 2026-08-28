@@ -87,6 +87,7 @@ SOURCE_CONFIDENCE = {
     "MRDS": 1.0,   # US national register; stale since ~2011 but authoritative
     "ANM": 1.0,    # Brazilian national mining-title register, daily updated
     "DENUE": 1.0,  # INEGI business directory (Mexico), geocoded, updated 2x/yr
+    "BRGM": 1.0,   # French geological survey, active extraction points (WFS)
     "OSM": 0.6,    # crowd-sourced, uneven coverage, but the only global option
 }
 CONF_USABLE = 0.5      # above this, quarry distance competes with the outcrop bound

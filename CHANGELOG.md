@@ -5,6 +5,29 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Europe and Asia join the quarry inventory
+
+Two additions on top of the Mexico fix below. FRANCE: BRGM's Observatoire
+des Materiaux WFS (EXPLOIT_ACTIVE_P, 4,735 active extraction points,
+national despite the service title saying "granulats marins"; paged WFS 2.0;
+register confidence 1.0; 382 mafic-hosted after the GLiM cross-filter).
+OSM REGION PULLS: Europe (-11..45E, 35..71N) delivered 85,869 quarry
+features -- ten times India's count, OSM's densest territory -- plus SE Asia
+8,682 and Japan 991 (11 of 20 Japanese tiles throttled; undercount). China
+and Turkey returned zero from every tile on TWO Overpass instances
+(overpass-api.de and kumi.systems) and are documented gaps, not absences of
+quarries. OVERPASS_URL is now env-overridable for mirror retries.
+
+The overlay grows 5,575 -> 13,602 mafic-hosted points; the registered-quarry
+haul basis covers 9.7% of costed land (was 4.5%). Delivered cost, cropland
+p50: Europe $41 -> $30, France $31 -> $24, SE Asia $26 -> $24, world
+$32 -> $30. Country tables: world $100-screened economics 270 -> 285 Mt
+central; Thailand and Myanmar gain ~25% each. Remaining upgrade path, from
+the register hunt (agent-verified): Norway NGU's crushed-rock database (open,
+rock-typed -- tiny cropland, skipped), UK BGS BritPits (paid tier for rock
+type), Germany via the INSPIRE mineral-resources theme (needs a browser
+session), Indonesia MinerbaOne (mid-decommission).
+
 ## Mexico joins the quarry inventory, and the haul paths now compete
 
 Prompted by a Veracruz delivery that priced at $53-70/t while sitting on the

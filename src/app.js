@@ -1643,7 +1643,7 @@
       (sources and vintages in docs/TRUCK_RATE_SOURCES.md; only the US rate is
       current) \u2014 over
       ${E.cost.tortuosity}× great-circle distance to the nearest mafic-hosted
-      quarry (US MRDS, Brazil ANM, Mexico DENUE, OSM) <i>or</i> to mafic
+      quarry (US MRDS, Brazil ANM, Mexico DENUE, France BRGM, OSM) <i>or</i> to mafic
       outcrop (GLiM) scaled by ${E.cost.outcropToQuarry}× — the
       quarry-to-outcrop ratio measured where both are known — whichever is
       nearer. Cells with no quarry register within ~250 km are flagged in the
@@ -1816,9 +1816,11 @@
       tropics.</p>
       <p><b>Quarry inventories are uneven.</b> MRDS is reliable mainly for the
       US and static since 2011; mining titles (Brazil), business directories
-      (Mexico DENUE) and crowd-sourced points overstate producing quarries, and
-      register coverage exists only for the US, Brazil, India and Mexico —
-      elsewhere the cost rests on the outcrop bound and is flagged per cell in
+      (Mexico DENUE, France BRGM) and crowd-sourced points overstate producing
+      quarries. Register coverage exists for the US, Brazil, Mexico and France;
+      OSM crowd coverage is dense in Europe and usable in India, SE Asia, Japan
+      and Brazil; China and Turkey yielded nothing from two Overpass instances.
+      Elsewhere the cost rests on the outcrop bound and is flagged per cell in
       the hover. Haul distance is great-circle × tortuosity, not
       road-routed.</p>
       <p><b>The haul rates are benchmarked, not calibrated.</b> Trucking is
