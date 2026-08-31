@@ -5,6 +5,23 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Country tables: one five-column table with parameter ranges
+
+scripts/analysis/country_potential.py restructured (per Zeke): one table --
+cropland Mha, then p50 (p5-p95) for technical-uncapped, economic-uncapped,
+technical-drainage-limited and economic-drainage-limited, all on the
+steady-state basis at the $100/tCO2 screen. Ranges come from a
+500-draw DOCUMENTED-PARAMETER ensemble (dissolution scale over the verified
+deliveries' 15-56% year-1 spread, median pinned at the 25% anchor; ceiling
+SI uniform 0-1; Mg split-log 1/3-3 mM; the three gate scenarios; haul
+x0.75-1.25), stated plainly as not a calibrated posterior. Fixed axes and
+why are in the module docstring. Fidelity: the ensemble's ceiling at shipped
+parameters reproduces the build raster to 0.06% median; the uncapped world
+p50 (2,586 Mt) matches the build's 2,591; the limited p50 (774) sits ~8%
+above the shipped 717 by Jensen convexity in Mg, documented in the output.
+Headline world row: uncapped 2,586 (1,591-5,059), econ uncapped 1,062
+(586-2,341), limited 774 (507-1,037), econ limited 314 (187-479) MtCO2/yr.
+
 ## Europe and Asia join the quarry inventory
 
 Two additions on top of the Mexico fix below. FRANCE: BRGM's Observatoire
