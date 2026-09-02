@@ -133,73 +133,90 @@ binary mask on a point estimate.
 
 ## What the verified deliveries say
 
-Eight independently verified basalt deliveries from the 2026 reporting round,
-across three soil and climate regimes, were analysed with
-`scripts/analyse_deployments.py`.
+Fourteen Isometric-verified basalt removals from four suppliers in three countries
+(the US Southeast, southern Brazil, and eastern and central India) were assembled
+into a cross-supplier calibration dataset and analysed with
+`scripts/analyse_deployments.py`. It replaced an eight-row fixture on 2026-09-01.
 
-**The input data is not in this repository.** It derives from an independent
-verification report and its cross-operator comparison, and carries per-operator
+**The input data is not in this repository.** It derives from supplier bundles,
+project design documents and verification reports, and carries per-supplier
 results that are not ours to publish. The script is here and exits with the
-expected CSV schema if the fixture is absent, so the method stays reviewable even
-though the inputs are not redistributed. Only aggregate findings appear below.
+expected CSV schema if the dataset is absent, so the method stays reviewable even
+though the inputs are not redistributed. Only cross-supplier aggregates appear
+below and in `constants.py`; no supplier is paired with a number anywhere in the
+repo or on the map.
 
-**1. Fraction weathered is not a site property.** Across all eight deliveries it
-fits `fw ~ rate^-0.58` (R² 0.48, n = 8), which looks like the self-limiting
-behaviour you would expect as soil pH rises and export becomes drainage-limited.
+**1. The dissolution anchor was re-derived by the pre-registered constancy test,
+and it roughly halved.** For each rate-usable delivery (11 of 14: two have no
+recoverable weathering duration and one is the superseded first sampling of fields
+re-sampled later), the map supplies its own dimensionless rate X = 10^L1 × η_tr at
+the delivery's cells, and the model predicts the one-year fraction weathered at the
+supplier's own grind. The multiplier k on the reference retreat that reproduces the
+observation is the calibration quantity. Taken per supplier cluster (grind, tracer
+method, sampling depth and climate are all nested in supplier) and over the three
+clusters with a disclosed grind, the median k is **0.40**: the reference cell should
+weather **12%** in year one, not the 25% shipped until 2026-09-01. The 25% had been
+"nearest the median of the raw first-period fractions", which sit at finer grinds
+and more reactive sites than the reference condition and so justified a normalised
+number with un-normalised observations. Including the fourth supplier, whose grind
+is undisclosed, at the reference grind (an upper bound on its k) would give 18%; the
+known-grind value is used because a bound is not an estimate and because it is the
+conservative side.
 
-**That exponent is not a rate effect, and treating it as one was an error.**
-Application rate, grind and operator are mutually collinear in this dataset:
-corr(ln rate, ln p50) = **+0.60**, because the operators who apply high rates also
-grind coarse. The **within-operator** slope — same feedstock, same grind — is
-**−0.01 ± 0.57**, indistinguishable from zero. Grind is perfectly nested in
-operator, so the independent cluster count is **4**, not 8.
+**2. The spread is 7.4× across suppliers and it rises with grain size.** At the
+old anchor the model predicted ~90% one-year weathering for the finest-grind
+supplier (observed ~30%), ~70% for the mid-grind supplier (observed ~45%) and
+15–19% for the coarsest (observed 14–28%). Cluster k runs 0.12–0.90. The
+pre-registered rule in `docs/VALIDATION.md` was ~3× reportable, 10× demotes the
+CO₂ layer to qualitative; 7.4× sits between and is reported, not tuned away. The
+structure says the shrinking-core grind dependence (Fw ∝ 1/d50 at small retreat) is
+too steep for these deliveries, or the p50s are not comparable (sieve vs laser;
+crusher fines with an unreported broad tail), or the tracer-free denominator and
+depth differences track grind because all are nested in supplier. Width is the
+likeliest culprit and no supplier has a particle-size distribution. The country
+ensemble samples this cluster range (4–23% at the reference condition) for its
+dissolution axis.
 
-So −0.58 is the operator/grind contrast wearing a rate label. That matters because
-`analyse_deployments.py` used it to "normalise to a common application rate",
-which removed the grind contrast a second time through a coefficient that *is* the
-grind contrast — see finding 3, whose ordering reversal is withdrawn as an artefact
-of that double-removal rather than merely hedged.
+**3. The one re-sampled field falsifies the curve shape, or its stated duration.**
+The same fields sampled twice show the mean weathering rate falling to ~13% of its
+initial value between samplings. No Rosin–Rammler width from 0.5 to 2.5, nor a
+first-order exponential, reproduces the second value from the first (all predict
+36–53% against ~30% observed), unless the first sampling was about twice as late
+as stated, which is possible because that duration is inferred rather than
+measured. Consequence: one-year values extrapolated from observations shorter than
+300 days are bracketed (raw lower bound, shrinking-core upper bound), not trusted.
 
-**Design consequence, which survives intact:** the map must never present fraction
-weathered as a suitability metric, and any cross-site comparison has to hold both
-application rate **and** grind fixed.
+**4. Real delivered basalt holds 0.295 tCO₂/t on the map's Ca+Mg basis.** The
+supplier mean of measured feedstock Ca and Mg assays (n = 3 suppliers; the fourth
+has no assay in the dataset), range 0.232–0.354. Counting Na and K as the protocols
+do would add 8–15% for the feedstocks that report them; the Ca+Mg basis is the
+conservative one and is kept. The `delivered_basalt` archetype is set to this; a
+textbook fresh basalt would be 13% optimistic and the nominal 0.33 tCO₂/t 12%.
 
-**2. Real delivered basalt is less CO₂-dense than a fresh-basalt idealisation.**
-Averaged over the deliveries carrying an independent CDR measurement, implied CO₂
-potential is **0.289 tCO₂ per tonne of rock**. A `delivered_basalt` archetype
-anchored to that is now the default; a textbook fresh basalt would have been 14%
-optimistic, and the nominal 0.33 tCO₂/t commonly applied overstates by 20–25%.
+**5. Fraction weathered is still not a site property.** The pooled fit is
+`fw ~ rate^-0.61` (R² 0.77, n = 11) and the within-supplier slope agrees
+(−0.61 ± 0.41), but only two of four suppliers vary application rate at all and
+the suppliers who apply the most rock also grind the coarsest. It remains the
+supplier contrast wearing a rate label, and is not used in the model. The design
+consequence survives: the map must never present fraction weathered as a
+suitability metric.
 
-**3. The regime comparison is unidentifiable, and an earlier claim here is
-retracted.** This README previously said the deliveries "mildly challenge" the
-paddy prediction, because after adjusting for application rate the tropical-Oxisol
-regime came out ahead of the acidic-paddy one. Measured p50 values are now in hand,
-and that claim was an over-read.
+**6. Porewater chemistry gives the first field constraint on the paddy pCO₂
+assumption.** Four site means of porewater pH and alkalinity from one supplier in
+eastern India imply in-situ soil pCO₂ of roughly 32,000–56,000 µatm, for flooded
+rice and upland tea alike, bracketing the protocol's 50,000 µatm saturated value.
+Wet tropical soil respiration, not flooding per se, appears to set the number. It
+is a plausibility check on `PCO2_SATURATED_UATM`, not a calibration. The measured
+alkalinities (2–3 mmol/L) also sit well below calcite saturation at that pCO₂, so
+those fields are kinetically limited, not transport-limited.
 
-Grain size is **perfectly collinear with regime**: every Corn Belt row is 67 µm,
-every paddy row is 600 µm, the single Brazil row is 120 µm. Regime and grain size
-are the *same variable* in this dataset, so no analysis can separate them. That is
-stronger than low power — the comparison is unidentifiable. And the confound is
-large: 9× in diameter, roughly 8× in surface area, against a rate-adjusted regime
-spread of only 3.35×.
-
-Normalising to a common grind (inverting through `Fw = 1 − exp(−kX)`, since scaling
-fraction weathered directly produced a physically impossible 106%) *reverses* the
-ordering, putting acidic paddy first at 64% against the Corn Belt's 18%. **That
-reversal is now withdrawn entirely.** It is not merely uninformative — it is an
-artefact. The normalisation used the −0.58 rate exponent from finding 1, which is
-itself the grind contrast, so the procedure removed one degree of freedom twice.
-Rate, grind and regime are three labels for one variable here, and no
-rearrangement of them recovers a regime effect.
-
-What it establishes is narrower and more useful: **these deliveries are
-uninformative about regime, not contrary to it.**
-
-Making it identifiable needs two grinds within one regime, or one grind across two
-regimes — a single site running coarse and fine lots side by side would do it.
-
-The cleanest experiment that *would* test the mechanism is a flooded-versus-drained
-pair at one site with the same feedstock and application rate.
+**7. Dissolution-based CDR still does not fit in the drainage water at the
+higher-rate sites.** Four of the eight deliveries that can be placed on the grid
+report dissolution × CO₂ potential exceeding their cells' drainage-concentration
+ceiling, by up to 7×; the four that fit are the wettest sites at the lowest
+application rates. Not an over-crediting finding: these are dissolution figures,
+and the gap is retention and lag. It means this set anchors dissolution, which is
+what finding 1 uses it for, and cannot anchor export.
 
 ## Honest status of v0
 
@@ -232,7 +249,7 @@ Fixing that surfaced a second defect: the dissolved fraction was hard-clipped at
 0.6, pinning **18.9% of cropland area at one identical CO₂ value** — a flat top
 across a fifth of the map. It is now first-order decay, `1 − exp(−k·X)`, bounded
 by 1 because you cannot dissolve more rock than you applied. Anchoring the
-reference fraction to observation (15–56% first-period across the verified
+reference fraction to observation (one-year fractions of 14–55% across the verified
 deliveries) also showed our own 20% annual-dissolution cap was falsified by data.
 
 ### Fixed earlier in this pass
@@ -375,9 +392,9 @@ five hand-placed breakpoints that ramped hard enough for a mid-range cell to
 lose 38%; the cell at today's cropland median of $34/t loses 19%.
 
 S is an editorial choice, not a derived one, so the readout reports feedstock cost
-per tonne CO₂ alongside — **$42–54/tCO₂ gross at gate-plus-trip-charge
-(regionally), $118 at the cropland median** ($12.25–15.50 and $34 per tonne of
-rock divided by 0.289 tCO₂/t) —
+per tonne CO₂ alongside — **$42–53/tCO₂ gross at gate-plus-trip-charge
+(regionally), $115 at the cropland median** ($12.25–15.50 and $34 per tonne of
+rock divided by 0.295 tCO₂/t) —
 letting the trade-off be judged in units that mean something.
 
 Cost is compensatory with a floor, not annihilating: expensive rock is bad, not
@@ -513,7 +530,7 @@ of rain a year cannot drain less than a millimetre. Run
 |---|---|
 | **The SOC screen barely binds on cropland** | Only 0.04% of cropland area is confidently excluded (P > 0.9), and 96% of the cells flagged worldwide are north of 50°N: SOC above 5 wt% is a peatland and boreal-forest phenomenon. A *marginal* class (0.1 < P < 0.9) covering 53% of cropland was drawn in an earlier version and is now reported rather than mapped — it was the dominant visual feature of the map while saying little that was actionable, and it is largely a statement about the width of SoilGrids' predictive intervals (on a point estimate the same figure is ~0.2%). Still a screening likelihood, not a calibrated eligibility probability, because the quantiles describe a block average and the threshold applies to a field |
 | **Grid is 0.1° (~11 km), not 1 km** | The header says so. Effective resolution is coarser again |
-| **The drainage-concentration ceiling is now APPLIED by default (2026-08-24), and it is the binding term almost everywhere** | The ceiling (`cdr ≤ q·[HCO₃⁻]_max·44`, from calcite saturation with pH endogenous, Davies activities, Mg 1 mM explicit) was held out of the defaults 2026-08-03 → 2026-08-24 pending outside review — see [`docs/rfc_flux_reconciliation.tex`](docs/rfc_flux_reconciliation.tex). The first review arrived: Mayer et al. 2025 (doi:10.21203/rs.3.rs-7811095/v1, Terradot preprint) independently publish the same bound as "carrying capacity"; our solve reproduces their 54 PHREEQC cases to 0.95–1.00 (gate 13d) and their global integral to 6% (0.359 vs 0.34 GtCO₂/yr). With the cap on, the steady-state footer total is 0.70 GtCO₂/yr (year-1 basis 0.71, vs 2.43 uncapped), the cap binds on **95.1%** of cropland area (median exceedance of the unbounded model: **3.8×**), and it is a *maximum-efficient* bound — past it, calcite precipitation halves marginal efficiency rather than stopping removal. The top-level toggle *Apply the drainage limit* shows the uncapped historical behaviour; `constants.FLUX_CEILING_ON` governs the derived products. Caveat: the corroboration is one company-funded preprint, not yet peer-reviewed |
+| **The drainage-concentration ceiling is now APPLIED by default (2026-08-24), and it binds on 77% of cropland area** (95% before the dissolution anchor was re-derived on 2026-09-01) | The ceiling (`cdr ≤ q·[HCO₃⁻]_max·44`, from calcite saturation with pH endogenous, Davies activities, Mg 1 mM explicit) was held out of the defaults 2026-08-03 → 2026-08-24 pending outside review — see [`docs/rfc_flux_reconciliation.tex`](docs/rfc_flux_reconciliation.tex). The first review arrived: Mayer et al. 2025 (doi:10.21203/rs.3.rs-7811095/v1, Terradot preprint) independently publish the same bound as "carrying capacity"; our solve reproduces their 54 PHREEQC cases to 0.95–1.00 (gate 13d) and their global integral to 6% (0.359 vs 0.34 GtCO₂/yr). With the cap on, the steady-state footer total is 0.70 GtCO₂/yr (year-1 basis 0.71, vs 2.43 uncapped), the cap binds on **95.1%** of cropland area (median exceedance of the unbounded model: **3.8×**), and it is a *maximum-efficient* bound — past it, calcite precipitation halves marginal efficiency rather than stopping removal. The top-level toggle *Apply the drainage limit* shows the uncapped historical behaviour; `constants.FLUX_CEILING_ON` governs the derived products. Caveat: the corroboration is one company-funded preprint, not yet peer-reviewed |
 | **Gudbrandsson kinetics test now runs, and FAILS** | See below. The rate law over-predicts measured basalt Ca and Mg release, with structured residuals. This is the most important open problem in the model |
 
 Weight sensitivity is not hidden: lowering the reactivity exponent from 1.00 to
@@ -732,7 +749,7 @@ it verifies, so it tests arithmetic rather than the archetype.
 | Kinetic constants match the primary USGS report | 12/12 rows |
 | Basaltic glass absent from Palandri & Kharaka | confirmed |
 | Per-mineral CO₂ capacity vs Puro.earth Table 1.1 | max deviation 4.7% |
-| `delivered_basalt` vs verified deliveries | 0.290 vs 0.289 tCO₂/t measured |
+| `delivered_basalt` vs verified deliveries | 0.295 vs 0.295 tCO₂/t, supplier-mean Ca+Mg assays (arithmetic check, not a test) |
 
 One gate failed on first run and was informative: a stoichiometric ceiling set
 from basalt, which ultramafic legitimately exceeded. The threshold was wrong, not

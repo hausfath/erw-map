@@ -153,21 +153,27 @@ def main() -> int:
           f"field-level\nnumbers above are the like-for-like comparison for a "
           f"project's own fields)")
 
-    # Optional: compare with the verified deliveries if the private fixture
-    # is present (gitignored; per-operator data is not ours to publish).
-    fx = ROOT / "tests/fixtures/deployments_2026.csv"
-    if fx.exists():
-        txt = [l for l in fx.read_text().splitlines(keepends=True)
-               if not l.startswith("#")]
-        dep = [r for r in csv.DictReader(io.StringIO("".join(txt)))
-               if r["regime"] == "india_paddy" and r["country"] == "IN"]
+    # Optional: compare with the verified India paddy deliveries if the private
+    # calibration dataset is present (gitignored; per-supplier data is not ours
+    # to publish). Dissolution-based CDR = rate x one-year fraction x the map's
+    # Ca+Mg feedstock potential (supplier assays are not used here, so this is
+    # a like-for-like stand-in rather than a certified figure).
+    dl = ROOT / "calibration_data/calibration/deliveries.csv"
+    if dl.exists():
+        with dl.open() as fh:
+            dep = [r for r in csv.DictReader(fh)
+                   if r["country"] == "India" and "rice" in (r.get("crop") or "")
+                   and r.get("elapsed_days")]
         if dep:
-            print("\nverified central-India paddy deployments "
-                  "(dissolution-based CDR, local fixture):")
+            print("\nverified India paddy deliveries (dissolution-based CDR at the "
+                  "map's feedstock potential, local dataset):")
+            g, a = rows["central"]["gross"], rows["central"]["addl"]
             for r in dep:
-                cdr = float(r["cdr_tco2_ha"]) * 12.0 / float(r["period_months"])
-                g, a = rows["central"]["gross"], rows["central"]["addl"]
-                print(f"  {r['deployment']:12s} {cdr:5.2f} tCO2/ha/yr claimed "
+                fw = float(r["fw_p50_pct"]) / 100.0
+                cdr = (float(r["app_rate_t_ha"]) * fw
+                       * C.DELIVERED_BASALT_TCO2_PER_T
+                       * 365.0 / float(r["elapsed_days"]))
+                print(f"  {r['delivery_slug']:28s} {cdr:5.2f} tCO2/ha/yr claimed "
                       f"dissolution -> {cdr / g:4.1f}x the central gross "
                       f"capacity, {cdr / a:4.1f}x the additional")
             print("  (>1x does not mean over-crediting: dissolved cations can "

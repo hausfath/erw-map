@@ -5,6 +5,72 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Dissolution anchor re-derived from the cross-supplier calibration dataset
+
+A 14-removal, 4-supplier, 3-country calibration dataset (deliveries, fields,
+feedstock, data dictionary; assembled by Zeke at Frontier from supplier
+bundles, PDDs and V&V reports) replaced the 8-row fixture on 2026-09-01. It
+lives in calibration_data/ (gitignored) and NO project data leaves it:
+committed constants carry cross-supplier medians, ranges and counts only, and
+the per-operator p50 dictionary the build used to emit into
+engine_constants.js is gone (DELIVERY_P50_KNOWN_UM is an unattributed tuple).
+scripts/analyse_deployments.py was rewritten for the new schema (nine
+sections; prints the constants to set and flags STALE/CONSISTENT).
+
+What changed in the parameterisation:
+
+- DISSOLVED_FRAC_AT_REF 0.25 -> 0.12, by the constancy test VALIDATION.md
+  s4 pre-registered: each rate-usable delivery (11 of 14) is moved to one
+  year along the shrinking-core curve, the map supplies X at its own cells,
+  the model predicts the one-year fraction at the supplier's p50, and the
+  multiplier k that reproduces the observation is taken per supplier
+  cluster. Median over the three known-grind clusters k = 0.40. The old 0.25
+  had been the median of raw fractions at finer grinds and hotter sites than
+  the reference condition. Including the undisclosed-grind supplier at its
+  upper bound would give 0.18 (rejected: a bound is not an estimate, and
+  0.12 is the conservative side).
+- The finding behind the number: cluster k spans 0.12-0.90 (7.4x) and RISES
+  WITH GRIND -- the finest grind was over-predicted ~3x at the old anchor and
+  the coarsest was about right. Shrinking core's Fw ~ 1/d50 is too steep for
+  these deliveries, or the p50s are not comparable, or method/depth track
+  grind (all nested in supplier). Width is the likeliest culprit; no PSD
+  exists. Between the pre-registered 3x (reportable) and 10x (demote).
+- The one re-sampled field falsifies the curve SHAPE: rate fell to 13% of
+  initial between samplings; no Rosin-Rammler width nor first-order
+  reproduces it unless the inferred first duration is ~2x too short.
+  Observations under 300 d enter the anchor as brackets.
+- DELIVERED_BASALT_TCO2_PER_T 0.289 -> 0.295 on the Ca+Mg basis, the supplier
+  mean of measured feedstock assays (3 suppliers; one has no assay in the
+  dataset). Archetype oxides scaled to match; gate 7 passes.
+- The country ensemble's dissolution axis now samples the cluster range
+  (reference-condition year-1 fraction 4-23%) instead of the raw 15-56%.
+- FW_RATE_EXPONENT_OBSERVED -0.58 -> -0.61 (R2 0.77, n = 11), still
+  confounded and unused.
+- New: PADDY_PCO2_FIELD_IMPLIED_UATM (32,000-56,000) from porewater pH +
+  alkalinity at four site means, rice and upland tea alike -- the first
+  field constraint on the 50,000 uatm paddy assumption.
+- FRAC_RAMP_MAX 0.65 -> 0.40 (year-1 fraction p50 7.7%, p90 33%; clamps
+  5.0% of area, the same readability rule).
+- The temperate supplier's sites are in the North Carolina Piedmont, not
+  the Corn Belt as the old fixture had it; docs corrected.
+
+Consequences, measured on the 2026-09-01 build: year-1 drainage-capped
+0.726 -> 0.633 GtCO2/yr (uncapped 2.43 -> 1.29); steady-state limited
+0.717 -> 0.581 (uncapped 2.59 -> 1.13); pH-target basis 0.442 -> 0.385; cap
+binds on 77.0% of area (was 94.9%), median exceedance 1.8x (was 3.8x);
+$100 screen at the $10 gate 0.20 Gt on 0.21 Gha (was 0.24 on 0.27). Country
+table (500-draw ensemble, p50 and p5-p95): World uncapped 1,120
+(389-2,214), econ uncapped 372 (86-929), limited 566 (321-850), econ
+limited 200 (75-351) MtCO2/yr; India 173 / 147 / 90 / 76; Brazil 127 / 66 /
+57 / 31; US 106 / 1 / 64 / 1. Gate 2b stays inside 0.5-4.0; kinetics gates
+unchanged (22 pass, 6c and 11 the same pre-existing fails).
+
+Also from the dataset, reported not modelled: 4 of the 8 grid-joinable
+deliveries exceed their own drainage ceiling on a dissolution basis
+(0.7-7.0x; the wet, low-rate ones fit), so the set anchors dissolution and
+not export; and the measured porewater alkalinities (2-3 mmol/L) sit well
+below calcite saturation, i.e. those fields are kinetically limited.
+
 ## Country tables: one five-column table with parameter ranges
 
 scripts/analysis/country_potential.py restructured (per Zeke): one table --

@@ -1254,9 +1254,9 @@
       `<span>${isFrac ? "% weathered in year 1" : "suitability"}</span>` +
       `<span>${isFrac ? "&ge;&nbsp;" + ((E.fracRampMax || 1) * 100).toFixed(0) : "100"}</span></div>` +
       (isFrac
-        ? `<p class="hint">Measured year-one weathering across the verified 2026
-             deliveries spans <b>${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%</b>.
-             Moves with the grind setting.</p>`
+        ? `<p class="hint">Measured one-year weathering across the verified 2026
+             deliveries spans <b>${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%</b>,
+             each at its own grind and site. Moves with the grind setting.</p>`
         : `<p class="hint">Score &rarr; gross CO₂ removal: ` +
           E.cdrKnots.filter(([, y]) => y > 0)
             .map(([x, y]) => `${(y * 100).toFixed(0)}&nbsp;=&nbsp;${x}`).join(", ") +
@@ -1615,9 +1615,12 @@
       particle's surface retreats, and a shrinking-core integral over the
       grain-size distribution turns that into the fraction of rock dissolved in
       year one — so the fine tail is spent early and coarse grains persist.
-      Anchored so the reference case sits at the median of verified field
-      deliveries
-      (${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}% weathered).
+      Anchored so that, at each verified 2026 delivery's own cells and grind,
+      the model reproduces the median supplier's measured one-year weathering
+      (measured fractions span
+      ${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%; the implied
+      site-and-grind-corrected multipliers spread ~7× across suppliers and
+      rise with grain size, which is reported rather than tuned away).
       At ${E.feedstock.rateTHaYr} t/ha of basalt holding
       ${E.feedstock.tco2PerT} tCO₂/t, that fraction becomes tCO₂/ha/yr.</li>
       <li><b>Drainage limit.</b> Gross removal is then capped at
@@ -1665,12 +1668,15 @@
         <tr><th>Assumption</th><th>Value</th></tr>
         <tr><td>Application rate</td><td>${E.feedstock.rateTHaYr} t/ha/yr</td></tr>
         <tr><td>Feedstock</td><td>delivered basalt, ${E.feedstock.tco2PerT} tCO₂/t
-          (anchored to verified deliveries)</td></tr>
+          (Ca+Mg basis; supplier mean of the verified deliveries' feedstock
+          assays)</td></tr>
         <tr><td>Reference grind</td><td>d50 ${E.psd.refD50} µm, width
           ${E.psd.refWidth} (width assumed; narrow for a commercial crush)</td></tr>
         <tr><td>Year-1 dissolved fraction at reference</td>
-          <td>${(E.dissolvedFracAtRef * 100).toFixed(0)}%, anchored to verified
-          deliveries (${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%)</td></tr>
+          <td>${(E.dissolvedFracAtRef * 100).toFixed(0)}%, calibrated so the model
+          reproduces the verified deliveries at their own sites and grinds
+          (measured one-year fractions
+          ${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%)</td></tr>
         <tr><td>Quarry gate cost</td><td>$${E.cost.gateUsdT}/t, from
           operator-reported quarry-fines prices — today's byproduct deals, not
           an at-scale price (US traprock averages $21.33/t, USGS 2023; see

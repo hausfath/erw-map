@@ -384,8 +384,9 @@ def gate7_delivered_basalt_matches_measurement() -> None:
     that target, so the gate tests arithmetic rather than the archetype. It
     used to appear in the README's gate table as evidence, which overstated
     what it shows. Keep it (a broken constant would be caught) but do not count
-    it as an independent test. n = 3 deliveries, one operator, one feedstock
-    source -- state that wherever 0.289 appears.
+    it as an independent test. The target is the supplier mean of measured
+    feedstock Ca+Mg assays, n = 3 suppliers (a fourth has no assay in the
+    dataset) -- state that wherever 0.295 appears.
 
     Note also gate 6c: the same oxides do not mass-balance the mineral list.
     """

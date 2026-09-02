@@ -440,14 +440,13 @@ export flux anywhere in the literature.
 \appendix
 \section{{Aggregate check against verified commercial deliveries}}
 
-Applying the same test to eight independently verified commercial ERW deliveries
-(basalt; roughly 15--100\,t\,ha$^{{-1}}$; India, US Corn Belt and Brazil), \textbf{{seven
-of the eight}} report a CDR per hectare that would require more bicarbonate than
-their own region's drainage can carry --- \textbf{{0.6--7.8$\times$}} the ceiling across
-the set, \textbf{{1.3--3.9$\times$}} restricting to the three where CDR was measured
-independently rather than derived from fraction weathered. The eighth is the wettest
-site in the set at over 1{{,}}500\,mm\,yr$^{{-1}}$ of drainage, and its reported CDR is
-carryable.
+Applying the same test to the independently verified commercial ERW deliveries
+whose fields can be placed on the grid (eight of fourteen removals; basalt; roughly
+15--100\,t\,ha$^{{-1}}$; India and the US Southeast), \textbf{{four of the eight}}
+report a dissolution-based CDR per hectare that would require more bicarbonate than
+their own cells' drainage can carry --- \textbf{{0.7--7.0$\times$}} the ceiling across
+the set. The four that fit are the wettest sites in the set, at roughly
+1{{,}}000\,mm\,yr$^{{-1}}$ of drainage and low application rates.
 
 This is \emph{{not}} an over-crediting finding, and we would ask that it not be read
 as one. Those figures are dissolution-based, so the comparison is ``how much rock

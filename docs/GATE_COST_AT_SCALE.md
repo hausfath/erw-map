@@ -140,11 +140,13 @@ while being roughly right for at-scale Brazil and generous for India.
    measured on the shipped build (regional haul; $100/tCO₂ screen against each
    application's discounted lifetime carbon at 5%; drainage-limited carbon
    counted, unit-cost screen unclamped — the footer basis since 2026-08-24):
-   gate **$10 → 0.24 GtCO₂/yr on 0.27 Gha; $12 → 0.20 on 0.21; $18 → 0.07 on
-   0.07; $21.50 → 0.02 on 0.02**. (On the pre-ceiling footer the same sweep
-   read 0.93 / 0.79 / 0.30 / 0.06 Gt — the *area* response to the gate is
-   nearly identical; the drainage limit rescales the carbon each kept hectare
-   yields.) At the US at-scale gate, the $100/tCO₂ screen collapses toward
+   gate **$10 → 0.20 GtCO₂/yr on 0.21 Gha; $12 → 0.16 on 0.17; $18 → 0.05 on
+   0.05; $21.50 → 0.003 on 0.002** (2026-09-01 build, dissolution anchor 0.12;
+   at the 0.25 anchor the sweep read 0.24 / 0.20 / 0.07 / 0.02 Gt on 0.27 /
+   0.21 / 0.07 / 0.02 Gha, and on the pre-ceiling footer 0.93 / 0.79 / 0.30 /
+   0.06 Gt — the drainage limit rescales the carbon each kept hectare yields,
+   while the anchor moves the kept area itself through the screen's lifetime
+   carbon). At the US at-scale gate, the $100/tCO₂ screen collapses toward
    nothing — gate plus the fixed trip charge alone is $42–54/tCO₂ of year-one
    carbon (less against lifetime carbon, but the haul still stacks on top)
    before any grinding, spreading or MRV. The at-scale question is therefore

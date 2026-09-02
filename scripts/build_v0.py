@@ -1466,7 +1466,9 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
             "refWidthNarrowForCrush": True,
             "lambdaRange": list(C.LAMBDA_ROUGHNESS_RANGE),
             "deliveryRangeUm": list(C.DELIVERY_P50_SPAN_UM),
-            "deliveryP50": {k: v for k, v in C.DELIVERY_P50_UM.items() if v},
+            # Disclosed grinds WITHOUT attribution: per-supplier values are
+            # project data and stay in the local-only calibration dataset.
+            "deliveryP50Known": list(C.DELIVERY_P50_KNOWN_UM),
             "refWidthAssumed": C.PSD_REF_WIDTH_IS_ASSUMED,
             # Precomputed shift table so the browser needs no gamma function:
             # log10(SSA(d50, n) / SSA(ref)) on a grid the UI interpolates. Both

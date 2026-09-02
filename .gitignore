@@ -49,3 +49,10 @@ docs/*.log
 cross_deployment_comparison.md
 tests/fixtures/deployments_2026.csv
 *.docx
+
+# Cross-supplier calibration dataset (deliveries, fields, feedstock, data
+# dictionary). Assembled from supplier bundles and V&V reports; per-supplier
+# results are not ours to publish. scripts/analyse_deployments.py reads it and
+# exits with the expected schema when absent. Only cross-supplier aggregates
+# leave it (constants.py, README.md, the map).
+calibration_data/

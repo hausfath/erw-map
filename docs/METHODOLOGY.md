@@ -149,6 +149,37 @@ Fw depends only on u and the width n, which is what lets the browser interpolate
 below the 8-bit step). δ scales linearly with X, anchored so that the reference
 grind gives `DISSOLVED_FRAC_AT_REF` at X = 1.
 
+**How the anchor is set (2026-09-01).** By the constancy test §4 of
+`docs/VALIDATION.md` pre-registered, run on a cross-supplier calibration dataset of
+14 verified removals from 4 suppliers (local-only; see `analyse_deployments.py`).
+Each rate-usable delivery's fraction weathered is moved to one year along this
+curve (d50 cancels; deliveries observed for < 300 d are bracketed because the
+shape is not confirmed, next paragraph), the map supplies X at the delivery's own
+cells, the model predicts the one-year fraction at the supplier's own p50, and the
+multiplier k on δ that reproduces the observation is taken per supplier cluster.
+The anchor is the median k over the three clusters with a disclosed grind: k = 0.40,
+so the reference cell weathers **12%** in year one (was 25%, which had been set to
+the median of the raw fractions without conditioning on grind or site). Cluster k
+spans 0.12–0.90, **7.4×**, and rises with grain size: the finest grind is
+over-predicted several-fold and the coarsest is about right, so the shrinking-core
+Fw ∝ 1/d50 dependence is too steep for these deliveries, or the p50s are not
+comparable, or method and depth differences track grind — all nested in supplier,
+so not separable. Reported, not tuned away; the country ensemble samples the
+cluster range.
+
+**The shape is not confirmed.** The one field re-sampled twice in the dataset shows
+the mean weathering rate falling to ~13% of its initial value between samplings.
+No Rosin–Rammler width from 0.5 to 2.5, nor a first-order exponential, reproduces
+the second value from the first (all predict 36–53% against ~30% observed) unless
+the first sampling was ~2× later than stated, which is possible since that duration
+is inferred. Either a reactive fine or glassy fraction is consumed faster than any
+size distribution alone implies, or the duration is wrong. Consequence: one-year
+values extrapolated from short observations are bracketed rather than trusted, and
+the shrinking-core curve should be read as a shape assumption, not a validated one.
+
+The table below was measured at the 0.25 anchor and is kept for the
+exponential-vs-shrinking-core comparison; absolute fractions are lower at 0.12.
+
 Measured effect on the shipped map, at the reference grind:
 
 | | exponential | shrinking core |
@@ -289,8 +320,8 @@ to judge: it spans only 4.4× wet-to-dry, but delivered carbon spans **9.9×**
 uncapped, because the dissolution response to X is nonlinear. Second and more
 important, **with the ceiling applied the contrast is 125× and does not depend on
 `D_w` at all** — 125.3× at 0.001 against 124.8× at 0.03. The ceiling is linear in
-`q` and binds on 95.1% of cropland area, so it has already taken the aridity signal
-over.
+`q` and binds on 77.0% of cropland area (95.1% before the 2026-09-01 re-anchoring
+of the dissolution scale), so it has already taken the aridity signal over.
 
 So the aridity bottleneck *is* represented in this model, by the
 drainage-concentration ceiling described in §2b — **applied by default since
@@ -324,7 +355,8 @@ citation itself is still unverified — see `constants.py`.)
 > footer total, the limiting-factor class, the hover box's "without the drainage
 > limit" row, the legend and the Methods text. Switching it off shows the
 > uncapped pre-review behaviour, in which the map's CO₂ figures exceed this
-> bound on **95.1% of cropland by a median factor of 3.8×** and should be read
+> bound on **77.0% of cropland by a median factor of 1.8×** (95.1% and 3.8× at the
+> 0.25 anchor shipped before 2026-09-01) and should be read
 > as an upper bound on dissolution rather than carbon shown to leave the field.
 >
 > **In the derived products** — the `cdr` array, gate 12, the cost screen —
@@ -413,7 +445,9 @@ yet peer-reviewed.
 | Meybeck carbonate-terrain streams | 3.15 |
 | soil-pH backstop: holding 10 mmol/L needs pH 8.16 at 4,000 µatm | ~10 |
 
-**Effect, measured** (at the Mayer-central parameters, 2026-08-24 build). The
+**Effect, measured** (at the Mayer-central parameters, 2026-08-24 build, at the
+0.25 dissolution anchor then shipped; at the 0.12 anchor of 2026-09-01 the ceiling
+binds on 77.0% of area and the median falls 0.658 → 0.352, 1.9×). The
 ceiling binds on **95.1% of cropland area**; the median falls 1.396 → 0.395
 tCO₂/ha/yr (3.5×). But the level is not the point:
 
@@ -443,6 +477,10 @@ from 20 to 30 t/ha in August 2026:
 | global gross, capped | 0.669 | **0.711 GtCO₂/yr (+6.3%)** |
 | cropland area where the cap binds | 88.1% | 95.1% |
 | realised carbon per tonne of rock, median cell | 6.6% of stoichiometric | **4.6%** |
+
+(Measured at the 0.25 dissolution anchor. At the 0.12 anchor of 2026-09-01 the
+30 t/ha capped total is 0.633 GtCO₂/yr, uncapped 1.291, binding on 77.0% of area;
+the 20 t/ha column has not been re-measured.)
 
 **50% more rock bought 6.3% more carbon.** Adding feedstock past the point where
 drainage saturates raises the fraction of the map that is transport-limited instead
@@ -503,8 +541,9 @@ alkalinity off the same open-system relations with the pH pinned instead of Ω
 relation). Saturation still binds first wherever its pH is below the target,
 which is the high-pCO₂ paddy case, so paddies are barely touched and the cut
 falls on drained temperate cropland. Global steady state on this basis:
-**0.442 GtCO₂/yr against 0.717 at saturation** (7.0 / 7.25 / 7.75 targets give
-roughly 0.15 / 0.26 / 0.62). The **headline stays on saturation** — it is the
+**0.385 GtCO₂/yr against 0.581 at saturation** on the 2026-09-01 build (0.442
+against 0.717 at the 0.25 anchor; the 7.0 / 7.25 / 7.75 targets gave roughly
+0.15 / 0.26 / 0.62 then and have not been re-measured). The **headline stays on saturation** — it is the
 published Mayer et al. 2025 anchor — and the footer labels the basis whenever
 the option is selected. One conversion trap, stated in the constant and the
 function: the target is an in-situ pore-water pH at field pCO₂, roughly 0.5–1
@@ -550,9 +589,11 @@ carbon the model says cannot leave, roughly doubling median $/tCO₂ and
 collapsing the sub-$100 area 0.27 → 0.05 Gha for no economic reason), while
 the carbon *counted* in the footer **is capped**. The screen decides where
 hauling rock is economic at all; the drainage limit decides how much carbon
-each kept hectare then yields. Under the $100 screen: 0.24 GtCO₂/yr on
-0.27 Gha (the same 0.27 Gha the screen kept before the ceiling shipped, as
-the unit-cost argument requires).
+each kept hectare then yields. Under the $100 screen at the $10 gate:
+**0.20 GtCO₂/yr on 0.21 Gha** (2026-09-01 build; 0.24 on 0.27 Gha at the 0.25
+anchor, where the kept area matched the pre-ceiling 0.27 Gha exactly, as the
+unit-cost argument requires — the area shrank with the anchor because the
+screen's lifetime carbon per hectare did, not because of the ceiling).
 
 The rest of this section explains the year-1 basis the map layers keep.
 
@@ -648,16 +689,16 @@ showing numbers derived from the NaN fallback.
 |---|---|---|
 | Flux ceiling applied? | **Yes — since 2026-08-24** | `FLUX_CEILING_ON = True`; held off 2026-08-03 → 2026-08-24 pending review, applied once Mayer et al. 2025 corroborated the bound |
 | Application rate | **30 t/ha/yr** | stated assumption; raised from 20 in Aug 2026 to sit nearer commercial practice |
-| Feedstock | `delivered_basalt`, 0.289 tCO₂/t | mean implied CO₂ potential of n = 3 verified deliveries, one operator |
+| Feedstock | `delivered_basalt`, 0.295 tCO₂/t | supplier mean of measured feedstock Ca+Mg assays, n = 3 suppliers (Ca+Mg basis; Na and K not counted, conservative by 8–15%) |
 | Reference grind | d50 150 µm, Rosin–Rammler width 1.5 | mid-range of observed 67–600 µm p50; **width is assumed** and is narrow for a commercial crush |
-| Year-1 dissolved fraction at reference | 0.25 | **the only free parameter.** Nearest the *median* of the eight verified deliveries (26.4%), not the midpoint of their 15.4–55.9% range as previously stated. Those deliveries are not at the reference grind: renormalised they span 8.7–71.3%, median 31.7%. And X = 1 implies η_transport = 1, i.e. infinite drainage — at median cropland drainage the same cell weathers 18.5% |
+| Year-1 dissolved fraction at reference | **0.12** (was 0.25 until 2026-09-01) | **the only free parameter.** Median site- and grind-conditioned multiplier over the three supplier clusters with a disclosed grind (constancy test, `analyse_deployments.py` §5). Measured one-year fractions span 14–55% at their own grinds and sites; at the reference condition the clusters span 4–23% (7.4×, rising with grain size). Including the undisclosed-grind supplier at its upper bound would give 0.18 |
 | Suitability = 100 at | **8.69 tCO₂/ha/yr** | the stoichiometric maximum, `rate × tCO₂/t`, computed. The old 10 was **above** the maximum and so unreachable in every build |
-| Fraction-weathered ramp top | **0.65** | readability: p50 is 15%, p90 59%. Clamps 7.3% of area, labelled "≥ 65" |
+| Fraction-weathered ramp top | **0.40** (was 0.65 at the 0.25 anchor) | readability: p50 is 7.7%, p90 33%. Clamps 5.0% of area, labelled "≥ 40" |
 | D_w | 0.03 m/yr | Maher & Chamberlain 2014, collisional/craton divide; published range 0.001–0.3 |
 | Flux-ceiling Ω (calcite) | 10^0.5 (SI 0.5), strict case 1, permissive 10 | central = Mayer et al. 2025 / Buckingham & Henderson 2024 observed pore-water saturation; permissive = Zhang et al. 2022 inhibition threshold |
 | Flux-ceiling dissolved Mg | 1 mM (range 0–5) | explicit, basalt-typical (Vienne 2022); Mg escapes the calcite constraint, so Mg-rich feedstock raises the ceiling |
 | Flux-ceiling activities | Davies, iterated | validated against Mayer et al. 2025's 54 PHREEQC cases to 0.95–1.00 (gate 13d) |
-| Ceiling basis | calcite saturation (headline); pH ≤ 7.5 pore-water target as a viewer option | pH basis keeps Ω ≈ 0.3 (no precipitation risk); 0.442 vs 0.717 GtCO₂/yr |
+| Ceiling basis | calcite saturation (headline); pH ≤ 7.5 pore-water target as a viewer option | pH basis keeps Ω ≈ 0.3 (no precipitation risk); 0.385 vs 0.581 GtCO₂/yr |
 | Soil pCO₂, unsaturated | 4,000 µatm | Isometric v1.2 §10.4.5.7, mandated |
 | Soil pCO₂, flooded | 50,000 µatm | Isometric v1.2, mandated; this is the **floor** of the literature paddy range |
 | Flooded pH convergence | 6.7 | van Breemen 1987; submergence drives pH toward 6–7 |

@@ -19,8 +19,9 @@ Each potential is reported as p50 (p5-p95) over a PARAMETER ENSEMBLE, not a
 calibrated posterior: N draws over the ranges the repo documents, constructed
 so the ensemble median reproduces the shipped headline numbers.
 
-  dissolution scale   split log-uniform over the verified deliveries' year-1
-                      weathered range (15-56% at reference; anchor 25% =
+  dissolution scale   split log-uniform over the supplier-cluster range of the
+                      constancy test (reference-condition year-1 fraction
+                      4-23%, DISSOLVED_FRAC_REF_CLUSTER_RANGE; anchor 12% =
                       ensemble median). The dominant technical axis.
   ceiling SI          uniform 0-1 (calcite saturation index; shipped 0.5,
                       Mayer et al. 2025's central case)
@@ -155,8 +156,10 @@ def write_docx(path, rows, world, i_inf, us_cap):
     doc.add_paragraph(
         "Ranges are p50 (p5-p95) over a documented-parameter ensemble of "
         f"{N_DRAWS} draws -- NOT a calibrated posterior. Varied: the "
-        "dissolution scale over the verified deliveries' year-1 weathered "
-        "range (15-56%, anchor 25% = ensemble median); ceiling calcite SI "
+        "dissolution scale over the supplier-cluster spread of the verified "
+        "deliveries' site- and grind-corrected calibration (reference-condition "
+        "year-1 fraction 4-23%, anchor 12% = ensemble median; a 7.4x spread "
+        "that rises with grain size); ceiling calcite SI "
         "uniform 0-1 (shipped 0.5) and dissolved Mg 1/3-3 mM (shipped 1); "
         "the three documented quarry-gate scenarios; haul rates x0.75-1.25. "
         "Fixed: drainage variable (total runoff; the recharge bracket is "
@@ -333,8 +336,11 @@ def main() -> int:
     # ---- the ensemble --------------------------------------------------------
     rng = np.random.default_rng(SEED)
     nC = len(isos) + 1
-    frac_lo, frac_hi = C.DISSOLVED_FRAC_OBSERVED_RANGE \
-        if hasattr(C, "DISSOLVED_FRAC_OBSERVED_RANGE") else (0.15, 0.56)
+    # Dissolution scale: the supplier-cluster spread of the constancy test,
+    # expressed as reference-condition year-1 fractions (analyse_deployments.py
+    # section 5), NOT the raw measured spread -- the raw values sit at their own
+    # grinds and sites and would double-count what the map already resolves.
+    frac_lo, frac_hi = C.DISSOLVED_FRAC_REF_CLUSTER_RANGE
     # invert year-1 fractions to dissolution-scale multipliers via the table
     u_of = lambda f: float(np.interp(f, gg, ug))
     k_lo = u_of(frac_lo) / u_of(C.DISSOLVED_FRAC_AT_REF)
@@ -404,16 +410,25 @@ def main() -> int:
                                   r["tech_cap"], r["econ_cap"]))
         print(f"{r['name'][:21]:<22}{r['mha']:>7.1f}{cells}")
 
-    # Reference against the build. The uncapped p50 matches the build almost
-    # exactly (the dissolution axis is median-pinned and cad is linear in k at
-    # the cap-free margin). The LIMITED p50 sits a few percent ABOVE the
-    # shipped 0.717 -- a Jensen gap, not an error: the ceiling is convex in
-    # Mg, so the median of the ensemble exceeds the value at median
-    # parameters. Both shipped values sit well inside their p5-p95 bands.
+    # Reference against the build, COMPUTED at the shipped parameters from the
+    # same masked vectors (never hardcoded: the anchor moved once already and
+    # left a stale number here). The uncapped p50 tracks the shipped value
+    # closely because the dissolution axis is median-pinned; the LIMITED p50
+    # can sit a few percent either side of it -- the ceiling is convex in Mg
+    # (Jensen pushes up) while the capped total is concave in the dissolution
+    # scale (pushes down), and which wins depends on how much area is
+    # cap-bound. A gap of a few percent is expected, not drift.
+    cad_ship = A * np.minimum(1.0, u1v / i_inf) * etav * ct
+    ship_un = float(np.nansum(cad_ship * hav)) / 1e9
+    ship_cap = float(np.nansum(np.minimum(cad_ship, ceil_ship[sel]) * hav)) / 1e9
+    # out[...] is in Mt per country column; the WORLD row sums the columns.
+    w_un, w_cap = out["tech_un"].sum(axis=1), out["tech_cap"].sum(axis=1)
+    p50_un, p50_cap = float(np.median(w_un)) / 1e3, float(np.median(w_cap)) / 1e3
     print(f"\nfor reference, the build at shipped parameters: uncapped "
-          f"2.591 Gt, drainage-limited 0.717 Gt. The limited p50 sits a few "
-          f"percent above 717 by convexity (Jensen), not by drift; the "
-          f"shipped values lie inside the p5-p95 bands.")
+          f"{ship_un:.3f} Gt, drainage-limited {ship_cap:.3f} Gt. Ensemble "
+          f"p50s: uncapped {p50_un:.3f} ({p50_un / ship_un - 1:+.1%}), limited "
+          f"{p50_cap:.3f} ({p50_cap / ship_cap - 1:+.1%}) -- convexity, not "
+          f"drift; the shipped values lie inside the p5-p95 bands.")
 
     # ---- US supply cap --------------------------------------------------------
     us_i = isos.index("US") + 1

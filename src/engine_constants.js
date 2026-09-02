@@ -136,7 +136,7 @@ window.ERW = {
       "#fdc98a"
     ]
   ],
-  "fracRampMax": 0.65,
+  "fracRampMax": 0.4,
   "cdrKnots": [
     [
       0.02,
@@ -159,15 +159,15 @@ window.ERW = {
       0.8
     ],
     [
-      8.69,
+      8.85,
       1.0
     ]
   ],
   "cdrNegligible": 0.02,
-  "dissolvedFracAtRef": 0.25,
+  "dissolvedFracAtRef": 0.12,
   "dissolvedFracObserved": [
-    0.154,
-    0.559
+    0.144,
+    0.548
   ],
   "termExponent": {
     "default": 1.0,
@@ -176,7 +176,7 @@ window.ERW = {
       1.0
     ]
   },
-  "cdrPerFrac": 8.69118,
+  "cdrPerFrac": 8.849815,
   "l1Enc": {
     "lo": -3.0,
     "hi": 3.0
@@ -228,18 +228,18 @@ window.ERW = {
         0.75
       ]
     },
-    "bindsAreaFrac": 0.9484,
+    "bindsAreaFrac": 0.7696,
     "medianTco2HaYr": 0.3995,
-    "warmCoolUncapped": 4.76,
+    "warmCoolUncapped": 5.61,
     "warmCoolCeiling": 1.5,
-    "exceedMedian": 3.73,
-    "realisedShareOfStoich": 0.046
+    "exceedMedian": 1.82,
+    "realisedShareOfStoich": 0.0451
   },
   "dissolution": {
     "model": "shrinking_core",
-    "deltaRefUm": 4.726564,
+    "deltaRefUm": 1.909873,
     "refD50Um": 150.0,
-    "fracAtRef": 0.25,
+    "fracAtRef": 0.12,
     "uLog": {
       "lo": -5.0,
       "hi": 2.0
@@ -1155,11 +1155,11 @@ window.ERW = {
       67.0,
       600.0
     ],
-    "deliveryP50": {
-      "mati": 600.0,
-      "terradot": 120.0,
-      "lithos": 67.0
-    },
+    "deliveryP50Known": [
+      67.0,
+      100.0,
+      600.0
+    ],
     "refWidthAssumed": true,
     "d50Grid": [
       40.0,
@@ -1569,7 +1569,7 @@ window.ERW = {
     "floor": 0.05,
     "expDefault": 1.0,
     "haulScaleUsdT": 100.0,
-    "tco2PerT": 0.289,
+    "tco2PerT": 0.295,
     "gateUsdT": 10.0,
     "truckUsdTKm": 0.12,
     "truckRates": {
@@ -1618,13 +1618,13 @@ window.ERW = {
   },
   "feedstock": {
     "archetype": "delivered_basalt",
-    "tco2PerT": 0.289,
+    "tco2PerT": 0.295,
     "rateTHaYr": 30.0
   },
   "stats": {
     "croplandGha": 1.215,
     "evaluatedGha": 1.209,
-    "cdrMedian": 0.4,
+    "cdrMedian": 0.35,
     "quarryPoints": 13602
   },
   "provenance": {

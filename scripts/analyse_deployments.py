@@ -1,67 +1,114 @@
 """
-What the 2026 verified deliveries can and cannot tell us.
+What the verified deliveries can and cannot tell us -- and the calibration
+they set.
 
   python3 scripts/analyse_deployments.py
 
-This runs BEFORE the gridded model exists, deliberately. The point is to
-establish what the observations constrain on their own, so that when the model
-is compared against them later we already know how much power the test has and
-which comparisons are circular.
+INPUT DATA IS NOT IN THIS REPOSITORY. This reads a cross-supplier calibration
+dataset (deliveries.csv, feedstock.csv) assembled from supplier bundles, project
+design documents and verification reports. It carries per-supplier results that
+are not ours to publish, so it is gitignored. The script exits with the expected
+schema if the files are absent, so the method stays reviewable even though the
+inputs are not redistributed. ONLY CROSS-SUPPLIER AGGREGATES leave this script:
+the constants it prints at the end are medians, ranges and counts, never a
+supplier's own number.
 
-INPUT DATA IS NOT IN THIS REPOSITORY. The fixture is derived from an independent
-verification report and its cross-operator comparison, and carries per-operator
-results that are not ours to publish. It is gitignored. This script exits with a
-pointer if the fixture is absent, so the method stays reviewable even though the
-inputs are not redistributed.
+To reproduce, supply calibration_data/calibration/deliveries.csv with (at least)
+the columns:
+    delivery_slug, company, country, region, tracer, app_rate_t_ha,
+    elapsed_days, elapsed_src, fw_p50_pct, fw_p16_pct, fw_p84_pct,
+    fw_is_cumulative, latitude, longitude, coord_src, crop, sampling_depth_cm,
+    porewater_ph, porewater_alkalinity_ueq_l
+and calibration_data/calibration/feedstock.csv with:
+    company, ca_mg_kg, mg_mg_kg, na_mg_kg, k_mg_kg, p50_um, p50_src
+and, optionally, fields.csv with delivery_slug, field_id (used only to
+recognise a later re-sampling of the same fields).
+fw_* are percent of MEASURED rock addition weathered (not of applied mass);
+elapsed_days is the weathering duration the fraction refers to, blank where it is
+not recoverable; fw_is_cumulative marks a second sampling of the same fields;
+coord_src distinguishes measured/field-scale coordinates from a regional guess
+(`approximate_region_centroid`), which this script refuses to join to the grid.
 
-To reproduce, supply tests/fixtures/deployments_2026.csv with the header:
-    deployment,operator,registry,regime,country,rate_t_ha,fw_p50,fw_p16,
-    cdr_tco2_ha,cdr_exact,period_months,psd_known,p50_um,lat,lon,soil_note
-where fw_* are fractions of applied rock weathered, cdr_exact is yes/no for
-whether CDR was measured independently rather than derived, and regime groups
-sites by soil and climate. p50_um is the feedstock median particle size, blank if
-undisclosed. lat/lon are APPROXIMATE REGION CENTROIDS -- not site coordinates --
-used only by section 11 to look up regional drainage from the built map; rows
-without them are skipped there and the rest of the script is unaffected.
+Sections, in the order they are needed:
+  1. Inventory and provenance -- which rows can carry a rate at all.
+  2. Time-normalisation to one year through the model's own shrinking-core
+     shape (d50-free, width-dependent), bracketed where the shape is known to
+     be wrong.
+  3. The one longitudinal constraint in the set: the rate falls far faster
+     than shrinking core at ANY Rosin-Rammler width predicts.
+  4. Feedstock CO2 potential on the map's Ca+Mg basis -> DELIVERED_BASALT_*.
+  5. Site- and grind-conditioned dissolution multipliers (the pre-registered
+     constancy test of docs/VALIDATION.md) -> DISSOLVED_FRAC_AT_REF and the
+     supplier-cluster spread the country ensemble samples.
+  6. Rate exponent, pooled versus within-supplier (still confounded; not used).
+  7. Porewater pH + alkalinity -> implied in-situ soil pCO2, the first field
+     constraint on the paddy pCO2 assumption.
+  8. Does dissolution-based CDR fit in the drainage water?
+  9. What is not identifiable, and what would make it so.
 
-Three findings, in decreasing order of how much I'd stake on them. Run it and
-read the output rather than taking these on trust.
+Run it and read the output rather than taking the docstring on trust.
 """
 
 from __future__ import annotations
 
 import csv
-import itertools
 import math
+import sys
 from pathlib import Path
 
 import numpy as np
 
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import constants as C  # noqa: E402
+import kinetics as K  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-FIXTURE = ROOT / "tests/fixtures/deployments_2026.csv"
+CALIB = ROOT / "calibration_data/calibration"
+DELIVERIES = CALIB / "deliveries.csv"
+FEEDSTOCK = CALIB / "feedstock.csv"
+FIELDS = CALIB / "fields.csv"          # optional; identifies re-sampled fields
+NPZ = ROOT / "data/processed/v0_layers.npz"
+
+# Regions a delivery may be attributed to when it shares no per-location
+# coordinates. Boxes are cropland-weighted at lookup; the median X inside them is
+# a REGIONAL value and is flagged as such wherever it is used. Keyed by the
+# dataset's own `region` string.
+REGION_BOXES = {
+    "Southern Brazil (PR/SP/MS/GO)": (-26.5, -15.0, -56.0, -45.0),
+}
+
+# Deliveries observed for less than this are too short for a one-year
+# extrapolation to be trusted on any single curve shape; they enter the anchor
+# as a BRACKET (raw lower bound, shrinking-core upper bound) and their central
+# value is the geometric midpoint. See section 3 for why.
+SHORT_OBSERVATION_DAYS = 300.0
 
 
-def load() -> list[dict] | None:
-    if not FIXTURE.exists():
+# ---------------------------------------------------------------------------
+def _f(v):
+    try:
+        return float(v) if v not in ("", None) else None
+    except ValueError:
         return None
-    rows = []
-    with FIXTURE.open() as fh:
-        for line in fh:
-            if line.startswith("#"):
-                continue
-            rows = list(csv.DictReader(itertools.chain([line], fh)))
-            break
+
+
+def load():
+    if not (DELIVERIES.exists() and FEEDSTOCK.exists()):
+        return None, None
+    with DELIVERIES.open() as fh:
+        rows = list(csv.DictReader(fh))
+    with FEEDSTOCK.open() as fh:
+        feed = list(csv.DictReader(fh))
     for r in rows:
-        for k in ("rate_t_ha", "fw_p50", "fw_p16", "cdr_tco2_ha", "period_months"):
-            r[k] = float(r[k])
-        for k in ("lat", "lon"):
-            r[k] = float(r[k]) if r.get(k) else None
-        r["p50_um"] = float(r["p50_um"]) if r.get("p50_um") else None
-    return rows
+        for k in ("app_rate_t_ha", "elapsed_days", "fw_p50_pct", "fw_p16_pct",
+                  "fw_p84_pct", "latitude", "longitude", "sampling_depth_cm",
+                  "porewater_ph", "porewater_alkalinity_ueq_l"):
+            r[k] = _f(r.get(k))
+        r["fw_is_cumulative"] = str(r.get("fw_is_cumulative", "")).lower() == "true"
+    for f in feed:
+        for k in ("ca_mg_kg", "mg_mg_kg", "na_mg_kg", "k_mg_kg", "p50_um"):
+            f[k] = _f(f.get(k))
+    return rows, feed
 
 
 def rule(title: str) -> None:
@@ -70,420 +117,561 @@ def rule(title: str) -> None:
     print("-" * len(title))
 
 
-# ---------------------------------------------------------------------------
-def check_cdr_is_circular(rows: list[dict]) -> None:
-    """Confirm from the numbers themselves that the DERIVED CDR/ha rows are
-    algebraically a function of fraction weathered, and so cannot serve as an
-    independent validation target."""
-    rule("1. Is CDR/ha independent information, or algebra?")
-    print("  Testing whether cdr = rate x fw_p50 x 0.33 reproduces each row.")
-    print()
-    print(f"  {'deployment':14s} {'reported':>9s} {'rate*fw*0.33':>13s} {'ratio':>7s}  exact?")
-    for r in rows:
-        implied = r["rate_t_ha"] * r["fw_p50"] * 0.33
-        ratio = r["cdr_tco2_ha"] / implied
-        print(f"  {r['deployment']:14s} {r['cdr_tco2_ha']:9.2f} {implied:13.2f} "
-              f"{ratio:7.3f}  {r['cdr_exact']}")
-    print()
-    print("  Derived rows reproduce to ~1.00: their CDR carries NO information")
-    print("  beyond fw_p50. Validating a model against them would be circular.")
-    print("  => Use fw_p50 as the observable. The measured rows are exact,")
-    print("     and their ratios also quantify each feedstock's real CO2 potential")
-    print("     departing from the nominal 0.33 tCO2/t.")
+# ---- dissolution-shape helpers ---------------------------------------------
+_UG = np.concatenate([[0.0], np.geomspace(1e-5, 200.0, 1500)])
+_GG = {}
 
 
-def rate_vs_fw(rows: list[dict]) -> None:
-    """The strongest signal in the table, and it is a physical one."""
-    rule("2. Fraction weathered falls with application rate")
-
-    ind = sorted([r for r in rows if r["regime"] == "india_paddy"],
-                 key=lambda r: r["rate_t_ha"])
-    print("  Within the India acidic-paddy group (4 deployments, one regime):")
-    print(f"  {'deployment':14s} {'rate t/ha':>10s} {'fw_p50':>8s}")
-    for r in ind:
-        print(f"  {r['deployment']:14s} {r['rate_t_ha']:10.1f} {r['fw_p50']:8.1%}")
-    fw = [r["fw_p50"] for r in ind]
-    mono = all(a > b for a, b in zip(fw, fw[1:]))
-    print(f"  Perfectly monotonic decreasing: {mono}")
-    print()
-    print("  This is the expected self-limiting behaviour: as more rock is applied,")
-    print("  soil pH rises, the solution moves toward saturation, and alkalinity")
-    print("  export becomes drainage-limited rather than kinetically limited. It is")
-    print("  the same physics as the eta_transport term (Maher & Chamberlain 2014).")
-    print()
-
-    # Power-law fit across all deployments, in log space.
-    x = np.log(np.array([r["rate_t_ha"] for r in rows]))
-    y = np.log(np.array([r["fw_p50"] for r in rows]))
-    slope, intercept = np.polyfit(x, y, 1)
-    pred = slope * x + intercept
-    ss_res = float(np.sum((y - pred) ** 2))
-    ss_tot = float(np.sum((y - y.mean()) ** 2))
-    r2 = 1 - ss_res / ss_tot
-    print(f"  All 8, log-log fit:  fw ~ rate^{slope:.2f}   (R^2 = {r2:.2f}, n = 8)")
-    print("  No p-value is quoted: n = 8, three regimes, and grain size is an")
-    print("  uncontrolled confound. Treat the exponent as indicative only.")
-    print()
-    print("  IMPLICATION FOR THE MAP: fraction weathered is not a site property.")
-    print("  It depends on how much rock you applied. So the map must not present")
-    print("  fw as a suitability metric, and any cross-site comparison of fw has")
-    print("  to hold application rate fixed.")
+def _table(n):
+    if n not in _GG:
+        _GG[n] = np.concatenate([[0.0], K.dissolved_fraction(_UG[1:], n)])
+    return _GG[n]
 
 
-def regime_comparison(rows: list[dict]) -> None:
-    """Does the observed ordering support or challenge the model's headline claim
-    that high-pCO2 paddies should rank top and acid Oxisols should be demoted?"""
-    rule("3. Regime ordering: does it support the model's headline claim?")
-
-    print("  Raw means, no adjustment:")
-    print(f"  {'regime':16s} {'n':>2s} {'mean rate':>10s} {'mean fw':>8s}")
-    for regime in ("india_paddy", "corn_belt", "brazil_oxisol"):
-        g = [r for r in rows if r["regime"] == regime]
-        print(f"  {regime:16s} {len(g):2d} "
-              f"{np.mean([r['rate_t_ha'] for r in g]):10.1f} "
-              f"{np.mean([r['fw_p50'] for r in g]):8.1%}")
-    print()
-
-    # Remove the rate effect, then look at the residual by regime.
-    x = np.log(np.array([r["rate_t_ha"] for r in rows]))
-    y = np.log(np.array([r["fw_p50"] for r in rows]))
-    slope, intercept = np.polyfit(x, y, 1)
-    resid = y - (slope * x + intercept)
-
-    print("  Rate-adjusted residual in ln(fw) -- positive means weathering faster")
-    print("  than the application rate alone would predict:")
-    print(f"  {'regime':16s} {'n':>2s} {'mean resid':>11s} {'as a factor':>12s}")
-    order = []
-    for regime in ("india_paddy", "corn_belt", "brazil_oxisol"):
-        idx = [i for i, r in enumerate(rows) if r["regime"] == regime]
-        m = float(np.mean(resid[idx]))
-        order.append((m, regime))
-        print(f"  {regime:16s} {len(idx):2d} {m:11.2f} {math.exp(m):12.2f}x")
-    order.sort(reverse=True)
-    print()
-    print("  Observed ranking, best first: "
-          + " > ".join(r for _, r in order))
-    print()
-    print("  HONEST READ. This does NOT confirm the model's paddy-first claim.")
-    print("  Brazil Oxisol comes out on top on this adjustment, and it is exactly")
-    print("  the regime the eta_DIC term demotes. But the test has almost no")
-    print("  power, for reasons that are not fixable by better statistics:")
-    print("    - n = 8, with one deployment in the Brazil regime")
-    print("    - grain size spans 67-600 um and its DISTRIBUTION WIDTH is")
-    print("      unresolved per deployment; d50 alone spans 8.2x geometric SSA")
-    print("      and width a further 4.2x. Larger than every regime difference")
-    print("      here")
-    print("    - grain size, application rate and operator are mutually")
-    print("      collinear: corr(ln rate, ln p50) = +0.60, and the WITHIN-operator")
-    print("      rate slope is -0.01 +/- 0.57 against the pooled -0.58. So the")
-    print("      pooled exponent is the operator/grind contrast relabelled, NOT")
-    print("      a rate effect -- see the warning on FW_RATE_EXPONENT_OBSERVED")
-    print("    - one programme contributes three bins that may be grain-size bins")
-    print("      within a single site, in which case treating them as three")
-    print("      independent samples overstates that regime's n")
-    print("    - P16 spreads are enormous: one row is 23.9% at P50 but 0.9%")
-    print("      at P16, a factor of 27. Regime means built on P50 alone hide that")
-    print("    - measurement methods differ across operators and are known to")
-    print("      disagree by ~2x")
-    print()
-    print("  So: the model's paddy claim is NOT yet supported, and is mildly")
-    print("  challenged. That is worth recording as a pre-registered concern")
-    print("  rather than explained away. The resolution is grain-size data, not")
-    print("  a different aggregation.")
+def G(u, n=None):
+    n = C.PSD_REF_WIDTH if n is None else n
+    return float(np.interp(u, _UG, _table(n)))
 
 
-def feedstock_co2_potential(rows: list[dict]) -> None:
-    """Rows with independently measured CDR let us back out the feedstock's real
-    CO2 potential, so their departure from the nominal 0.33 tCO2/t is a finding."""
-    rule("8. What the measured rows say about actual feedstock CO2 potential")
-    print("  For rows where CDR was independently measured, implied CO2 potential")
-    print("  = cdr / (rate x fw):")
-    print()
-    vals = []
-    for r in rows:
-        if r["cdr_exact"] != "yes":
-            continue
-        implied = r["cdr_tco2_ha"] / (r["rate_t_ha"] * r["fw_p50"])
-        vals.append(implied)
-        print(f"  {r['deployment']:14s} {implied:.3f} tCO2/t")
-    print()
-    print(f"  mean {np.mean(vals):.3f}, range {min(vals):.3f}-{max(vals):.3f}")
-    print("  vs the nominal 0.33 used for the derived rows, and vs our archetypes:")
-    print("    fresh_basalt 0.332   metabasalt 0.238   ultramafic 0.920")
-    print()
-    print("  These basalts sit BELOW fresh_basalt and near metabasalt. So the")
-    print("  nominal 0.33 applied to the derived rows likely overstates their CDR")
-    print("  by ~20-25%, and our fresh_basalt archetype composition is optimistic")
-    print("  for real delivered feedstock. Worth revisiting CaO/MgO in")
-    print("  constants.FEEDSTOCK_ARCHETYPES against actual delivery assays.")
+def u_of(fw, n=None):
+    n = C.PSD_REF_WIDTH if n is None else n
+    return float(np.interp(min(max(fw, 0.0), 0.999), _table(n), _UG))
 
 
-def why_year_one_fw_is_the_wrong_observable(rows: list[dict]) -> None:
-    """The most important caveat, and it cuts against reading too much into
-    section 3 either way."""
-    rule("9. Why year-one fraction weathered is a weak test of a rate law")
-
-    x = np.log(np.array([r["rate_t_ha"] for r in rows]))
-    y = np.log(np.array([r["fw_p50"] for r in rows]))
-    slope, intercept = np.polyfit(x, y, 1)
-    resid = y - (slope * x + intercept)
-    spread = float(np.exp(resid.max() - resid.min()))
-
-    print("  Two structural reasons, both of which limit what section 3 can show:")
-    print()
-    print("  (a) TRANSIENT, NOT STEADY STATE. Over a first ~12-month reporting")
-    print("      period, fraction weathered is dominated by dissolution of the fine")
-    print("      tail of the particle-size distribution. That is fast, close to")
-    print("      kinetically unlimited, and therefore similar across sites. The")
-    print("      Palandri-Kharaka law we implement describes the LONG-RUN steady")
-    print("      rate. So year-one fw is close to the wrong observable: it measures")
-    print("      how much fine material was delivered more than how favourable the")
-    print("      site is.")
-    print()
-    print("      Consistent with that, the rate-adjusted regime differences are")
-    print(f"      tiny -- total spread across all 8 deployments is {spread:.2f}x --")
-    print("      while grain size alone could plausibly account for 8.2x on diameter and ~4.2x on width.")
-    print()
-    print("  (b) NARROW COVARIATE ENVELOPE. All 8 sites are humid, and acidic to")
-    print("      near-neutral, and warm to temperate. None is arid, alkaline, or")
-    print("      cold. But the model's most consequential departures from Cascade")
-    print("      are precisely about the UNSAMPLED regions -- alkaline irrigated")
-    print("      cropland going from hopeless to viable, and arid cropland being")
-    print("      penalised by transport limitation. This set cannot test either.")
-    print()
-    print("  So the defensible statement is narrow: after adjusting for application")
-    print("  rate, these eight first-period deliveries show no regime signal large")
-    print("  enough to either confirm or refute the model's ordering. That is a")
-    print("  statement about the test's power, not about the model being right.")
-    print()
-    print("  What WOULD test it, in rough order of value:")
-    print("    - multi-year fw from the same sites, where the fine tail is spent")
-    print("      and the steady rate dominates")
-    print("    - any deployment on alkaline (pH > 7.5) or arid cropland")
-    print("    - a flooded-vs-drained pair at one site, same feedstock and rate,")
-    print("      which would test the soil-pCO2 mechanism directly and is the")
-    print("      single cleanest experiment for the paddy claim")
+def fw_at_days(fw, t_obs, t_new, n=None):
+    """Move an observed fraction from t_obs to t_new along the shrinking-core
+    curve. Retreat is linear in time, so u scales with t; d50 cancels."""
+    return G(u_of(fw, n) * t_new / t_obs, n)
 
 
-def grain_size_controlled(rows: list[dict]) -> None:
-    """Redo the regime comparison now that p50 is measured per operator.
+# ---- grid helpers ----------------------------------------------------------
+class Grid:
+    def __init__(self):
+        self.ok = NPZ.exists()
+        if not self.ok:
+            return
+        z = np.load(NPZ, allow_pickle=True)
+        self.z = z
+        self.a, _, self.c, _, self.e, self.f = z["transform"]
+        self.keys = ("L1", "eta_tr", "eta", "q", "ph", "tair", "pco2",
+                     "f_flood", "alk_ceiling", "ceiling")
 
-    The headline result is that the comparison is UNIDENTIFIABLE, and that
-    conclusion is stronger than the one this script previously reported.
-    """
-    import sys as _sys
-    from pathlib import Path as _P
-    _sys.path.insert(0, str(_P(__file__).parent))
-    import constants as _C
-    import kinetics as _K
-
-    rule("7. Regime comparison with grain size controlled")
-    have = [r for r in rows if r["p50_um"]]
-    if not have:
-        print("  no p50 values in the fixture; nothing to control for")
-        return
-
-    by_regime = {}
-    for r in have:
-        by_regime.setdefault(r["regime"], set()).add(r["p50_um"])
-    print("  p50 values present in each regime:")
-    for reg, ps in sorted(by_regime.items()):
-        print(f"    {reg:16s} {sorted(ps)}")
-    collinear = all(len(v) == 1 for v in by_regime.values())
-    print()
-    if collinear:
-        print("  GRAIN SIZE IS PERFECTLY COLLINEAR WITH REGIME. Each regime has")
-        print("  exactly one grind. Regime and grain size are the same variable, so")
-        print("  no amount of statistics can separate them. This is stronger than")
-        print("  'low power': the comparison is UNIDENTIFIABLE.")
-        print()
-
-    # Normalise to a common grind and rate. Fraction weathered SATURATES, so
-    # invert to the rate-like exposure first -- rescaling Fw linearly gave a
-    # physically impossible 106% when first tried.
-    ref = _K.ssa_geometric(_C.PSD_REF_D50_UM, _C.PSD_REF_WIDTH)
-    base_rate = 44.7
-    print(f"  Normalised to p50 {_C.PSD_REF_D50_UM:.0f} um and {base_rate:.1f} t/ha,")
-    print("  inverting through Fw = 1 - exp(-kX) rather than scaling Fw directly:")
-    print(f"    {'deployment':14s} {'p50':>5s} {'fw':>7s} {'fw_norm':>8s}")
-    norm = {}
-    for r in have:
-        X = -math.log(1.0 - r["fw_p50"])
-        sr = _K.ssa_geometric(r["p50_um"], _C.PSD_REF_WIDTH) / ref
-        Xn = X / sr * (r["rate_t_ha"] / base_rate) ** 0.58
-        fwn = 1.0 - math.exp(-Xn)
-        norm.setdefault(r["regime"], []).append(fwn)
-        print(f"    {r['deployment']:14s} {r['p50_um']:5.0f} {r['fw_p50']:7.1%} {fwn:8.1%}")
-    print()
-    print("  Regime means at a common grind and rate:")
-    for reg, v in sorted(norm.items(), key=lambda kv: -np.mean(kv[1])):
-        print(f"    {reg:16s} {np.mean(v):7.1%}  (n={len(v)})")
-    print()
-    print("  This REVERSES the ordering this script reported before p50 was known,")
-    print("  putting acidic paddy first rather than last. Do NOT read that as")
-    print("  support for the model: because grain size and regime are the same")
-    print("  variable here, 'normalising for grain size' and 'removing the regime")
-    print("  effect' are the same operation. The reversal only shows which variable")
-    print("  the variance was attributed to.")
-    print()
-    print("  What it DOES establish: the earlier claim that these deliveries mildly")
-    print("  CONTRADICT the paddy prediction was unsupported. The data is")
-    print("  uninformative about regime, not contrary to it. That was an over-read")
-    print("  and is retracted.")
-    print()
-    print("  To make it identifiable you need two grinds within one regime, or one")
-    print("  grind across two regimes. A single site running coarse and fine lots")
-    print("  side by side would do it.")
-
-
-def flux_ceiling_check(rows: list[dict]) -> None:
-    """Does each deployment's reported CDR/ha fit in its own drainage water?
-
-    This is the flux-reconciliation test that put Beerling et al. 2024's CDRpot at
-    ~29.8 mmol/L implied bicarbonate, now run on projects that are actually being
-    credited. It needs no assumption about regime, grind or rate exponent, which is
-    what makes it usable on a set where all three are collinear: it only divides a
-    reported carbon flux by a measured water flux and compares the quotient to
-    carbonate saturation.
-
-    Reads q and the ceiling from the built map, so it is skipped if the build has
-    not been run. Lat/lon are approximate region centroids, so q is regional --
-    quoted to two significant figures at most.
-    """
-    npz = ROOT / "data/processed/v0_layers.npz"
-    if not npz.exists():
-        print("  SKIP: data/processed/v0_layers.npz missing; run scripts/build_v0.py")
-        return
-    import numpy as _np
-    z = _np.load(npz, allow_pickle=True)
-    a, _b, c, _d, e, f = z["transform"]
-
-    def med_at(lat, lon, hw=3):
-        row = int(round((lat - f) / e - 0.5)); col = int(round((lon - c) / a - 0.5))
-        sl = _np.s_[max(row - hw, 0):row + hw + 1, max(col - hw, 0):col + hw + 1]
-        m = (z["crop"][sl] > 0.01) & _np.isfinite(z["alk_ceiling"][sl])
+    def at(self, lat, lon, hw=1):
+        """Median over cropland cells in a (2hw+1)^2 window; hw=1 is ~33 km."""
+        z = self.z
+        row = int(math.floor((lat - self.f) / self.e))
+        col = int(math.floor((lon - self.c) / self.a))
+        sl = np.s_[max(row - hw, 0):row + hw + 1, max(col - hw, 0):col + hw + 1]
+        m = ((z["crop"][sl] >= C.CROPLAND_MIN_FRACTION)
+             & np.isfinite(z["L1"][sl]) & np.isfinite(z["ph"][sl]))
         if not m.any():
             return None
-        return (float(_np.nanmedian(z["q"][sl][m])),
-                float(_np.nanmedian(z["alk_ceiling"][sl][m])),
-                float(_np.nanmedian(z["ceiling"][sl][m])))
+        out = {k: float(np.nanmedian(z[k][sl][m])) for k in self.keys}
+        out["n"] = int(m.sum())
+        out["X"] = 10.0 ** out["L1"] * out["eta_tr"]
+        return out
 
-    print("  Reported CDR/ha divided by the water available to carry it, against")
-    print("  carbonate saturation at that region's own soil pCO2 and temperature.")
+    def region(self, box):
+        z = self.z
+        lat0, lat1, lon0, lon1 = box
+        r0 = int(math.floor((lat1 - self.f) / self.e))
+        r1 = int(math.floor((lat0 - self.f) / self.e))
+        c0 = int(math.floor((lon0 - self.c) / self.a))
+        c1 = int(math.floor((lon1 - self.c) / self.a))
+        sl = np.s_[r0:r1 + 1, c0:c1 + 1]
+        m = (z["crop"][sl] >= C.CROPLAND_MIN_FRACTION) & np.isfinite(z["L1"][sl])
+        X = (10.0 ** z["L1"][sl][m]) * z["eta_tr"][sl][m]
+        w = (z["crop"][sl] * z["area"][sl])[m]
+        o = np.argsort(X)
+        cw = np.cumsum(w[o]) / w.sum()
+        q = lambda p: float(X[o][min(np.searchsorted(cw, p), len(o) - 1)])
+        out = {k: float(np.nanmedian(z[k][sl][m])) for k in self.keys}
+        out.update(n=int(m.sum()), X=q(0.5), X_p25=q(0.25), X_p75=q(0.75))
+        return out
+
+
+# ---------------------------------------------------------------------------
+def inventory(rows, feed):
+    rule("1. Inventory and provenance")
+    comps = sorted({r["company"] for r in rows})
+    print(f"  {len(rows)} removals/deployments across {len(comps)} suppliers, "
+          f"{len({r['country'] for r in rows})} countries.")
     print()
-    print(f"  {'deployment':14} {'t/ha':>6} {'q mm/yr':>8} {'CDR/yr':>7} "
-          f"{'implied':>8} {'ceiling':>8} {'over':>6} {'exact?':>7}")
-    print(f"  {'':14} {'':>6} {'':>8} {'tCO2/ha':>7} {'mmol/L':>8} {'mmol/L':>8}")
-    worst, exact_ratios, all_ratios = 0.0, [], []
+    print(f"  {'delivery':28s} {'tracer':>6s} {'t/ha':>6s} {'days':>5s} "
+          f"{'elapsed':>9s} {'Fw p50':>7s} {'coords':>34s}")
     for r in rows:
-        if r["lat"] is None:
-            continue
-        g = med_at(r["lat"], r["lon"])
-        if g is None:
-            continue
-        q, alk, _ceil = g
-        per_yr = r["cdr_tco2_ha"] * 12.0 / r["period_months"]
-        implied = per_yr * 1e6 / C.M_CO2_G_MOL / max(q * 1e7, 1e-9)
-        ratio = implied / alk
-        worst = max(worst, ratio)
-        all_ratios.append(ratio)
-        if r["cdr_exact"] == "yes":
-            exact_ratios.append(ratio)
-        print(f"  {r['deployment']:14} {r['rate_t_ha']:6.1f} {q * 1000:8.0f} "
-              f"{per_yr:7.2f} {implied * 1e3:8.1f} {alk * 1e3:8.2f} "
-              f"{ratio:5.1f}x {r['cdr_exact']:>7}")
+        tr = "none" if r["tracer"].startswith("none") else r["tracer"][:6]
+        el = f"{r['elapsed_days']:5.0f}" if r["elapsed_days"] else "    -"
+        print(f"  {r['delivery_slug']:28s} {tr:>6s} {r['app_rate_t_ha']:6.1f} {el} "
+              f"{(r['elapsed_src'] or '-'):>9s} {r['fw_p50_pct']:6.1f}% "
+              f"{r['coord_src']:>34s}")
+    no_t = [r for r in rows if r["elapsed_days"] is None]
+    cum = [r for r in rows if r["fw_is_cumulative"]]
     print()
-    # Counted, not asserted. This read "EVERY deployment exceeds its own ceiling"
-    # while the ratio column rounded to whole multiples, so when the drainage
-    # variable changed to total runoff and one deployment dropped to 0.6x the claim
-    # went stale and the table still printed it as "1x".
-    n_over = sum(1 for v in all_ratios if v > 1.0)
-    print(f"  {n_over} of {len(all_ratios)} deployments exceed their own "
-          f"drainage-concentration ceiling, by {min(all_ratios):.1f}x to "
-          f"{max(all_ratios):.1f}x.")
-    if n_over < len(all_ratios):
-        print(f"  {len(all_ratios) - n_over} sits BELOW it, i.e. its reported CDR is "
-              f"carryable in its own drainage water.")
-    if exact_ratios:
-        print(f"  Restricting to the INDEPENDENTLY MEASURED rows, where CDR is exact and")
-        print(f"  not algebra on fw: {min(exact_ratios):.1f}x to {max(exact_ratios):.1f}x.")
+    print(f"  {len(no_t)} rows have NO recoverable weathering duration and cannot "
+          f"carry a rate;")
+    print(f"  {len(cum)} row is a CUMULATIVE re-sampling of fields already in the set;")
+    print(f"  {sum(1 for r in rows if r['elapsed_src'] == 'measured')} rows have "
+          f"elapsed time measured from sample dates, the rest stated or inferred.")
+    print(f"  Grind (p50) is disclosed for "
+          f"{sum(1 for f in feed if f['p50_um'])} of {len(feed)} suppliers; "
+          f"no supplier has a PSD curve or a measured surface area.")
     print()
-    print("  READ THIS CAREFULLY -- it is not an over-crediting finding. These are")
-    print("  DISSOLUTION-BASED figures: the fixture's own header says so, and section 1")
-    print("  shows the derived rows are rate x fw x 0.33 by construction. So the")
-    print("  comparison is 'how much rock dissolved' against 'how much carbon the water")
-    print("  could carry out'. Both can be right at once, and the gap is then the")
-    print("  retention-and-lag term: cations held on exchange sites, in Fe/Mn-oxide")
-    print("  pools and in neoformed clays rather than exported. Independent")
-    print("  measurements put that at 10-50x (Hammes et al. 2025) and retarded")
-    print("  fractions at 93-98% (te Pas et al. 2025), which is the same order as the")
-    print("  gap here.")
-    print()
-    print("  What it DOES establish, and it is the strongest statement this set")
-    print("  supports: dissolution-based CDR/ha cannot be read as export without a")
-    print("  retention term, because export at those concentrations is not physically")
-    print("  available. That closes the question in to_do.md item 4 -- whatever the")
-    print("  delivery fixture's 'fraction weathered' measures, it is not realised")
-    print("  export. It also means this set cannot anchor the map's absolute level,")
-    print("  and the map's own anchor inherits the same problem.")
+    print("  Two observables masquerade as one: suppliers without an immobile")
+    print("  tracer establish the Fw denominator from the pre/post soil cation")
+    print("  jump; tracer suppliers infer it from Ti or Cu. Sampling depth also")
+    print("  differs where it is known at all. Neither is corrected below; both")
+    print("  are nested in supplier, which is why every aggregate here is taken")
+    print("  over SUPPLIER CLUSTERS rather than over rows.")
 
 
-def what_would_make_this_a_real_test(rows: list[dict]) -> None:
-    rule("10. What is needed to turn this into a real test")
-    print("  In priority order, by how much each would raise the test's power:")
+def field_ids():
+    """delivery_slug -> set of field ids, from fields.csv (optional)."""
+    out = {}
+    if not FIELDS.exists():
+        return out
+    with FIELDS.open() as fh:
+        for r in csv.DictReader(fh):
+            out.setdefault(r["delivery_slug"], set()).add(r["field_id"])
+    return out
+
+
+def usable_rows(rows):
+    """Rows that can carry a year-1 rate: a duration exists, and the row is not
+    the superseded first sampling of fields re-sampled later. 'Same fields' is
+    decided from field ids, not from region and rate -- two deliveries from one
+    supplier can share both and still be different land."""
+    ids = field_ids()
+    pred = set()
+    for c in [r for r in rows if r["fw_is_cumulative"]]:
+        for r in rows:
+            if (r is c or r["fw_is_cumulative"] or not r["elapsed_days"]
+                    or not c["elapsed_days"]
+                    or r["elapsed_days"] >= c["elapsed_days"]):
+                continue
+            a, b = ids.get(r["delivery_slug"]), ids.get(c["delivery_slug"])
+            if a and b and len(a & b) / len(a) > 0.5:
+                pred.add(r["delivery_slug"])
+    if not ids:
+        print("  WARNING: fields.csv absent; cannot identify re-sampled fields, so "
+              "no early sampling is excluded")
+    out = [r for r in rows if r["elapsed_days"] and r["delivery_slug"] not in pred]
+    return out, pred
+
+
+def time_normalise(rows):
+    rule("2. Time-normalisation to one year")
+    print("  Fw is observed at 93-429 d, not at one year. Moved to 365 d along the")
+    print("  model's own shrinking-core curve (u scales with time; d50 cancels, only")
+    print("  the width enters). RAW is a lower bound on the one-year value where")
+    print("  t < 365 d; the shrinking-core value is an UPPER bound because section 3")
+    print("  shows the real curve flattens faster. Central = geometric midpoint.")
     print()
-    print("  1. PER-DEPLOYMENT PARTICLE-SIZE DISTRIBUTION, not just d80.")
-    print("     Fit Rosin-Rammler (d_c, n) per deployment and integrate specific")
-    print("     surface area over it. Normalising on d80 alone is invalid: two")
-    print("     feedstocks with identical d80 can differ 4.2x in reactive area.")
-    print("     Without this, no cross-deployment comparison of fw is")
-    print("     interpretable, and a deployment lacking it should be EXCLUDED")
-    print("     rather than assigned an assumed width.")
-    print("  2. Confirm what one programme's three bins are. If particle-size bins,")
-    print("     they become the best grain-size sensitivity test in the set,")
-    print("     rather than three noisy Corn Belt replicates.")
-    print("  3. Measured soil pH per deployment, and the measurement convention")
-    print("     (H2O vs CaCl2). A 0.55-unit convention offset is comparable to")
-    print("     the entire width of the eta_DIC transition.")
-    print("  4. Whether each site is flooded, and for what fraction of the year.")
-    print("     This sets soil pCO2, which is what drives the paddy prediction.")
-    print("     'Paddy soil' in a soil description is not the same as 'flooded")
-    print("     during the reporting period'.")
-    print("  5. Exact reporting-period length and feedstock CO2 potential per")
-    print("     deployment, to replace the nominal 0.33 tCO2/t.")
+    print(f"  {'delivery':28s} {'days':>5s} {'raw':>6s} {'n=0.9':>6s} "
+          f"{'n=1.5':>6s} {'n=2.3':>6s} {'central':>8s}")
+    for r in rows:
+        t = r["elapsed_days"]
+        fw = r["fw_p50_pct"] / 100.0
+        vals = {n: fw_at_days(fw, t, 365.0, n) for n in (0.9, 1.5, 2.3)}
+        sc = vals[C.PSD_REF_WIDTH]
+        lo, hi = (min(fw, sc), max(fw, sc))
+        r["fw365_raw"], r["fw365_sc"] = fw, sc
+        r["fw365"] = math.sqrt(lo * hi) if t < SHORT_OBSERVATION_DAYS else sc
+        r["fw365_lo"], r["fw365_hi"] = lo, hi
+        print(f"  {r['delivery_slug']:28s} {t:5.0f} {fw:6.1%} {vals[0.9]:6.1%} "
+              f"{vals[1.5]:6.1%} {vals[2.3]:6.1%} {r['fw365']:8.1%}"
+              + ("  <- bracketed" if t < SHORT_OBSERVATION_DAYS else ""))
+    fws = sorted(r["fw365"] for r in rows)
     print()
-    print("  Then the validation becomes the CONSTANCY TEST from docs/VALIDATION.md:")
-    print("  fit the effective-surface-area multiplier lambda separately to each")
-    print("  deployment and publish all eight values. Their spread IS the result.")
-    print("  A spread of ~3x is reportable; 10x means the CO2 layer should be")
-    print("  demoted to qualitative.")
+    print(f"  One-year fraction weathered, each at its OWN grind, rate and site: "
+          f"{fws[0]:.1%}-{fws[-1]:.1%}, median {np.median(fws):.1%} (n = {len(fws)}).")
+    print("  This is the legend's 'measured spread'. It is NOT the anchor: none of")
+    print("  these sits at the reference grind or the reference condition.")
+    return fws
+
+
+def longitudinal_shape_test(rows, pred):
+    rule("3. The one longitudinal constraint: does the shape decay fast enough?")
+    cums = [r for r in rows if r["fw_is_cumulative"]]
+    if not cums or not pred:
+        print("  no cumulative re-sampling in the set; skipped")
+        return
+    c = cums[0]
+    p = next(r for r in rows if r["delivery_slug"] in pred
+             and r["company"] == c["company"])
+    f1, t1 = p["fw_p50_pct"] / 100.0, p["elapsed_days"]
+    f2, t2 = c["fw_p50_pct"] / 100.0, c["elapsed_days"]
+    r_early = f1 / t1
+    r_late = (f2 - f1) / (t2 - t1)
+    print(f"  Same fields sampled twice: {f1:.1%} at {t1:.0f} d, then {f2:.1%} "
+          f"cumulative at {t2:.0f} d.")
+    print(f"  Mean rate {r_early * 100:.3f} pp/d over the first interval, "
+          f"{r_late * 100:.3f} pp/d over the second: {r_late / r_early:.0%} of "
+          f"the initial rate.")
+    print()
+    print(f"  Predicted second value from the first, per curve shape:")
+    for n in (0.5, 0.7, 1.0, 1.5, 2.5):
+        print(f"    shrinking core, width {n:3.1f}: {fw_at_days(f1, t1, t2, n):5.1%}")
+    k1 = -math.log(1 - f1) / t1
+    print(f"    first-order exponential   : {1 - math.exp(-k1 * t2):5.1%}")
+    print(f"    OBSERVED                  : {f2:5.1%}")
+    print()
+    print("  No Rosin-Rammler width reproduces the decline, and first-order is worse.")
+    print("  The first interval's duration is INFERRED, not measured, so test its")
+    print("  leverage: the shrinking-core prediction at width "
+          f"{C.PSD_REF_WIDTH} matches the observation only if the first sampling was")
+    for t1_alt in (t1, 150.0, 180.0, 210.0):
+        print(f"    at {t1_alt:3.0f} d -> {fw_at_days(f1, t1_alt, t2):5.1%}")
+    print("  i.e. roughly twice as late as stated. Either the duration is wrong by")
+    print("  ~2x or a reactive fine/glassy fraction is consumed faster than any")
+    print("  size distribution alone implies. Both are live; the dataset cannot")
+    print("  separate them. Consequence for calibration: one-year values")
+    print(f"  extrapolated from observations shorter than {SHORT_OBSERVATION_DAYS:.0f} d")
+    print("  are BRACKETED, not trusted, and the early sampling of a re-sampled")
+    print("  field is excluded from the anchor in favour of the later one.")
+    return r_late
+
+
+def co2_potential(feed):
+    rule("4. Feedstock CO2 potential on the map's Ca+Mg basis")
+    print("  The archetype counts Ca and Mg only (2 mol CO2 per mol). Certified")
+    print("  potentials that also count Na and K are NOT like-for-like, so every")
+    print("  supplier is recomputed from its own feedstock chemistry on one basis.")
+    print()
+    vals = []
+    for f in feed:
+        if f["ca_mg_kg"] is None or f["mg_mg_kg"] is None:
+            print(f"  {f['company']:12s} Ca/Mg chemistry blank in feedstock.csv -- "
+                  f"cannot enter the mean (a gap in the dataset, not a measurement)")
+            continue
+        ca = f["ca_mg_kg"] / 1000.0 / 40.078
+        mg = f["mg_mg_kg"] / 1000.0 / 24.305
+        camg = 2.0 * (ca + mg) * C.M_CO2_G_MOL / 1000.0
+        extra = ""
+        if f["na_mg_kg"] is not None:
+            na = f["na_mg_kg"] / 1000.0 / 22.990
+            kk = (f["k_mg_kg"] or 0.0) / 1000.0 / 39.098
+            allb = (2.0 * (ca + mg) + na + kk) * C.M_CO2_G_MOL / 1000.0
+            extra = f"   (+Na+K basis {allb:.3f}, +{allb / camg - 1:.0%})"
+        vals.append(camg)
+        print(f"  {f['company']:12s} Ca+Mg basis {camg:.3f} tCO2/t{extra}")
+    spec = C.FEEDSTOCK_ARCHETYPES["delivered_basalt"]
+    ours = ((spec["CaO_wt"] / C.M_CAO + spec["MgO_wt"] / C.M_MGO)
+            * 1000.0 * 2.0 * C.MOL_CO2_PER_KMOL_CHARGE_T)
+    mean = float(np.mean(vals))
+    print()
+    print(f"  Supplier mean {mean:.3f} tCO2/t, range {min(vals):.3f}-{max(vals):.3f} "
+          f"(n = {len(vals)} suppliers, each one vote).")
+    print(f"  delivered_basalt archetype: {ours:.4f}; constant "
+          f"DELIVERED_BASALT_TCO2_PER_T = {C.DELIVERED_BASALT_TCO2_PER_T}"
+          f" ({ours / mean - 1:+.1%} vs this mean)")
+    print("  Counting Na and K, as the protocols do, would add roughly a tenth for")
+    print("  the feedstocks that report them; the map's Ca+Mg basis is the")
+    print("  conservative one and is kept.")
+    return mean, (min(vals), max(vals)), len(vals)
+
+
+def constancy_test(rows, feed, grid):
+    rule("5. Site- and grind-conditioned dissolution multipliers (constancy test)")
+    if not grid.ok:
+        print("  SKIP: data/processed/v0_layers.npz missing; run scripts/build_v0.py")
+        return None
+    p50 = {f["company"]: f["p50_um"] for f in feed}
+    d_ref = K.retreat_at_reference()
+    u_ref = d_ref / C.PSD_REF_D50_UM
+    print("  For each delivery: the map's own dimensionless rate X = 10^L1 x eta_tr")
+    print("  at the delivery's cells (3x3 cropland median, ~33 km), the model's")
+    print("  predicted one-year fraction at the SUPPLIER'S grind under the shipped")
+    print("  anchor, and the multiplier k on the reference retreat that would make")
+    print("  the model reproduce the observation:  k = u_obs / (delta_ref x X / d50).")
+    print("  k = 1 means the shipped anchor is right for that delivery.")
+    print()
+    print(f"  {'delivery':28s} {'X':>5s} {'d50':>5s} {'model':>6s} {'obs':>6s} "
+          f"{'k_lo':>6s} {'k':>6s} {'k_hi':>6s}  note")
+    recs = []
+    for r in rows:
+        if r["coord_src"] == "approximate_region_centroid":
+            box = REGION_BOXES.get(r["region"])
+            if box is None:
+                print(f"  {r['delivery_slug']:28s} no usable coordinates and no region "
+                      f"box; skipped")
+                continue
+            g = grid.region(box)
+            note = f"REGIONAL X (IQR {g['X_p25']:.2f}-{g['X_p75']:.2f}, {g['n']} cells)"
+        else:
+            g = grid.at(r["latitude"], r["longitude"], hw=1)
+            if g is None:
+                print(f"  {r['delivery_slug']:28s} no cropland cells at coordinates; skipped")
+                continue
+            note = f"{r['coord_src']}"
+        X = g["X"]
+        d50 = p50.get(r["company"])
+        rec = dict(slug=r["delivery_slug"], company=r["company"], X=X, g=g,
+                   grind_known=d50 is not None, rate=r["app_rate_t_ha"])
+        for tag, d in (("known", d50),) if d50 else (("ref", C.PSD_REF_D50_UM),):
+            u_model = d_ref * X / d
+            rec["k_lo"] = u_of(r["fw365_lo"]) / u_model
+            rec["k_hi"] = u_of(r["fw365_hi"]) / u_model
+            rec["k"] = u_of(r["fw365"]) / u_model
+            rec["fw_model"] = G(u_model)
+            rec["d50"] = d
+        recs.append(rec)
+        gn = f"{rec['d50']:5.0f}" if d50 else "  ?  "
+        print(f"  {rec['slug']:28s} {X:5.2f} {gn} {rec['fw_model']:6.1%} "
+              f"{r['fw365']:6.1%} {rec['k_lo']:6.3f} {rec['k']:6.3f} {rec['k_hi']:6.3f}"
+              f"  {note}" + ("" if d50 else "; grind UNKNOWN -> k at reference grind "
+                                             "is an UPPER BOUND"))
+    print()
+    # Cluster by supplier.
+    clusters = {}
+    for rec in recs:
+        clusters.setdefault(rec["company"], []).append(rec)
+    print("  Supplier clusters (median k over the supplier's usable rows; bracket =")
+    print("  min k_lo to max k_hi):")
+    cl = []
+    for co, rs in clusters.items():
+        k = float(np.median([x["k"] for x in rs]))
+        lo = min(x["k_lo"] for x in rs)
+        hi = max(x["k_hi"] for x in rs)
+        known = all(x["grind_known"] for x in rs)
+        cl.append(dict(company=co, k=k, lo=lo, hi=hi, known=known, n=len(rs),
+                       d50=rs[0]["d50"]))
+        print(f"    {co:12s} n={len(rs)}  d50 {rs[0]['d50']:4.0f} um  "
+              f"k {k:.3f}  [{lo:.3f}, {hi:.3f}]"
+              + ("" if known else "   (grind unknown; upper bound)"))
+    known = [c for c in cl if c["known"]]
+    k_star = float(np.median([c["k"] for c in known]))
+    frac_ref = G(u_ref * k_star)
+    print()
+    print(f"  ANCHOR. Median k over the {len(known)} known-grind clusters = "
+          f"{k_star:.3f}, i.e. the model at the reference condition and grind")
+    print(f"  should weather {frac_ref:.1%} in year one, not "
+          f"{C.DISSOLVED_FRAC_AT_REF:.0%} -- shipped constant "
+          f"DISSOLVED_FRAC_AT_REF = {C.DISSOLVED_FRAC_AT_REF}"
+          f" ({'CONSISTENT' if abs(C.DISSOLVED_FRAC_AT_REF - frac_ref) < 0.005 else 'STALE'}).")
+    all_med = float(np.median([c["k"] for c in cl]))
+    print(f"  Including the unknown-grind cluster at its upper bound: median k "
+          f"{all_med:.3f} -> {G(u_ref * all_med):.1%}. The known-grind value is")
+    print("  used because a bound is not an estimate, and because it is the")
+    print("  conservative side of the two.")
+    spread = max(c["k"] for c in known) / min(c["k"] for c in known)
+    fr_lo = G(u_ref * min(c["k"] for c in known))
+    fr_hi = G(u_ref * max(c["k"] for c in known))
+    print()
+    print(f"  SPREAD. Cluster k ranges {min(c['k'] for c in known):.3f}-"
+          f"{max(c['k'] for c in known):.3f} ({spread:.1f}x); as reference-condition "
+          f"year-1 fractions {fr_lo:.1%}-{fr_hi:.1%}.")
+    print(f"  docs/VALIDATION.md pre-registered: ~3x reportable, 10x demotes the CO2")
+    print(f"  layer to qualitative. {spread:.1f}x sits between. The spread is")
+    print("  STRUCTURED, not noise: k rises with d50 across the clusters -- the")
+    print("  finest grind is over-predicted several-fold and the coarsest is about")
+    print("  right -- so the shrinking-core grind dependence (Fw ~ 1/d50 at small")
+    print("  retreat) is too steep for these deliveries, OR the p50 values are not")
+    print("  comparable (sieve vs laser, crusher fines with an unreported broad")
+    print("  tail), OR tracer-free denominators and depth differences track grind")
+    print("  because all three are nested in supplier. Width is the likeliest")
+    print("  culprit and no PSD exists to test it. Reported, not tuned away.")
+    within = [max(x["k"] for x in rs) / min(x["k"] for x in rs)
+              for rs in clusters.values() if len(rs) > 1]
+    print(f"  Within-supplier spread of k (same feedstock, method, climate): "
+          f"{min(within):.1f}-{max(within):.1f}x.")
+    return dict(k_star=k_star, frac_ref=frac_ref, cluster_frac_range=(fr_lo, fr_hi),
+                spread=spread, n_known=len(known), n_clusters=len(cl),
+                cl=cl, recs=recs, k_all=all_med)
+
+
+def rate_exponent(rows):
+    rule("6. Rate exponent, pooled versus within-supplier (not used in the model)")
+    x = np.log([r["app_rate_t_ha"] for r in rows])
+    y = np.log([r["fw365"] for r in rows])
+    s, b = np.polyfit(x, y, 1)
+    r2 = 1 - np.sum((y - (s * x + b)) ** 2) / np.sum((y - y.mean()) ** 2)
+    print(f"  Pooled log-log fit over {len(rows)} usable rows: fw ~ rate^{s:.2f} "
+          f"(R2 {r2:.2f}).")
+    # Within-supplier: demean by company, fit the pooled within slope.
+    comps = sorted({r["company"] for r in rows})
+    xw, yw = [], []
+    for co in comps:
+        idx = [i for i, r in enumerate(rows) if r["company"] == co]
+        if len(idx) < 2 or np.ptp(x[idx]) < 1e-6:
+            continue
+        xw.extend(x[idx] - x[idx].mean())
+        yw.extend(y[idx] - y[idx].mean())
+    if len(xw) >= 3:
+        xw, yw = np.array(xw), np.array(yw)
+        sw = float(np.sum(xw * yw) / np.sum(xw * xw))
+        res = yw - sw * xw
+        se = float(np.sqrt(np.sum(res ** 2) / max(len(xw) - 2, 1) / np.sum(xw * xw)))
+        print(f"  Within-supplier slope (only suppliers with >1 rate): {sw:.2f} "
+              f"+/- {se:.2f}, on {len(xw)} rows.")
+    n_rate_var = sum(1 for co in comps
+                     if np.ptp([r["app_rate_t_ha"] for r in rows
+                                if r["company"] == co]) > 1e-6)
+    print(f"  Only {n_rate_var} of {len(comps)} suppliers vary application rate at all;")
+    print("  rate, grind, method and climate remain nested in supplier, so the")
+    print("  pooled exponent is still the supplier contrast wearing a rate label.")
+    print("  What survives: fraction weathered is not a site property, and the map")
+    print("  must not present it as one.")
+    return float(s), float(r2), len(rows)
+
+
+def porewater_pco2(rows, recs):
+    rule("7. Porewater pH + alkalinity -> implied in-situ soil pCO2")
+    have = [r for r in rows if r["porewater_ph"] and r["porewater_alkalinity_ueq_l"]]
+    if not have:
+        print("  no porewater chemistry in the set")
+        return None
+    print("  At pH ~6.5 alkalinity is bicarbonate, and open-system carbonate")
+    print("  equilibrium gives pCO2 = [HCO3-] x a_H+ / (K1 KH). Evaluated at the")
+    print("  cell's mean air temperature (a degassed sample would read HIGHER pH")
+    print("  and so UNDER-state pCO2; these are lower-bound-leaning estimates).")
+    print()
+    print(f"  {'delivery':28s} {'crop':>6s} {'pH':>5s} {'alk ueq/L':>9s} "
+          f"{'pCO2 uatm':>10s} {'map cell':>9s}")
+    vals = []
+    byX = {x["slug"]: x for x in recs}
+    for r in have:
+        g = byX.get(r["delivery_slug"], {}).get("g")
+        T = (g["tair"] if g else 25.0) + 273.15
+        K1, _, KH, _ = K.carbonate_constants(T)
+        h = 10.0 ** (-r["porewater_ph"])
+        p = r["porewater_alkalinity_ueq_l"] * 1e-6 * h / (K1 * KH) * 1e6
+        vals.append(p)
+        cell = f"{g['pco2']:9,.0f}" if g else "        -"
+        print(f"  {r['delivery_slug']:28s} {(r['crop'] or '-')[:6]:>6s} "
+              f"{r['porewater_ph']:5.2f} {r['porewater_alkalinity_ueq_l']:9.0f} "
+              f"{p:10,.0f} {cell}")
+    print()
+    print(f"  Implied pCO2 {min(vals):,.0f}-{max(vals):,.0f} uatm across "
+          f"{len(vals)} site means (one supplier, one region, method unstated).")
+    print(f"  Protocol values: {C.PCO2_UNSATURATED_UATM:,.0f} drained, "
+          f"{C.PCO2_SATURATED_UATM:,.0f} saturated. The flooded rows land near the")
+    print("  saturated value; the UPLAND rows land there too, which says wet")
+    print("  tropical soil respiration, not flooding per se, sets these numbers.")
+    print("  First field constraint on the paddy pCO2 assumption in the set; n is")
+    print("  four site-means from one bundle, so it is a plausibility check, not")
+    print("  a calibration. The measured alkalinities (2-3 mmol/L) are also well")
+    print("  BELOW calcite saturation at that pCO2: these fields are kinetically")
+    print("  limited, not transport-limited, which is what the map says of them.")
+    return (min(vals), max(vals), len(vals))
+
+
+def flux_ceiling_check(rows, recs, co2, co2_by_company):
+    rule("8. Does dissolution-based CDR fit in the drainage water?")
+    print("  Reported dissolution x the supplier's Ca+Mg potential, per year, as a")
+    print("  bicarbonate concentration in the cell's own drainage, against calcite")
+    print("  saturation at the cell's soil pCO2 and temperature.")
+    print()
+    print(f"  {'delivery':28s} {'t/ha':>6s} {'q mm':>5s} {'tCO2/ha':>8s} "
+          f"{'implied':>8s} {'ceiling':>8s} {'over':>6s}")
+    ratios = []
+    byX = {x["slug"]: x for x in recs}
+    for r in rows:
+        rec = byX.get(r["delivery_slug"])
+        if rec is None or r["coord_src"] == "approximate_region_centroid":
+            continue
+        g = rec["g"]
+        cp = co2_by_company.get(r["company"]) or co2
+        flag = "" if co2_by_company.get(r["company"]) else " (supplier mean potential)"
+        cdr = r["app_rate_t_ha"] * r["fw365"] * cp
+        implied = cdr * 1e6 / C.M_CO2_G_MOL / max(g["q"] * 1e7, 1e-9)
+        ratio = implied / g["alk_ceiling"]
+        ratios.append(ratio)
+        print(f"  {r['delivery_slug']:28s} {r['app_rate_t_ha']:6.1f} {g['q'] * 1000:5.0f} "
+              f"{cdr:8.2f} {implied * 1e3:7.1f}m {g['alk_ceiling'] * 1e3:7.2f}m "
+              f"{ratio:5.1f}x{flag}")
+    n_over = sum(1 for v in ratios if v > 1.0)
+    print()
+    print(f"  {n_over} of {len(ratios)} joinable deliveries exceed their own "
+          f"drainage-concentration ceiling ({min(ratios):.1f}-{max(ratios):.1f}x).")
+    print("  Not an over-crediting finding: these are DISSOLUTION figures, and the")
+    print("  gap is the retention-and-lag term (exchange sites, Fe/Mn oxides,")
+    print("  neoformed clays). What it establishes: dissolution-based CDR/ha cannot")
+    print("  be read as export without a retention term, so this set cannot anchor")
+    print("  the map's absolute EXPORT level -- it anchors dissolution only, which")
+    print("  is exactly what section 5 uses it for.")
+    return n_over, len(ratios), (min(ratios), max(ratios))
+
+
+def what_is_not_identifiable(rows, feed, res):
+    rule("9. What is not identifiable, and what would make it so")
+    print("  Grind, tracer method, sampling depth, climate and application rate")
+    print(f"  are all nested in supplier: {len(feed)} clusters, "
+          f"{res['n_known'] if res else '?'} with a disclosed grind, one of them")
+    print("  temperate. So the k spread in section 5 cannot be attributed to any")
+    print("  one of them. In priority order:")
+    print("   1. PARTICLE-SIZE DISTRIBUTIONS, not p50 -- the width decides whether")
+    print("      the coarse supplier's high k is a broad fine tail or fast kinetics.")
+    print("   2. Measured bulk density and sampling depth from every supplier; two")
+    print("      batches from one supplier imply densities ~40% apart.")
+    print("   3. Repeat samplings of the SAME fields. The one pair in the set")
+    print("      constrains the curve shape more than any new site would.")
+    print("   4. Per-location coordinates where only a state centroid was shared.")
+    print("   5. A flooded-vs-drained pair, same feedstock and rate, at one site.")
 
 
 def main() -> int:
-    rows = load()
+    rows, feed = load()
     if rows is None:
-        print("No delivery fixture found at:")
-        print(f"  {FIXTURE}")
+        print("No calibration dataset found at:")
+        print(f"  {DELIVERIES}")
+        print(f"  {FEEDSTOCK}")
         print()
-        print("This input is deliberately not redistributed -- it derives from an")
-        print("independent verification report and carries per-operator results.")
-        print("See the module docstring for the expected CSV schema.")
+        print("These inputs are deliberately not redistributed -- they derive from")
+        print("supplier bundles and verification reports and carry per-supplier")
+        print("results. See the module docstring for the expected CSV schema.")
         print()
         print("Aggregate findings from the local run are recorded in README.md and")
-        print("in constants.py (DELIVERED_BASALT_TCO2_PER_T, FW_RATE_EXPONENT_OBSERVED).")
+        print("in constants.py (DISSOLVED_FRAC_AT_REF, DISSOLVED_FRAC_REF_CLUSTER_RANGE,")
+        print("DELIVERED_BASALT_TCO2_PER_T).")
         return 0
+    grid = Grid()
     print("=" * 74)
-    print(f"Verified ERW deliveries, 2026 -- {len(rows)} deployments, all basalt")
+    print(f"Verified ERW deliveries -- {len(rows)} removals/deployments, "
+          f"{len(feed)} suppliers, all basalt")
     print("=" * 74)
-    check_cdr_is_circular(rows)
-    rate_vs_fw(rows)
-    regime_comparison(rows)
-    grain_size_controlled(rows)
-    feedstock_co2_potential(rows)
-    why_year_one_fw_is_the_wrong_observable(rows)
-    rule("11. Does the reported CDR fit in the drainage water?")
-    flux_ceiling_check(rows)
-    what_would_make_this_a_real_test(rows)
+    inventory(rows, feed)
+    use, pred = usable_rows(rows)
+    print(f"\n  Rate-usable rows: {len(use)} of {len(rows)} (no duration: "
+          f"{sum(1 for r in rows if not r['elapsed_days'])}; superseded early "
+          f"sampling: {len(pred)}).")
+    fws = time_normalise(use)
+    longitudinal_shape_test(rows, pred)
+    co2, co2_rng, n_co2 = co2_potential(feed)
+    co2_by = {}
+    for f in feed:
+        if f["ca_mg_kg"] is not None and f["mg_mg_kg"] is not None:
+            co2_by[f["company"]] = 2.0 * (f["ca_mg_kg"] / 1000.0 / 40.078
+                                          + f["mg_mg_kg"] / 1000.0 / 24.305) \
+                * C.M_CO2_G_MOL / 1000.0
+    res = constancy_test(use, feed, grid)
+    slope, r2, n_fit = rate_exponent(use)
+    pw = porewater_pco2(rows, res["recs"] if res else [])
+    if res:
+        flux_ceiling_check(use, res["recs"], co2, co2_by)
+    what_is_not_identifiable(rows, feed, res)
+
+    rule("CONSTANTS (cross-supplier aggregates only)")
+    print(f"  DELIVERED_BASALT_TCO2_PER_T = {co2:.3f}   # Ca+Mg basis, "
+          f"n = {n_co2} suppliers")
+    print(f"  DELIVERED_BASALT_RANGE = ({co2_rng[0]:.3f}, {co2_rng[1]:.3f})")
+    print(f"  DISSOLVED_FRAC_OBSERVED_RANGE = ({fws[0]:.3f}, {fws[-1]:.3f})   "
+          f"# one-year, own grind/site, n = {len(fws)}")
+    print(f"  DISSOLVED_FRAC_OBSERVED_MEDIAN = {np.median(fws):.3f}")
+    if res:
+        print(f"  DISSOLVED_FRAC_AT_REF = {res['frac_ref']:.4f}  -> set to 2 s.f. "
+              f"{round(res['frac_ref'], 2)}   # median k {res['k_star']:.3f} over "
+              f"{res['n_known']} known-grind clusters")
+        print(f"  DISSOLVED_FRAC_REF_CLUSTER_RANGE = "
+              f"({res['cluster_frac_range'][0]:.3f}, {res['cluster_frac_range'][1]:.3f})"
+              f"   # {res['spread']:.1f}x spread")
+        print(f"  DISSOLVED_FRAC_AT_REF_ALT_WITH_UNKNOWN_GRIND = "
+              f"{G(K.retreat_at_reference() / C.PSD_REF_D50_UM * res['k_all']):.3f}")
+    print(f"  FW_RATE_EXPONENT_OBSERVED = {slope:.2f}   # R2 {r2:.2f}, n = {n_fit}; "
+          f"confounded, not used")
+    if pw:
+        print(f"  PADDY_PCO2_FIELD_IMPLIED_UATM = ({pw[0]:,.0f}, {pw[1]:,.0f})   "
+              f"# n = {pw[2]} site means")
     print()
     return 0
 

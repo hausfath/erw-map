@@ -31,8 +31,9 @@ fail.** The count is close to meaningless without the breakdown:
 Gate 7 deserves singling out because it used to be presented as evidence:
 `delivered_basalt`'s CaO and MgO were *chosen* to reproduce
 `DELIVERED_BASALT_TCO2_PER_T`, so the gate verifies arithmetic, not the
-archetype. It is also anchored to n = 3 deliveries from one operator and one
-feedstock source. State that wherever 0.289 tCO₂/t appears.
+archetype. The target is the supplier mean of measured feedstock Ca+Mg assays,
+n = 3 suppliers (a fourth has no assay in the dataset). State that wherever
+0.295 tCO₂/t appears.
 
 ## 2. Pre-registered tolerances
 
@@ -169,31 +170,59 @@ review, which found the first one could not discriminate.
 
 ## 4. Field validation: what is and is not identifiable
 
-The eight verified 2026 deliveries **cannot** identify a regime effect, and this
-is a property of the data rather than of the analysis:
+**The constancy test has now been run (2026-09-01)** on a cross-supplier
+calibration dataset: 14 Isometric-verified removals, 4 suppliers, 3 countries,
+with elapsed times, coordinates with precision flags, feedstock assays and three
+disclosed p50s. It replaced the eight-row fixture. Inputs are local-only; the
+method and aggregates are in `scripts/analyse_deployments.py`.
 
-- Grain size is **perfectly collinear with regime** (Corn Belt 67 µm, paddy
-  600 µm, Brazil 120 µm) and nested in operator.
-- Application rate is collinear with grind too: corr(ln rate, ln p50) = +0.60.
-- Independent cluster count: **4**, one a singleton.
-- Within-operator rate slope: **−0.01 ± 0.57**.
+Result: the site- and grind-conditioned multiplier k on the reference retreat,
+taken per supplier cluster, runs **0.12–0.90 across the three clusters with a
+disclosed grind (7.4×)**, with a within-cluster spread of 1.2–3.7×. The
+pre-registered rule below was ~3× reportable, 10× demotes the CO₂ layer to
+qualitative; 7.4× sits between. The anchor was reset to the cluster median
+(k = 0.40, `DISSOLVED_FRAC_AT_REF` 0.25 → 0.12). The spread is structured: k rises
+with p50, so the finest grind was over-predicted several-fold at the old anchor
+and the coarsest was about right. That is the direction a too-narrow assumed
+width (n = 1.5) would produce for crusher fines with a broad unreported tail, and
+it is also the direction a tracer-free Fw denominator and a deeper sampling window
+would produce — both nested in the same supplier as the finest grind.
 
-So rate, grind, operator and regime are four labels for approximately one degree
-of freedom. `FW_RATE_EXPONENT_OBSERVED = −0.58` is that one contrast, and must
-not be used to normalise for rate — doing so removes the grind contrast twice.
+The set still **cannot** identify a regime effect, and this is a property of the
+data rather than of the analysis:
 
-### The constancy test, amended
+- Grind is nested in supplier (three disclosed p50s spanning 9×, one supplier
+  undisclosed), as are tracer method (one supplier tracer-free), sampling depth
+  (known for two suppliers, 10 vs 15 cm) and climate (one temperate supplier).
+- Application rate is varied by only two of four suppliers, and the suppliers
+  applying the most rock grind the coarsest.
+- Independent cluster count: **4**, one with an undisclosed grind.
+- Pooled rate slope −0.61 (R² 0.77, n = 11); within-supplier −0.61 ± 0.41 on
+  five rows from two suppliers — consistent, but resting on two clusters.
 
-Fitting λ separately per deployment and publishing the spread is worth doing, but
-because grind is nested in operator the pooled spread conflates site-to-site
-variability with grind mis-specification. **Only the within-cluster spread is
-interpretable** (Mati's 3 sites, Lithos's 3 bins — **RESOLVED 2026-08: the bins are
-all p50 = 67 µm, so they are not grain-size bins.** They are a rate contrast at fixed
-grind, 25 / 50 / 47 t/ha, and two of them sit 6% apart in rate with fractions
-weathered differing 2.1× — which is the direct evidence that the pooled −0.58 is not
-a rate effect. Original text follows: confirm whether the Lithos
-bins are sites or grain-size bins first, because if they are grain-size bins they
-are the best grind test in the set). Pre-register that.
+So rate, grind, method, depth and regime are five labels for approximately one
+degree of freedom. `FW_RATE_EXPONENT_OBSERVED` is that one contrast and must not
+be used to normalise for rate — doing so removes the grind contrast twice.
+
+### The constancy test, as run
+
+Fitting k separately per delivery and publishing the spread was the pre-registered
+design; because grind is nested in supplier the pooled spread conflates
+site-to-site variability with grind mis-specification, and only the
+within-cluster spread is interpretable. Both are now reported by
+`analyse_deployments.py` §5. Two amendments the data forced:
+
+- **Time-normalisation is bracketed, not trusted.** Fractions are observed at
+  93–429 days. Moving them to one year along the shrinking-core curve is d50-free
+  but shape-dependent, and the one field re-sampled twice shows the real curve
+  flattening far faster than shrinking core at any width (rate falling to ~13%
+  of initial; every width 0.5–2.5 predicts 36–53% against ~30% observed) unless
+  its inferred first duration is ~2× too short. Observations under 300 days enter
+  as a bracket and the superseded first sampling is excluded in favour of the
+  later one.
+- **The undisclosed-grind supplier enters only as a bound.** At the reference
+  grind its k is an upper bound (0.88); including it would put the anchor at 0.18.
+  A bound is not an estimate, so it is reported and not used.
 
 ### Minimum identifying designs, with power
 
@@ -217,11 +246,11 @@ exist. The identifying designs are small and blocked:
 2. **Flooded versus drained pair at one site.** The only clean test of the
    η_DIC/paddy mechanism, which is the map's most distinctive claim.
 3. **Two rates within one grind at ≥3 sites.** Recovers the rate exponent that
-   −0.58 currently misattributes. **Note the Lithos bins are now known to be a rate
+   −0.58 currently misattributes. **Note one supplier's bins are now known to be a rate
    contrast at fixed grind and they do NOT deliver this** — the within-bin scatter
    exceeds the rate signal — so this ask is still open and needs a designed split.
-4. **One deployment on alkaline (pH > 7.5) or arid cropland.** Zero of the eight
-   sample where the model departs most from Cascade, so the covariate envelope
+4. **One deployment on alkaline (pH > 7.5) or arid cropland.** None of the
+   fourteen sample where the model departs most from Cascade, so the covariate envelope
    has no leverage on the claims being made. Even n = 1 is a qualitative
    falsification test there.
 
@@ -248,8 +277,9 @@ observationally. That ratio is the argument to put to operators.
   their 54 PHREEQC cases to 0.95–1.00 (gate 13d), and our grid evaluated under
   their central configuration gives 0.359 GtCO₂/yr against their published 0.34.
   On that anchor the cap ships on (Zeke's call, 2026-08-24). At the shipped
-  parameters (calcite SI 0.5, Mg 1 mM, Davies activities) the cap binds on 95.1%
-  of cropland area; the unbounded model exceeds it by a median 3.8× (under the
+  parameters (calcite SI 0.5, Mg 1 mM, Davies activities) the cap binds on 77.0%
+  of cropland area; the unbounded model exceeds it by a median 1.8× (at the 0.25
+  dissolution anchor shipped until 2026-09-01: 95.1% at 3.8×; under the
   earlier Ω = 10 defaults: 91.0% at 2.9×; on the pre-August recharge drainage:
   98.9% at 6.2×). Gate 12 enforces the bound on every build, the Methods panel
   describes it, and the viewer's top-level *Apply the drainage limit* toggle
@@ -261,9 +291,10 @@ observationally. That ratio is the argument to put to operators.
   of what lies beyond it.
 - **The ceiling-on total now sits INSIDE its pre-registered Tier 2 band, and the
   band was never widened to achieve that.** With the ceiling imposed, global gross
-  removal is **0.711 GtCO₂/yr** against a pre-registered 0.5–4.0 (0.910 under the
-  pre-2026-08-24 Ω = 10 parameters); with it off, 2.432, also inside. Reported by
-  gate 2b in the build, not enforced.
+  removal is **0.633 GtCO₂/yr** against a pre-registered 0.5–4.0 (0.711 at the
+  0.25 anchor shipped until 2026-09-01; 0.910 under the pre-2026-08-24 Ω = 10
+  parameters); with it off, 1.291, also inside (2.432 at the 0.25 anchor).
+  Reported by gate 2b in the build, not enforced.
 
   This is a reversal worth stating plainly. Through 2026-08-03 the ceiling-on total
   was **0.360 GtCO₂/yr**, below the band, and this document argued at length that
@@ -309,16 +340,16 @@ observationally. That ratio is the argument to put to operators.
   conclusions that rest on the ceiling are
   nearly unaffected by the rate change; conclusions
   that rest on comparing absolute tonnages to trials are not, and need matched rates.
-- **Seven of the eight verified deliveries report CDR/ha above their own drainage-
-  concentration ceiling, by 0.8–10.2×** (1.6–4.9× restricting to the three
-  independently measured rows; at the Mayer-central ceiling parameters of
-  2026-08-24). The eighth is the wettest site in the set and its
-  reported CDR *is* carryable in its own drainage. On the recharge-based drainage
-  used until August 2026 the range was 3–19×, and all eight exceeded — so the
-  qualitative claim weakened when the drainage variable was corrected, and
-  `analyse_deployments.py` asserted "EVERY deployment exceeds" for one build until
-  the count was made computed. Its exceedance column also rounded to whole
-  multiples, printing the 0.6× row as "1x". Reported by section 11 of `analyse_deployments.py`. This is *not*
+- **Four of the eight verified deliveries that can be placed on the grid report
+  dissolution-based CDR/ha above their own drainage-concentration ceiling, by up
+  to 7.0×** (0.7–7.0× across the eight, at the Mayer-central ceiling parameters;
+  2026-09-01 dataset with field-scale coordinates). The four that fit are the
+  wettest sites in the set at the lowest application rates. On the earlier
+  eight-row fixture with regional centroids it was seven of eight at 0.8–10.2×,
+  and on the recharge-based drainage used until August 2026 all eight exceeded
+  at 3–19× — so the qualitative claim has weakened twice as the inputs improved,
+  and `analyse_deployments.py` once asserted "EVERY deployment exceeds" until the
+  count was made computed. Reported by section 8 of `analyse_deployments.py`. This is *not*
   an over-crediting finding: those figures are dissolution-based, so the comparison
   is "how much rock dissolved" against "how much carbon the water could carry", and
   both can hold at once. What it establishes is that **dissolution-based CDR/ha

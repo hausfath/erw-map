@@ -117,9 +117,11 @@ beyond that grid — mild, via the cube root).
 | GROSS carrying capacity, tCO₂/ha/yr | 0.85 | 2.62 | 7.34 |
 | ADDITIONAL (baseline-netted) | 0.45 | 2.18 | 7.03 |
 
-Against the verified central-India deployments (dissolution-based CDR,
-2.1–4.3 tCO₂/ha/yr): **0.8–1.6× the central gross capacity** (1.9–2.0× at the
-two highest), versus 1.6–4.9× over the map's pre-fix cell ceiling. At the
+Against the verified India paddy deliveries in the cross-supplier calibration
+dataset (five rows, two suppliers; dissolution-based CDR at the map's 0.295 tCO₂/t
+Ca+Mg potential, time-normalised to one year: 2.2–4.6 tCO₂/ha/yr): **0.8–1.7×
+the central gross capacity** (1.0–2.1× the additional), versus 1.6–4.9× over the
+map's pre-fix cell ceiling. At the
 field level the claimed dissolution is roughly AT carrying capacity — neither
 comfortably below it (the conservative case says 2–5× over) nor absurdly
 above it (the optimistic case absorbs all of it). Which case obtains is a

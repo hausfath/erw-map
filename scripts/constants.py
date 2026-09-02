@@ -374,19 +374,20 @@ FEEDSTOCK_ARCHETYPES = {
                                    "diopside": 0.15}},
     "ultramafic":    {"CaO_wt": 0.030, "MgO_wt": 0.400,
                       "minerals": {"forsterite": 0.70, "enstatite": 0.20}},
-    # Anchored to MEASURED deliveries rather than to a textbook composition.
-    # Derived from the subset of 2026 verified deliveries that carry
-    # independently measured CDR (see the local-only fixture described in
-    # analyse_deployments.py). Their mean implied CO2 potential is 0.289
-    # tCO2/t of rock. That sits below fresh_basalt
-    # (0.332) and near metabasalt (0.238), i.e. real delivered basalt is less
-    # CO2-dense than a fresh-basalt idealisation. Gate 7 asserts this
-    # reproduces the measured mean.
+    # Anchored to MEASURED feedstock chemistry rather than to a textbook
+    # composition: the Ca and Mg assays of the basalts actually spread in the
+    # verified 2026 deliveries, recomputed on the map's Ca+Mg basis (2 mol CO2
+    # per mol; Na and K NOT counted, which is conservative by ~8-15% against a
+    # protocol basis). Supplier mean 0.295 tCO2/t over the three suppliers with
+    # chemistry in the calibration dataset (section 4 of
+    # analyse_deployments.py; inputs local-only). That sits below fresh_basalt
+    # (0.332) and above metabasalt (0.238): real delivered basalt is less
+    # CO2-dense than a fresh-basalt idealisation. Gate 7 asserts the oxides
+    # below reproduce the supplier mean -- an arithmetic check, not a test.
     #
-    # Prefer this archetype for anything user-facing. Using fresh_basalt would
-    # overstate delivered CDR by ~15%, and the nominal 0.33 tCO2/t applied to
-    # the derived rows of that table overstates by ~20-25%.
-    "delivered_basalt": {"CaO_wt": 0.090, "MgO_wt": 0.068,
+    # Prefer this archetype for anything user-facing. fresh_basalt would
+    # overstate delivered CDR by ~13%, and the nominal 0.33 tCO2/t by ~12%.
+    "delivered_basalt": {"CaO_wt": 0.0917, "MgO_wt": 0.0692,
                          "minerals": {"labradorite": 0.45, "augite": 0.30,
                                       "forsterite": 0.10}},
 }
@@ -446,42 +447,40 @@ BASALT_APPARENT_EA_SOURCE = "Gudbrandsson et al. 2011 GCA 75, Table 5 (Si, 5-75 
 # own review, and because an unexplained tuning would hide the finding.
 KINETICS_OVERPREDICTS = True
 
-# Mean implied CO2 potential of independently verified basalt deliveries, and
-# the spread across them. Used by gate 7.
-DELIVERED_BASALT_TCO2_PER_T = 0.289
-DELIVERED_BASALT_RANGE = (0.256, 0.334)
-DELIVERED_BASALT_SOURCE = ("2026 verified basalt deliveries, independently measured "
-                           "subset; input data held locally, not redistributed")
+# Supplier-mean CO2 potential of the basalts in the verified 2026 deliveries,
+# Ca+Mg basis, from measured feedstock chemistry (each supplier one vote), and
+# the spread across suppliers. Used by gate 7. One of the four suppliers has no
+# Ca/Mg assay in the dataset and is absent from the mean.
+DELIVERED_BASALT_TCO2_PER_T = 0.295
+DELIVERED_BASALT_RANGE = (0.232, 0.354)
+DELIVERED_BASALT_N_SUPPLIERS = 3
+DELIVERED_BASALT_SOURCE = ("2026 verified basalt deliveries, feedstock Ca+Mg assays "
+                           "of 3 suppliers; input data held locally, not redistributed")
 
-# Apparent dependence of fraction weathered on application rate: fw ~ rate^-0.58
-# (R2 0.48, n=8). NOT used in the model.
+# Apparent dependence of one-year fraction weathered on application rate across
+# the 11 rate-usable verified deliveries: fw ~ rate^-0.61 (R2 0.77). NOT used in
+# the model. Recomputed 2026-09-01 on the cross-supplier calibration dataset
+# (was -0.58, R2 0.48, on the earlier 8-row fixture).
 #
-# DO NOT TREAT THIS AS A RATE EFFECT. It is confounded beyond repair in this
-# dataset, and the confounding was missed when the constant was added:
-#
-#   - corr(ln rate, ln p50) = +0.60. Operators who apply high rates also grind
-#     coarse (Mati: 44.7 t/ha at 600 um) and operators who apply low rates grind
-#     fine (Lithos/Terradot: ~20 t/ha at 67-120 um).
-#   - The WITHIN-operator slope -- same feedstock, same grind -- is
-#     -0.01 +/- 0.57, i.e. indistinguishable from zero.
-#   - Grind is perfectly nested in operator, so the independent cluster count is
-#     4, not 8, and one of those is a singleton.
-#
-# So -0.58 is the operator/grind contrast wearing a rate label. Using it to
-# "normalise to a common application rate", as analyse_deployments.py once did,
-# removes the grind contrast a SECOND time through a coefficient that IS the
-# grind contrast -- which is why that normalisation appeared to reverse the
-# regime ordering. That reversal is withdrawn.
+# DO NOT TREAT THIS AS A RATE EFFECT. Only 2 of the 4 suppliers vary application
+# rate at all, the suppliers who apply the most rock also grind the coarsest,
+# and grind, tracer method, sampling depth and climate are all nested in
+# supplier. The within-supplier slope (-0.61 +/- 0.41 on 5 rows) happens to
+# agree with the pooled one this time, but it rests on two suppliers and its
+# standard error spans zero to -1.4. So the exponent is still the supplier
+# contrast wearing a rate label. Never use it to "normalise to a common
+# application rate": that removes the grind contrast a second time.
 #
 # What the constant still legitimately establishes: FRACTION WEATHERED IS NOT A
 # SITE PROPERTY. It depends on how much rock was applied, so the map must never
 # present it as a suitability metric, and any cross-site comparison has to hold
 # both application rate AND grind fixed. Identifying a real rate exponent needs
 # two rates within one grind at the same site; see docs/VALIDATION.md.
-FW_RATE_EXPONENT_OBSERVED = -0.58
+FW_RATE_EXPONENT_OBSERVED = -0.61
 FW_RATE_EXPONENT_IS_CONFOUNDED = True
-FW_RATE_EXPONENT_WITHIN_OPERATOR = (-0.013, 0.572)   # slope, standard error
-FW_RATE_EXPONENT_R2 = 0.48
+FW_RATE_EXPONENT_WITHIN_OPERATOR = (-0.61, 0.41)   # slope, standard error; 2 suppliers
+FW_RATE_EXPONENT_R2 = 0.77
+FW_RATE_EXPONENT_N = 11
 
 # ---------------------------------------------------------------------------
 # Cropland reference totals. These are DIFFERENT QUANTITIES and the gap between
@@ -567,59 +566,105 @@ APPLICATION_RATE_PREVIOUS_T_HA_YR = 20.0   # for the changelog and the rate note
 # Both replace a hard clip at 0.6, which pinned 18.9% of cropland area at an
 # identical value and gave the CDR layer a flat top across a fifth of the map.
 #
-# WHERE 0.25 COMES FROM. Corrected 2026-08 -- the previous version of this note
-# overstated how well determined it is, and got the statistic wrong.
+# WHERE 0.12 COMES FROM. Re-derived 2026-09-01 from the cross-supplier
+# calibration dataset (14 removals, 4 suppliers, 3 countries; local-only) by the
+# constancy test docs/VALIDATION.md pre-registered. It replaces 0.25, which was
+# "nearest the median of the raw first-period fractions" -- a number defined at
+# the reference grind and condition justified by observations that sat at
+# neither. The procedure, section 5 of analyse_deployments.py:
 #
-# It is the ONLY free parameter in the dissolution model, set by hand so that a
-# cell at the reference condition weathers 25% of the applied rock in year one.
-# Three things a reader needs, none of which the old note said:
+#  1. Each delivery's fraction weathered is moved to one year along the model's
+#     own shrinking-core curve (d50 cancels; only the width enters). Deliveries
+#     observed for < 300 d are BRACKETED (raw lower bound, shrinking-core upper
+#     bound), because the one re-sampled field in the set shows the real curve
+#     flattens far faster than shrinking core at ANY width -- see
+#     DISSOLUTION_SHAPE_FAILS_LONGITUDINAL below.
+#  2. At each delivery's own cells the map supplies X = 10^L1 x eta_tr, and at
+#     the supplier's own p50 the model predicts a one-year fraction. The
+#     multiplier k on the reference retreat that reproduces the observation is
+#     the calibration quantity: k = 1 means the anchor is right for that site.
+#  3. k is taken per SUPPLIER CLUSTER (median over the supplier's rows), because
+#     grind, tracer method, sampling depth and climate are nested in supplier.
+#     The anchor is the median k over the clusters WITH A DISCLOSED GRIND
+#     (n = 3): k = 0.40, i.e. the reference cell weathers 11.9% in year one.
+#     Rounded to 0.12. The fourth supplier's grind is undisclosed; at the
+#     reference grind its k is an UPPER BOUND (0.88), and including it would put
+#     the anchor at 0.18 -- rejected because a bound is not an estimate, and
+#     because 0.12 is the conservative side.
 #
-#  1. IT IS NOT THE MIDPOINT of the observed range, which the old note claimed.
-#     First-period fraction weathered across the eight 2026 verified deliveries
-#     spans 15.4-55.9%. Midpoint 35.7%, mean 32.8%, MEDIAN 26.4%. 0.25 is nearest
-#     the median, and coincides almost exactly with one delivery (25.0%).
-#  2. THE OBSERVATIONS ARE NOT AT THE REFERENCE CONDITION. No delivery is at
-#     d50 150 um / width 1.5: they run 67, 120 and 600 um at 15-100 t/ha. Renormal-
-#     ised to a common grind and rate the same eight span 8.7-71.3% with a median
-#     of 31.7%, not 15-56% with a median of 26%. So a number defined at a
-#     normalised condition is being justified by un-normalised observations.
-#     Neither range is a sound basis: analyse_deployments.py shows grind is
-#     perfectly collinear with regime here, so the renormalisation is itself
-#     unidentifiable. Both are reported; neither is load-bearing.
-#  3. THE REFERENCE CONDITION IS UNDER-SPECIFIED ON THE TRANSPORT SIDE. L1_REF
-#     pins pH, temperature and saturation but says nothing about drainage, and
-#     frac = DISSOLVED_FRAC_AT_REF is defined at X = 1, which requires
-#     eta_transport = 1, i.e. INFINITE drainage. No real site meets that. A cell
-#     with exactly reference kinetics at the median cropland drainage
-#     (eta_tr = 0.71) weathers 18.5%, not 25%.
+# What the test found, and this is the finding rather than the number: at the
+# old anchor the model predicted ~90% one-year weathering for the finest-grind
+# supplier (observed ~30%), ~70% for the mid-grind supplier (observed ~45%),
+# and 15-19% for the coarsest (observed 14-28%). Cluster k runs 0.12 to 0.90, a
+# 7.4x spread, and it RISES WITH GRIND -- so the shrinking-core dependence
+# Fw ~ 1/d50 at small retreat is too steep for these deliveries, or the p50s
+# are not comparable (sieve vs laser; crusher fines with a broad unreported
+# tail), or the tracer-free denominator and depth differences track grind
+# because all are nested in supplier. Width is the likeliest culprit and no
+# supplier has a PSD. The pre-registered rule was: ~3x reportable, 10x demotes
+# the CO2 layer to qualitative. 7.4x sits between. Reported, not tuned away.
 #
-# It remains an anchor rather than a fit, and docs/VALIDATION.md still requires
-# per-delivery particle-size distributions before any real fit. But "anchored to
-# the midpoint of observation" was wrong twice over and is withdrawn.
+# THE REFERENCE CONDITION IS STILL UNDER-SPECIFIED ON THE TRANSPORT SIDE: L1_REF
+# pins pH, temperature and saturation, and X = 1 requires eta_transport = 1,
+# i.e. infinite drainage. The calibration above conditions on each site's
+# actual eta_tr, so the anchor is now consistent with that definition rather
+# than contradicted by it.
+#
+# Consequences (build 2026-09-01): year-1 drainage-capped global total 0.726 ->
+# 0.633 GtCO2/yr (uncapped 2.43 -> 1.29); steady-state limited 0.717 -> 0.581
+# (uncapped 2.59 -> 1.13); pH-target basis 0.442 -> 0.385; the cap binds on 77.0%
+# of cropland area rather than 94.9%, median exceedance 3.8x -> 1.8x. Gate 2b
+# stays inside its 0.5-4.0 band.
 # ---------------------------------------------------------------------------
-DISSOLVED_FRAC_AT_REF = 0.25
-DISSOLVED_FRAC_OBSERVED_RANGE = (0.154, 0.559)          # raw, each at its own grind
-DISSOLVED_FRAC_OBSERVED_MEDIAN = 0.264
-DISSOLVED_FRAC_NORMALISED_RANGE = (0.087, 0.713)        # to d50 150 um and 44.7 t/ha
-DISSOLVED_FRAC_NORMALISED_MEDIAN = 0.317
+DISSOLVED_FRAC_AT_REF = 0.12
+# One-year fraction weathered across the 11 rate-usable deliveries, each at its
+# OWN grind, rate and site, time-normalised as above. The legend's "measured
+# spread". Not the anchor's basis -- none of them is at the reference condition.
+DISSOLVED_FRAC_OBSERVED_RANGE = (0.144, 0.548)
+DISSOLVED_FRAC_OBSERVED_MEDIAN = 0.363
+DISSOLVED_FRAC_OBSERVED_N = 11
+# The same deliveries expressed AT the reference condition and grind, per
+# supplier cluster with a disclosed grind (n = 3): min and max cluster. This is
+# what the country ensemble samples for the dissolution scale, median pinned at
+# DISSOLVED_FRAC_AT_REF.
+DISSOLVED_FRAC_REF_CLUSTER_RANGE = (0.041, 0.231)
+DISSOLVED_FRAC_REF_CLUSTER_SPREAD = 7.4
+DISSOLVED_FRAC_AT_REF_IF_UNKNOWN_GRIND_INCLUDED = 0.176   # alternative, not used
 DISSOLVED_FRAC_REF_REQUIRES_ETA_TR = 1.0                # X = 1 implies infinite drainage
+# The one re-sampled field in the calibration set: its mean weathering rate fell
+# to ~13% of the initial rate between the first and second sampling, and no
+# Rosin-Rammler width (0.5-2.5) nor a first-order exponential reproduces the
+# second value from the first (all predict 36-53% against ~30% observed) --
+# unless the first sampling was ~2x later than stated, which is possible since
+# that duration is inferred. Either way the shrinking-core SHAPE is not
+# confirmed, and one-year values extrapolated from short observations are
+# bracketed rather than trusted (SHORT_OBSERVATION_DAYS in
+# analyse_deployments.py).
+DISSOLUTION_SHAPE_FAILS_LONGITUDINAL = True
+# In-situ soil pCO2 implied by porewater pH and alkalinity at four site means
+# (one supplier, one region, method unstated): 32,000-56,000 uatm, for flooded
+# rice AND upland tea alike. First field constraint on PCO2_SATURATED_UATM in
+# hand; a plausibility check, not a calibration. See section 7 of
+# analyse_deployments.py.
+PADDY_PCO2_FIELD_IMPLIED_UATM = (32_000.0, 56_000.0)
 
 # Top of the fraction-weathered COLOUR RAMP. Not a cap on the quantity -- the
 # layer still reports its true value in the readout, and cells above this clamp to
 # the top colour with the legend labelled ">=".
 #
 # The old ramp spanned 0-100% and spent 40% of its colour range on 2% of cropland
-# area. Under shrinking core the distribution is p50 15%, p90 59%, p99 87%, so
-# most of the map lives below 60% and the top of the ramp was close to unused.
-# 0.65 clamps 7.3% of area; 0.80 would clamp 2.2% and 0.90 only 0.6%, so this is a
-# readability-versus-headroom trade and 0.65 is the readability end of it.
+# area. At the 0.25 anchor the distribution was p50 15%, p90 59%, p99 87% and the
+# top was set at 0.65 (clamping 7.3% of area). At the 0.12 anchor (2026-09-01) it
+# is p50 7.7%, p90 33%, p99 55%, max 94%: 0.40 clamps 5.0% of area, 0.35 would
+# clamp 8.7% and 0.50 only 1.8%, so this is the same readability-versus-headroom
+# trade and 0.40 is the readability end of it.
 #
 # NOTE the shrinking-core swap did NOT make 100% unreachable, only much harder:
-# 0.01% of cropland area still exceeds 99%, down from 0.11% under the exponential.
-# Cells get there by having 40x the reference reactivity, which is a kinetics
-# question, not a particle-size one.
-FRAC_RAMP_MAX = 0.65
-FRAC_RAMP_CLAMPED_AREA_FRAC = 0.073     # measured; reported in the build
+# at the 0.25 anchor 0.01% of cropland area still exceeded 99% (0.11% under the
+# exponential); at 0.12 none does and 1.75% exceeds 50%. Cells get there by having
+# tens of times the reference reactivity, a kinetics question, not a grind one.
+FRAC_RAMP_MAX = 0.40
+FRAC_RAMP_CLAMPED_AREA_FRAC = 0.050     # measured 2026-09-01; see the build
 
 # ---------------------------------------------------------------------------
 # Suitability is a value function of GROSS CDR, on absolute breakpoints in
@@ -704,16 +749,14 @@ PSD_REF_D50_UM = 150.0
 PSD_REF_WIDTH = 1.5                  # Rosin-Rammler n; UNMEASURED, see below
 PSD_D50_SLIDER_RANGE = (40.0, 700.0)   # brackets the observed p50 span 67-600 um
 
-# MEASURED p50 for the 2026 verified deliveries. This is the data that was
-# blocking the constancy test, and it is a 9x span in diameter -- far larger than
-# the 3.35x rate-adjusted spread between climate regimes, which is why grain size
-# had to be controlled before any regime comparison meant anything.
-DELIVERY_P50_UM = {
-    "mati": 600.0,          # all three Mati sites, coarsest in the set
-    "terradot": 120.0,      # reported as 90-150; midpoint used
-    "lithos": 67.0,         # finest in the set
-    "alt_carbon": None,     # unknown; excluded from grain-normalised comparison
-}
+# Disclosed p50 for the 2026 verified deliveries: three of four suppliers report
+# one, a 9x span in diameter, and the fourth discloses none (an inferred "must
+# be fine" from its own dissolution rate is circular and is not used). No
+# supplier has a PSD curve, so the width is unknown for all of them. Values are
+# listed without attribution; the per-supplier table lives in the local-only
+# calibration dataset.
+DELIVERY_P50_KNOWN_UM = (67.0, 100.0, 600.0)
+DELIVERY_P50_N_UNDISCLOSED = 1
 DELIVERY_P50_SPAN_UM = (67.0, 600.0)
 # Beerling et al. 2024 report p80, not p50. Converting needs a width, and the
 # conversion is width-dependent (1.76x at n=1.5, 3.35x at n=0.7), so the
@@ -1770,11 +1813,12 @@ GATES = {
     # absolute bound is pure forsterite, the most CO2-dense silicate in
     # CDRMAX_REFERENCE; anything above that is a bug.
     "max_tco2_per_t_any_feedstock": 1.30,
-    # Observed first-period fraction weathered in the 2026 verified deliveries
-    # spans roughly 15-56%/yr, so an earlier value of 0.20 here was FALSIFIED BY
-    # THE DATA rather than being a conservative choice. Raised above the observed
-    # maximum. The bound is now a bug-catcher, not a model assumption: the
-    # dissolution function saturates smoothly toward 1 and cannot exceed it.
+    # Observed one-year fraction weathered in the 2026 verified deliveries spans
+    # roughly 14-55% (DISSOLVED_FRAC_OBSERVED_RANGE), so an earlier value of 0.20
+    # here was FALSIFIED BY THE DATA rather than being a conservative choice.
+    # Raised above the observed maximum. The bound is now a bug-catcher, not a
+    # model assumption: the dissolution function saturates smoothly toward 1 and
+    # cannot exceed it.
     "max_annual_dissolved_fraction": 0.70,
     "max_cumulative_dissolved_fraction": 1.00,
     # Tier 2 external consistency. Consistency, NOT validation: the published
