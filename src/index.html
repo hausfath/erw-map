@@ -66,10 +66,10 @@
       <div id="flux-block">
         <label class="check"><input type="checkbox" id="chk-flux">
           <span>Apply the drainage limit</span></label>
-        <div class="seg" id="flux-basis" style="margin-top:8px">
-          <button class="seg-btn active" data-basis="sat">Calcite saturation</button>
-          <button class="seg-btn" data-basis="ph">Hold pH &le; 7.5</button>
-        </div>
+        <!-- The pore-water pH-target basis (tex4, phBasis) is implemented but
+             not exposed since 2026-09-02: a pore-water pH bound is not the
+             soil-pH bound it was read as, and the soil-pH version needs an acid
+             budget (to_do item 13). -->
         <p class="hint" id="flux-hint"></p>
       </div>
     </section>

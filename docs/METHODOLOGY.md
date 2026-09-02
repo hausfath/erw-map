@@ -530,7 +530,7 @@ field-level project screening beyond the toggle (pathway-split water, measured
 pCO₂ range, baseline netting), see `scripts/analysis/paddy_ceiling_india.py`
 and `docs/PADDY_CEILING_INDIA.md`.
 
-**The pH-target basis (viewer option, 2026-08-26).** The saturation basis lets
+**The pH-target basis (viewer option 2026-08-26 to 2026-09-02; implemented, no longer exposed).** The saturation basis lets
 pore water rise to calcite saturation, which on drained cropland means
 pH 7.7–7.9 — agronomically basic, and operating at Ω ≈ 3 on a kinetic-
 inhibition argument. The sidebar therefore offers a stricter basis: pore water
@@ -741,7 +741,7 @@ showing numbers derived from the NaN fallback.
 | Flux-ceiling Ω (calcite) | 10^0.5 (SI 0.5), strict case 1, permissive 10 | central = Mayer et al. 2025 / Buckingham & Henderson 2024 observed pore-water saturation; permissive = Zhang et al. 2022 inhibition threshold |
 | Flux-ceiling dissolved Mg | 1 mM (range 0–5) | explicit, basalt-typical (Vienne 2022); Mg escapes the calcite constraint, so Mg-rich feedstock raises the ceiling |
 | Flux-ceiling activities | Davies, iterated | validated against Mayer et al. 2025's 54 PHREEQC cases to 0.95–1.00 (gate 13d) |
-| Ceiling basis | calcite saturation (headline); pH ≤ 7.5 pore-water target as a viewer option | pH basis keeps Ω ≈ 0.3 (no precipitation risk); 0.385 vs 0.581 GtCO₂/yr |
+| Ceiling basis | calcite saturation (headline); the pH ≤ 7.5 pore-water target is implemented (tex4) but not exposed since 2026-09-02 | a pore-water pH bound is not the soil-pH bound it was read as (lab paste reads 0.3–1 unit higher); the soil-pH version needs an acid budget, to_do item 13. Pore-water 7.5 gave 0.385 vs 0.581 GtCO₂/yr |
 | Soil pCO₂, unsaturated | 4,000 µatm | Isometric v1.2 §10.4.5.7, mandated |
 | Soil pCO₂, flooded | 50,000 µatm | Isometric v1.2, mandated; this is the **floor** of the literature paddy range |
 | Flooded pH convergence | 6.7 | van Breemen 1987; submergence drives pH toward 6–7 |

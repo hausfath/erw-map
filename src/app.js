@@ -1703,8 +1703,7 @@
       <li><b>Drainage limit.</b> Gross removal is then capped at
       q·[HCO₃⁻]<sub>max</sub>·44: the carbon must leave dissolved in the water
       that leaves the field, and the concentration is bounded by carbonate
-      saturation at each cell's own soil pCO₂ and temperature (or by the
-      pH-target basis when selected in the sidebar). Applied by default since
+      saturation at each cell's own soil pCO₂ and temperature. Applied by default since
       2026-08-24; it is the binding term on ~77% of cropland (95% before the
       dissolution anchor was re-derived from the verified deliveries). The same bound is
       published independently as "carrying capacity" (Mayer et al. 2025), whose
@@ -1807,10 +1806,11 @@
           (paddies). Selected in the sidebar — the headline basis is
           saturation.`
           : `calcite saturation (the headline basis and the Mayer et&nbsp;al.
-          2025 anchor). The sidebar offers a stricter pH-target basis — pore
-          water held at pH&nbsp;≤&nbsp;${FC.phTarget ?? 7.5} — which keeps
-          soils clear of carbonate precipitation by construction
-          (Ω&nbsp;≈&nbsp;0.3) at a lower global total.`}</td></tr>
+          2025 anchor). A stricter pore-water pH bound was offered until
+          2026-09-02 and withdrawn: a pore-water pH is not the agronomic soil pH
+          it was read as (a lab paste reads 0.3–1 units higher at its lower
+          CO₂), and a soil-pH bound needs the field's acid budget — fertiliser
+          nitrification and harvest removal — which the map does not yet carry.`}</td></tr>
       </table>
 
       <h3>Known limitations</h3>

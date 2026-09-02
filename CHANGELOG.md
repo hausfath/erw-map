@@ -5,6 +5,20 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Pore-water pH-target basis withdrawn from the sidebar
+
+The "Hold pH <= 7.5" ceiling basis (2026-08-26) is no longer exposed (Zeke,
+2026-09-02). It bounded PORE WATER at field pCO2; the intent was a SOIL pH
+bound so repeated applications do not over-alkalinise soils, and a lab soil
+pH reads 0.3-1.0 units above drained-field pore water (1.4-2.1 under
+paddies), so a soil-pH-7.5 target would be pore-water 6.5-7.2 and cut the
+limited total to 0.05-0.25 Gt with a 5x spread from the paste-pCO2 assumption
+alone. The code path (tex4.g/b, phBasis, kinetics.alkalinity_at_ph_mol_l,
+gate 13e) is kept for the SI sensitivity table. Replacement scoped as to_do
+item 13: an acid-budget approach (fertiliser nitrification + harvest removal)
+that turns a soil-pH target into a tolerable rock rate -- the carbon bound at
+a given pH needs no acid budget, the rock rate does.
+
 ## Wider accounting: solid-carbonate credit and system-wide accounting (viewer options)
 
 Two options, grouped in a new top-level "Wider accounting" sidebar section
