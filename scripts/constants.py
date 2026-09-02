@@ -684,19 +684,27 @@ FRAC_RAMP_CLAMPED_AREA_FRAC = 0.050     # measured 2026-09-01; see the build
 #
 # Zero CDR now gives zero suitability BY CONSTRUCTION, not by tuning.
 #
-# THE TOP KNOT WAS UNREACHABLE, and had been since it was written. It sat at
-# 10 tCO2/ha/yr, but you cannot get 10 tCO2/ha/yr out of the applied rock: the
-# stoichiometric maximum is APPLICATION_RATE x the feedstock's CO2 potential,
-# which is 8.69 at 30 t/ha and was 5.79 at the old 20 t/ha. So a score of 100 was
-# not merely unreached in this build, it was arithmetically impossible in every
-# build, and roughly the top 8 points of the scale were dead.
+# THE TOP KNOT, third version (2026-09-02, Zeke's call). It sat at 10
+# tCO2/ha/yr, which no application of 30 t/ha can reach; then at the
+# STOICHIOMETRIC MAXIMUM (rate x tCO2/t = 8.85), reachable only if every tonne
+# dissolved and every cation left as bicarbonate -- an interpretable anchor, but
+# once the drainage-concentration ceiling shipped it became PHYSICALLY
+# unreachable rather than merely unreached: with the cap on, 99.9% of cropland
+# sits below 3.8 tCO2/ha/yr and the maximum is 4.9, so 0.04% of area scored
+# above 80, nothing above 85, and the top third of the ramp was dead.
 #
-# The top knot is now the STOICHIOMETRIC MAXIMUM itself, computed rather than
-# stated. 100 therefore means "every tonne applied has dissolved and every
-# available cation has carried its carbon" -- an interpretable anchor, and one
-# that stays correct if the rate or the feedstock changes. The lower knots stay
-# as absolute values, because they are the ones that make the score comparable
-# between builds; only the endpoint is tied to what is physically attainable.
+# It is now 5.0 tCO2/ha/yr, an ABSOLUTE value with a physical reading: about
+# the most a metre of drainage can carry at calcite saturation, i.e. the
+# ceiling's own top on real cropland (the capped maximum on the 2026-09-01
+# build is 4.92). The middle knots are respaced log-evenly beneath it. What
+# this buys: score p50/p90/p99 36/55/73 -> 38/63/84, area at 60+ 6% -> 13%,
+# area at 80+ 0.04% -> 1.7%. What it costs: 100 no longer means "everything
+# dissolved" -- _STOICH_MAX_T_HA_YR is kept and asserted to sit above the top
+# so that meaning is still stated -- and scores are not comparable with
+# builds before 2026-09-01 (the anchor change had already broken that).
+#
+# Deliberately NOT a quantile of the build: a relative top would drift every
+# rebuild and would reward wet climates in a way a reader cannot decode.
 #
 # It remains true that the breakpoints are absolute and do NOT move with the
 # grind or term-exponent sliders, which is what keeps the colour scale stable
@@ -706,13 +714,16 @@ _STOICH_MAX_T_HA_YR = (APPLICATION_RATE_T_HA_YR
                        * (FEEDSTOCK_ARCHETYPES[FEEDSTOCK_DEFAULT]["CaO_wt"] / M_CAO
                           + FEEDSTOCK_ARCHETYPES[FEEDSTOCK_DEFAULT]["MgO_wt"] / M_MGO)
                        * 1000.0 * 2.0 * MOL_CO2_PER_KMOL_CHARGE_T)
+CDR_SUITABILITY_TOP_T_HA_YR = 5.0     # ~q x [HCO3-]sat x 44 at 1 m/yr drainage
+assert CDR_SUITABILITY_TOP_T_HA_YR < _STOICH_MAX_T_HA_YR, \
+    "suitability top must stay below the stoichiometric maximum"
 CDR_SUITABILITY_KNOTS = [
     (0.02, 0.0),     # at or below this, negligible: rendered as its own state
     (0.10, 0.20),
-    (0.50, 0.40),
-    (1.50, 0.60),
-    (4.00, 0.80),
-    (round(_STOICH_MAX_T_HA_YR, 2), 1.0),   # complete dissolution; see above
+    (0.40, 0.40),
+    (1.00, 0.60),
+    (2.50, 0.80),
+    (CDR_SUITABILITY_TOP_T_HA_YR, 1.0),   # the ceiling's top; see above
 ]
 # Below this, a cell is drawn as "negligible potential" rather than given a
 # low-but-nonzero colour. A near-zero score and a genuine zero are different

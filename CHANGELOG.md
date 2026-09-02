@@ -5,6 +5,21 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Suitability top knot: 5.0 tCO2/ha/yr, the ceiling's own top
+
+Zeke's call after the re-anchoring: with the drainage limit on, 99.9% of
+cropland sits below 3.8 tCO2/ha/yr and the maximum is 4.92, so the
+stoichiometric top (8.85) left 0.04% of area at a score of 80+ and nothing
+above 85 -- the upper third of the ramp was dead. The top knot is now an
+ABSOLUTE 5.0 tCO2/ha/yr (about what a metre of drainage carries at calcite
+saturation), the middle knots respaced log-evenly (20 = 0.1, 40 = 0.4,
+60 = 1.0, 80 = 2.5), and _STOICH_MAX_T_HA_YR is asserted to stay above it.
+Measured: score p50/p90/p99 36/55/73 -> 38/63/84; area at 60+ 6.2% -> 13%;
+at 80+ 0.04% -> 1.7%. Deliberately not a build quantile (a relative top
+drifts every rebuild and rewards wet climates undecodably). Display only:
+no gate or headline total moves. Scores are not comparable with builds
+before 2026-09-01.
+
 ## Dissolution anchor re-derived from the cross-supplier calibration dataset
 
 A 14-removal, 4-supplier, 3-country calibration dataset (deliveries, fields,

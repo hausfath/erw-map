@@ -1628,11 +1628,14 @@
       that leaves the field, and the concentration is bounded by carbonate
       saturation at each cell's own soil pCO₂ and temperature (or by the
       pH-target basis when selected in the sidebar). Applied by default since
-      2026-08-24; it is the binding term on ~95% of cropland. The same bound is
+      2026-08-24; it is the binding term on ~77% of cropland (95% before the
+      dissolution anchor was re-derived from the verified deliveries). The same bound is
       published independently as "carrying capacity" (Mayer et al. 2025), whose
       54 PHREEQC cases this solve reproduces to 0.95–1.00.</li>
       <li><b>Suitability.</b> A piecewise-linear score of gross CO₂ removal —
-      ${knots} tCO₂/ha/yr — so zero removal scores zero by construction. The
+      ${knots} tCO₂/ha/yr — so zero removal scores zero by construction, and
+      100 sits at about the most a metre of drainage can carry at calcite
+      saturation (the map's capped maximum is just under it). The
       Advanced exponents lower one term at a time to test how much of the map
       depends on trusting it; they are not importance weights, because the terms
       are not substitutable.</li>
