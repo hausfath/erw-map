@@ -56,3 +56,6 @@ tests/fixtures/deployments_2026.csv
 # exits with the expected schema when absent. Only cross-supplier aggregates
 # leave it (constants.py, README.md, the map).
 calibration_data/
+
+# Draft manuscript. Kept out of the public repo until Zeke decides otherwise.
+paper/

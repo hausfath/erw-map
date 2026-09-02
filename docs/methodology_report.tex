@@ -39,8 +39,9 @@ the code disagree, the code is right. Prose treatment of the same material is in
 
 \textbf{Status.} This is a v0 preview. The kinetics fail their one independent
 test (\S\ref{sec:limits}), one input is a documented stand-in, and the drainage
-ceiling of \S\ref{sec:ceiling} is implemented but \emph{not applied} by default.
-Treat the map as a relative ranking, not a site-level prediction.
+ceiling of \S\ref{sec:ceiling} is \emph{applied by default} (since 2026-08-24,
+after Mayer et al.\ 2025 independently published the same bound). Treat the map
+as a relative ranking, not a site-level prediction.
 \end{tcolorbox}
 
 \tableofcontents
@@ -69,7 +70,7 @@ S &= f(E^{\ast}) \cdot v_{\mathrm{cost}}^{\,w}
 \end{align}
 
 with $A = 30$\,t\,ha$^{-1}$\,yr$^{-1}$ the application rate and
-$\Psi = 0.2897$\,t\,\cotwo{}\,t$^{-1}$ the feedstock's stoichiometric
+$\Psi = 0.2950$\,t\,\cotwo{}\,t$^{-1}$ the feedstock's stoichiometric
 \cotwo{} potential (\S\ref{sec:stoich}).
 
 Three properties of this composition are deliberate and are the answer to most
@@ -295,10 +296,10 @@ $d_{50}$ -- which is what lets the browser interpolate a small table instead of
 integrating 6{,}000 size bins per cell.
 
 The retreat is anchored at one point: $\delta_{\mathrm{ref}} =
-4.7266$\,\textmu m dissolves 25\% of the reference
+1.9099$\,\textmu m dissolves 12\% of the reference
 grind in one year at the reference condition, and scales linearly with $X$
 thereafter. Measured effect of the change at the reference grind: area above 90\%
-weathered fell from 1.19\% to 0.31\% of cropland.
+weathered fell from 0.02\% to 0.00\% of cropland.
 
 \section{Transport limitation}
 \label{sec:transport}
@@ -341,17 +342,17 @@ area above 0.8, and a ratio between the wettest and driest 5\% of cropland of on
 
 That reads like a defect, and an earlier version of this document called it one.
 It is not, and the reason is worth stating. $\eta_{\mathrm{tr}}$ in isolation is
-the wrong quantity to judge: delivered carbon spans 9.9$\times$ wet-to-dry
+the wrong quantity to judge: delivered carbon spans 13.0$\times$ wet-to-dry
 because the dissolution response to $X$ is nonlinear, and with the drainage ceiling
-of \S\ref{sec:ceiling} applied it spans 125$\times$ -- against a
+of \S\ref{sec:ceiling} applied it spans 110$\times$ -- against a
 141$\times$ contrast in $q$ itself.
 
 More decisively, the capped contrast is \textbf{invariant to $D_w$}:
-125.3$\times$ at $D_w = 0.001$ against 124.8$\times$ at
+111.0$\times$ at $D_w = 0.001$ against 110.0$\times$ at
 0.03, three orders of magnitude apart. The ceiling is linear in
-$q$ and binds on 91\% of cropland area, so it has already taken the
-aridity signal over. Aridity is represented in this model -- by a term that is
-switched off by default. The lever is the ceiling, not the coefficient, and
+$q$ and binds on 77\% of cropland area, so it has already taken the
+aridity signal over. Aridity is represented in this model by the ceiling, which
+is applied by default. The lever is the ceiling, not the coefficient, and
 $D_w$ is accordingly \emph{not} retuned here: Maher \& Chamberlain give 0.3 as a
 global maximum, and moving off a published fit to manufacture a contrast the
 binding constraint already supplies would be tuning. Full sweep in
@@ -365,8 +366,8 @@ $q$-linear bound. That needs PET as an input and the paper actually read.
 against catchment discharge per unit area, which \emph{is} total runoff; driving a
 $q_{tot}$-calibrated $D_w$ with recharge penalises the flux twice. The
 counter-argument we cannot dismiss is that surface runoff has little contact time
-with topsoil rock. Treat $q_r$ and $q_{tot}$ as a bracket: 2.43 against
-2.10\,Gt\,\cotwo{}\,yr$^{-1}$ unbounded, reported by gate 2d on every
+with topsoil rock. Treat $q_r$ and $q_{tot}$ as a bracket: 1.29 against
+1.11\,Gt\,\cotwo{}\,yr$^{-1}$ unbounded, reported by gate 2d on every
 build.
 
 \section{Alkalinity-to-DIC efficiency}
@@ -447,13 +448,13 @@ archetype & CaO (wt\%) & MgO (wt\%) & $\Psi$ (t\,\cotwo{}\,t$^{-1}$) & default \
 \texttt{fresh\_basalt} & 10.0 & 8.0 & 0.332 & \\
 \texttt{metabasalt} & 7.5 & 5.5 & 0.238 & \\
 \texttt{ultramafic} & 3.0 & 40.0 & 0.920 & \\
-\texttt{delivered\_basalt} & 9.0 & 6.8 & 0.290 & $\bullet$ \\
+\texttt{delivered\_basalt} & 9.2 & 6.9 & 0.295 & $\bullet$ \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 At $A = 30$\,t\,ha$^{-1}$ this caps gross removal at
-$A\Psi = 8.69$\,t\,\cotwo{}\,ha$^{-1}$\,yr$^{-1}$, which is the top
+$A\Psi = 8.85$\,t\,\cotwo{}\,ha$^{-1}$\,yr$^{-1}$, which is the top
 suitability knot: a score of 100 means complete dissolution of the applied rock,
 and gate 3 asserts no cell exceeds it.
 
@@ -461,12 +462,14 @@ and gate 3 asserts no cell exceeds it.
 \label{sec:ceiling}
 
 \begin{tcolorbox}[colback=Gold!12,colframe=DarkGoldenrod,boxrule=0.5pt,arc=2pt]
-\small\textbf{Implemented, gated, and switched OFF by default} pending review by
-the ERW community. The viewer exposes it as a live toggle (Advanced $\to$
-\emph{Apply the drainage limit}); \texttt{constants.FLUX\_CEILING\_ON} governs the
-derived products. While off, the reported \cotwo{} exceeds this bound on
-91.0\% of cropland area by a median 2.9$\times$, so it should be
-read as an upper limit on \emph{dissolution}, not carbon shown to leave the field.
+\small\textbf{Implemented, gated, and APPLIED by default since 2026-08-24}, after
+Mayer et al.\ 2025 (Terradot; preprint) independently published the same bound
+as ``carrying capacity'' and our solve reproduced their 54 PHREEQC cases to
+0.95--1.00. The viewer exposes it as a top-level toggle (\emph{Apply the drainage
+limit}); \texttt{constants.FLUX\_CEILING\_ON} governs the derived products. With it
+off, the reported \cotwo{} exceeds this bound on 77.0\% of cropland
+area by a median 1.8$\times$, and should then be read as an upper limit on
+\emph{dissolution}, not carbon shown to leave the field.
 \end{tcolorbox}
 
 Carbon reported has to leave dissolved in the water that leaves, which bounds
@@ -493,8 +496,8 @@ it would be wrong for an ultramafic feedstock, which implies 0.05.
 The cube root makes this robust: a $5\times$ error in soil $p$\cotwo{} moves the
 ceiling only $1.7\times$. At 4,000\,\textmu atm,
 15\,\textdegree C and $f_{\mathrm{Ca}} = 0.5$ it gives
-3.03\,mmol\,L$^{-1}$ at $\Omega = 1$ and 6.52 at
-$\Omega = 10$, the shipped value -- justified because
+3.66\,mmol\,L$^{-1}$ at $\Omega = 1$ and 5.00 at
+$\Omega = 3.16228$, the shipped value -- justified because
 carbonate precipitation is kinetically inhibited by DOC and phosphate.
 
 \textbf{An instructive wrong answer.} Computing the ceiling at each cell's
@@ -517,15 +520,15 @@ Meybeck carbonate-terrain streams & 3.15 \\
 field trials, ACHIEVED under ERW (not a ceiling) & 0.11--0.75 \\
 \midrule
 This model, unbounded (cropland p10/p50/p90) &
-7\,/\,19\,/\,68 \\
+4\,/\,9\,/\,34 \\
 Closed form above (cropland p10/p50/p90) &
-5.34\,/\,6.65\,/\,7.65 \\
+4.25\,/\,5.14\,/\,5.82 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-Applying it takes the global total from 2.43 to
-0.89\,Gt\,\cotwo{}\,yr$^{-1}$. The consequence that matters is not the
+Applying it takes the global total from 1.29 to
+0.63\,Gt\,\cotwo{}\,yr$^{-1}$. The consequence that matters is not the
 level but the gradient: $C_{\mathrm{eq}}$ \emph{falls} with warming while the rate
 law rises, so the bound removes most of the map's warm-climate advantage rather
 than rescaling it.
@@ -550,10 +553,10 @@ $E^{\ast}$ (t\,\cotwo{}\,ha$^{-1}$yr$^{-1}$) & score \\
 \midrule
 0.02 & 0.00 \\
 0.1 & 0.20 \\
-0.5 & 0.40 \\
-1.5 & 0.60 \\
-4 & 0.80 \\
-8.69 & 1.00 \\
+0.4 & 0.40 \\
+1 & 0.60 \\
+2.5 & 0.80 \\
+5 & 1.00 \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -654,11 +657,11 @@ today.
 The application rate is stated per year while the \cotwo{} layer is the
 \emph{first} year from \emph{one} application. Those coincide only under annual
 reapplication, which no field sustains. Running the model forward, the median cell
-weathers 16.6\% in year one and 73.8\% by year ten, so
-one application delivers $4.3\times$ its year-one carbon over a
+weathers 7.7\% in year one and 46.1\% by year ten, so
+one application delivers $5.9\times$ its year-one carbon over a
 decade. At a reapplication interval of $k$ years the steady-state annual removal
 is that 10-year yield divided by $k$, so the map's year-one figure corresponds to
-$k \approx 4.3$ years. A field on a longer rotation removes less than
+$k \approx 5.9$ years. A field on a longer rotation removes less than
 the map shows.
 
 \section{Protocol eligibility}
@@ -710,18 +713,18 @@ Area-weighted across 406,991 cropland cells
 quantity & p10 & p50 & p90 \\
 \midrule
 Soil pH (0--15\,cm) & 5.60 & 6.77 & 7.77 \\
-$L_1 = \log_{10}(R/R_{\mathrm{ref}})$ & -0.58 & -0.10 & +0.61 \\
-$\eta_{\mathrm{DIC}}$ & 0.923 & 0.997 & 0.999 \\
+$L_1 = \log_{10}(R/R_{\mathrm{ref}})$ & -0.58 & -0.10 & +0.60 \\
+$\eta_{\mathrm{DIC}}$ & 0.937 & 0.997 & 0.999 \\
 $\eta_{\mathrm{tr}}$ & 0.507 & 0.856 & 0.953 \\
 Drainage $q$ (m\,yr$^{-1}$) & 0.031 & 0.178 & 0.613 \\
-Fraction weathered, year 1 & 5.3\% & 16.6\% & 59.5\% \\
-Gross removal (t\,\cotwo{}\,ha$^{-1}$yr$^{-1}$) & 0.46 & 1.40 & 4.48 \\
+Fraction weathered, year 1 & 2.3\% & 7.7\% & 33.4\% \\
+Gross removal (t\,\cotwo{}\,ha$^{-1}$yr$^{-1}$) & 0.20 & 0.66 & 2.55 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-Global gross removal is 2.43\,Gt\,\cotwo{}\,yr$^{-1}$ unbounded and
-0.89 with the drainage ceiling applied. Neither is a deployment forecast:
+Global gross removal is 1.29\,Gt\,\cotwo{}\,yr$^{-1}$ unbounded and
+0.63 with the drainage ceiling applied. Neither is a deployment forecast:
 both assume 30\,t\,ha$^{-1}$ on all cropland in scope, with no economic,
 agronomic or logistical screen.
 
@@ -737,18 +740,20 @@ over-identified test -- two free surface fractions against four measured element
 the most important open problem in the model.
 \item \textbf{Geometric versus BET surface area} differs by 130--670$\times$, and
 this sets the absolute scale of every \cotwo{} number.
-\item \textbf{The drainage ceiling is not applied by default}, so the shipped
-\cotwo{} layer exceeds a bound this project computes and documents on
-91.0\% of cropland area.
+\item \textbf{The drainage ceiling binds on 77.0\% of cropland area},
+so most of the map's carbon is set by drainage water and carbonate chemistry, not
+by the rate law; the ceiling is a maximum-\emph{efficient} bound (past it,
+calcite precipitation halves marginal efficiency rather than stopping removal).
 \item \textbf{Cation retention is not modelled at all.} Field trials measure
 10--50$\times$ more cations retained in secondary phases than exported, and modelled
 export lags of 5--22 years. Dissolution-based removal cannot be read as export
 without this term, and its absence is why the map is an upper bound.
-\item \textbf{The default map's aridity contrast rests on a term that is off.}
-Uncapped, delivered carbon spans 9.9$\times$ from the wettest to the driest
-5\% of cropland; with the ceiling applied it spans 125$\times$, close to
-the 141$\times$ contrast in the drainage data. The larger figure is the
-defensible one and it is not what ships by default.
+\item \textbf{The aridity contrast comes from the ceiling, not from the
+transport term.} Uncapped, delivered carbon spans 13.0$\times$ from the
+wettest to the driest 5\% of cropland; with the ceiling applied it spans
+110$\times$, close to the 141$\times$ contrast in the drainage
+data. Switching the ceiling off in the viewer collapses the contrast to the
+smaller figure.
 \item \textbf{Irrigation is invisible to the soil-water balance but not to the
 drainage.} WaterGAP \texttt{histsoc} simulates irrigation return flow, so $q$
 sees irrigation while TerraClimate's rain-fed balance does not. The two therefore

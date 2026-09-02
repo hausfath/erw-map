@@ -253,8 +253,9 @@ the code disagree, the code is right. Prose treatment of the same material is in
 
 \textbf{{Status.}} This is a v0 preview. The kinetics fail their one independent
 test (\S\ref{{sec:limits}}), one input is a documented stand-in, and the drainage
-ceiling of \S\ref{{sec:ceiling}} is implemented but \emph{{not applied}} by default.
-Treat the map as a relative ranking, not a site-level prediction.
+ceiling of \S\ref{{sec:ceiling}} is \emph{{applied by default}} (since 2026-08-24,
+after Mayer et al.\ 2025 independently published the same bound). Treat the map
+as a relative ranking, not a site-level prediction.
 \end{{tcolorbox}}
 
 \tableofcontents
@@ -555,8 +556,8 @@ More decisively, the capped contrast is \textbf{{invariant to $D_w$}}:
 {wd_cap_lo:.1f}$\times$ at $D_w = 0.001$ against {wd_cap:.1f}$\times$ at
 {C.DAMKOHLER_DW_M_YR}, three orders of magnitude apart. The ceiling is linear in
 $q$ and binds on {binds * 100:.0f}\% of cropland area, so it has already taken the
-aridity signal over. Aridity is represented in this model -- by a term that is
-switched off by default. The lever is the ceiling, not the coefficient, and
+aridity signal over. Aridity is represented in this model by the ceiling, which
+is applied by default. The lever is the ceiling, not the coefficient, and
 $D_w$ is accordingly \emph{{not}} retuned here: Maher \& Chamberlain give 0.3 as a
 global maximum, and moving off a published fit to manufacture a contrast the
 binding constraint already supplies would be tuning. Full sweep in
@@ -663,12 +664,14 @@ and gate 3 asserts no cell exceeds it.
 \label{{sec:ceiling}}
 
 \begin{{tcolorbox}}[colback=Gold!12,colframe=DarkGoldenrod,boxrule=0.5pt,arc=2pt]
-\small\textbf{{Implemented, gated, and switched OFF by default}} pending review by
-the ERW community. The viewer exposes it as a live toggle (Advanced $\to$
-\emph{{Apply the drainage limit}}); \texttt{{constants.FLUX\_CEILING\_ON}} governs the
-derived products. While off, the reported \cotwo{{}} exceeds this bound on
-{binds * 100:.1f}\% of cropland area by a median {ex50:.1f}$\times$, so it should be
-read as an upper limit on \emph{{dissolution}}, not carbon shown to leave the field.
+\small\textbf{{Implemented, gated, and APPLIED by default since 2026-08-24}}, after
+Mayer et al.\ 2025 (Terradot; preprint) independently published the same bound
+as ``carrying capacity'' and our solve reproduced their 54 PHREEQC cases to
+0.95--1.00. The viewer exposes it as a top-level toggle (\emph{{Apply the drainage
+limit}}); \texttt{{constants.FLUX\_CEILING\_ON}} governs the derived products. With it
+off, the reported \cotwo{{}} exceeds this bound on {binds * 100:.1f}\% of cropland
+area by a median {ex50:.1f}$\times$, and should then be read as an upper limit on
+\emph{{dissolution}}, not carbon shown to leave the field.
 \end{{tcolorbox}}
 
 Carbon reported has to leave dissolved in the water that leaves, which bounds
@@ -930,18 +933,20 @@ over-identified test -- two free surface fractions against four measured element
 the most important open problem in the model.
 \item \textbf{{Geometric versus BET surface area}} differs by 130--670$\times$, and
 this sets the absolute scale of every \cotwo{{}} number.
-\item \textbf{{The drainage ceiling is not applied by default}}, so the shipped
-\cotwo{{}} layer exceeds a bound this project computes and documents on
-{binds * 100:.1f}\% of cropland area.
+\item \textbf{{The drainage ceiling binds on {binds * 100:.1f}\% of cropland area}},
+so most of the map's carbon is set by drainage water and carbonate chemistry, not
+by the rate law; the ceiling is a maximum-\emph{{efficient}} bound (past it,
+calcite precipitation halves marginal efficiency rather than stopping removal).
 \item \textbf{{Cation retention is not modelled at all.}} Field trials measure
 10--50$\times$ more cations retained in secondary phases than exported, and modelled
 export lags of 5--22 years. Dissolution-based removal cannot be read as export
 without this term, and its absence is why the map is an upper bound.
-\item \textbf{{The default map's aridity contrast rests on a term that is off.}}
-Uncapped, delivered carbon spans {wd_unc:.1f}$\times$ from the wettest to the driest
-5\% of cropland; with the ceiling applied it spans {wd_cap:.0f}$\times$, close to
-the {wd_drv:.0f}$\times$ contrast in the drainage data. The larger figure is the
-defensible one and it is not what ships by default.
+\item \textbf{{The aridity contrast comes from the ceiling, not from the
+transport term.}} Uncapped, delivered carbon spans {wd_unc:.1f}$\times$ from the
+wettest to the driest 5\% of cropland; with the ceiling applied it spans
+{wd_cap:.0f}$\times$, close to the {wd_drv:.0f}$\times$ contrast in the drainage
+data. Switching the ceiling off in the viewer collapses the contrast to the
+smaller figure.
 \item \textbf{{Irrigation is invisible to the soil-water balance but not to the
 drainage.}} WaterGAP \texttt{{histsoc}} simulates irrigation return flow, so $q$
 sees irrigation while TerraClimate's rain-fed balance does not. The two therefore
