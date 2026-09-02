@@ -1097,34 +1097,31 @@
 
   function syncWider() {
     const st = WA.stakes || {};
+    const g = (x, nd = 2) => (x === undefined || x === null ? "?" : x.toFixed(nd));
     const cb = $("chk-carbonate"), ch = $("carbonate-hint");
     if (cb) {
       cb.disabled = !ceilOn;
       cb.checked = carbonateOn;
       ch.innerHTML = !ceilOn
-        ? `Needs the drainage limit on: the credit is the excess the water cannot carry.`
+        ? `Needs the drainage limit on.`
         : (carbonateOn
-          ? `<b>On.</b> Where the limit binds, the excess Ca precipitates as calcite `
-            + `and stores 1 CO₂ per Ca (half the bicarbonate credit) on the feedstock's `
-            + `Ca share (f<sub>Ca</sub> = ${WA.fCa}). Counted separately in the footer. `
-            + `An upper bound: retention competes for the same cations, and the `
-            + `carbonate persists only while the soil stays near saturation.`
-          : `Where the limit binds, excess Ca precipitates as calcite storing 1 CO₂ `
-            + `per Ca. Adds up to ${st.carbonateGt !== undefined ? st.carbonateGt.toFixed(2) : "?"} Gt/yr `
-            + `on the Ca share (${st.carbonateAllCationGt !== undefined ? st.carbonateAllCationGt.toFixed(2) : "?"} if `
-            + `all cations precipitated). Not credited by protocols; durability untested.`);
+          ? `<b>On.</b> Excess Ca where the limit binds is credited as calcite, 1 CO₂ `
+            + `per Ca, on the feedstock's Ca share. Counted separately in the footer. `
+            + `An upper bound: retention competes, and durability is untested.`
+          : `Excess Ca where the limit binds precipitates as calcite, storing 1 CO₂ `
+            + `per Ca. Adds up to ${g(st.carbonateGt)} Gt/yr. Upper bound; durability untested.`);
     }
     const sb = $("chk-systemwide"), sh = $("systemwide-hint");
     if (sb) {
       sb.checked = systemWide;
       sh.innerHTML = systemWide
-        ? `<b>On.</b> Alkalinity that neutralises acidity in acid field water is `
-          + `counted as removal, because downstream that acid would otherwise consume `
-          + `river alkalinity and release CO₂. Acid-soil efficiency set to 1.`
-        : `Counts alkalinity that neutralises acidity in acid soils as removal `
-          + `(the acid would otherwise consume river alkalinity downstream). `
-          + `${st.systemWideUncappedPct !== undefined ? `+${st.systemWideUncappedPct}% uncapped, +${st.systemWideLimitedPct}% with the limit.` : ""} `
-          + `Protocols do not credit it.`;
+        ? `<b>On.</b> Acid-soil efficiency set to 1: acidity neutralised in the field `
+          + `would otherwise consume river alkalinity downstream.`
+        : `Counts acidity neutralised in acid soils as removal (it would otherwise `
+          + `consume river alkalinity downstream). `
+          + (st.systemWideUncappedPct !== undefined
+              ? `+${Math.round(st.systemWideUncappedPct)}% uncapped, +${Math.round(st.systemWideLimitedPct)}% with the limit.`
+              : "");
     }
   }
 

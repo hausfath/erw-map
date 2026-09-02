@@ -49,6 +49,18 @@
       <button class="mini" id="btn-psd-reset" style="margin-top:10px">Reset grind</button>
     </section>
 
+    <section class="group" id="econ-group">
+      <h2>Economics <span class="tag" id="econ-tag"></span></h2>
+      <p class="hint">Discounts suitability by delivered rock cost
+        (quarry gate + trucking).</p>
+      <div class="seg" id="econ-seg">
+        <button class="seg-btn active" data-econ="0">Off</button>
+        <button class="seg-btn" data-econ="1">Delivered cost</button>
+      </div>
+      <div id="econ-sliders"></div>
+      <p class="hint stability" id="econ-readout"></p>
+    </section>
+
     <section class="group" id="flux-group">
       <h2>Drainage limit</h2>
       <div id="flux-block">
@@ -64,26 +76,14 @@
 
     <section class="group" id="wider-group">
       <h2>Wider accounting <span class="tag">Off by default</span></h2>
-      <p class="hint">Removal the headline leaves out. Neither is credited by
-        today&rsquo;s protocols.</p>
+      <p class="hint">Removal the headline leaves out. Today&rsquo;s protocols
+        credit neither.</p>
       <label class="check"><input type="checkbox" id="chk-carbonate">
         <span>Credit solid carbonate where drainage binds</span></label>
       <p class="hint" id="carbonate-hint"></p>
-      <label class="check" style="margin-top:8px"><input type="checkbox" id="chk-systemwide">
+      <label class="check"><input type="checkbox" id="chk-systemwide">
         <span>System-wide accounting in acid soils</span></label>
       <p class="hint" id="systemwide-hint"></p>
-    </section>
-
-    <section class="group" id="econ-group">
-      <h2>Economics <span class="tag" id="econ-tag"></span></h2>
-      <p class="hint">Discounts suitability by delivered rock cost
-        (quarry gate + trucking).</p>
-      <div class="seg" id="econ-seg">
-        <button class="seg-btn active" data-econ="0">Off</button>
-        <button class="seg-btn" data-econ="1">Delivered cost</button>
-      </div>
-      <div id="econ-sliders"></div>
-      <p class="hint stability" id="econ-readout"></p>
     </section>
 
     <section class="group" id="weights-group">
