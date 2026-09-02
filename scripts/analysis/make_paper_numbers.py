@@ -70,6 +70,21 @@ y1_unc = PF.Z["cdr_uncapped"][PF.MASK].astype("float64"); y1_cap = PF.Z["cdr"][P
 m("GtLimitedYearOne", num(float(np.nansum(y1_cap * ha) / 1e9), 3))
 m("GtUncappedYearOne", num(float(np.nansum(y1_unc * ha) / 1e9), 3))
 m("BindsPctYearOne", pct(ha[y1_unc > PF.Z["ceiling"][PF.MASK] * 1.000001].sum() / ha.sum()))
+# binding fraction at the leave-one-cluster-out anchor range (k relative to shipped)
+import kinetics as _K
+_ug = np.concatenate([[0.0], np.geomspace(1e-5, 200.0, 900)])
+_gg = np.concatenate([[0.0], _K.dissolved_fraction(_ug[1:], C.PSD_REF_WIDTH)])
+_uof = lambda fr: float(np.interp(fr, _gg, _ug))
+_kj = PAPER / "calibration_clusters.json"
+if _kj.exists():
+    _K_ = json.loads(_kj.read_text())
+    _b = []
+    for fr in _K_["loo_range"]:
+        kk = _uof(fr) / _uof(C.DISSOLVED_FRAC_AT_REF)
+        _i_inf = float(np.trapezoid(1.0 - _gg, _ug))
+        per_t = np.minimum(1.0, kk * v["u1"] / _i_inf) * v["eta"] * v["ct"]
+        _b.append(ha[A * per_t > v["ceil"] * 1.000001].sum() / ha.sum())
+    m("BindsLOOLo", pct(min(_b))); m("BindsLOOHi", pct(max(_b)))
 # application-rate response
 rates = {r: float(np.sum(np.minimum(r * v["per_t"], v["ceil"]) * ha) / 1e9) for r in (20.0, 30.0, 45.0, 60.0)}
 m("RateGainFiftyPct", pct(rates[45.0] / rates[30.0] - 1))
@@ -162,6 +177,7 @@ cj = PAPER / "country_ensemble.json"
 if cj.exists():
     J = json.loads(cj.read_text())
     m("NDraws", f"{J['n_draws']:,}")
+    m("ThresholdMt", f"{J.get('threshold_mt', 50):.0f}")
     rows = {r["name"]: r for r in J["rows"]}
     def fmt(r, key, nd=0):
         p5, p50, p95 = r[key]
@@ -235,7 +251,7 @@ def write_tables():
     if cj.exists():
         J = json.loads(cj.read_text())
         lines = [r"\begin{tabular}{lrrrrr}", r"\toprule",
-                 r"Country & Cropland, Mha & Rate law only & With drainage limit & Rate law, $<\$" + str(int(J["screen_usd_per_tco2"])) + r"$/tCO$_2$ & Limited, $<\$" + str(int(J["screen_usd_per_tco2"])) + r"$/tCO$_2$ \\",
+                 r"Country & Mha & Rate law only & With drainage limit & Rate law, under \$" + str(int(J["screen_usd_per_tco2"])) + r" & Limited, under \$" + str(int(J["screen_usd_per_tco2"])) + r" \\",
                  r"\midrule"]
         for r in J["rows"]:
             nm = r["name"].replace("United States of America", "United States")
@@ -252,7 +268,7 @@ def write_tables():
     if kj.exists():
         K_ = json.loads(kj.read_text())
         lines = [r"\begin{tabular}{lcccccc}", r"\toprule",
-                 r"Cluster & Feedstock $d_{50}$, $\mu$m & Rate-usable rows & $k$ & bracket & Reference-condition year-1 fraction & Used for anchor \\",
+                 r"Cluster & $d_{50}$, $\mu$m & Rows & $k$ & Bracket & Ref.\ year-1 $F_w$ & In anchor \\",
                  r"\midrule"]
         for c in K_["clusters"]:
             d = f"{c['d50_um']:.0f}" if c["d50_um"] else "undisclosed"

@@ -409,7 +409,7 @@ def fig4():
         names = [r["name"].replace("United States of America", "United States") for r in rows]
         keys = [("tech_un", "rate law only", CAT["orange"], 0.0),
                 ("tech_cap", "with drainage limit", CAT["blue"], 0.0),
-                ("econ_cap", f"limited and under ${J['screen_usd_per_tco2']:.0f}/tCO$_2$ delivered", "#0d366b", 0.0)]
+                ("econ_cap", f"limited, delivered rock under {J['screen_usd_per_tco2']:.0f} USD per tCO$_2$", "#0d366b", 0.0)]
         n = len(rows); ys = np.arange(n)[::-1]; bh = 0.26
         for j, (k, lab, col, _) in enumerate(keys):
             p5 = np.array([r[k][0] for r in rows]); p50 = np.array([r[k][1] for r in rows]); p95 = np.array([r[k][2] for r in rows])
@@ -418,14 +418,15 @@ def fig4():
             ax.errorbar(p50, yy, xerr=[p50 - p5, p95 - p50], fmt="none", ecolor=INK2, elinewidth=0.6, capsize=1.5)
         ax.set_yticks(ys); ax.set_yticklabels(names, fontsize=7)
         ax.set_xlabel(f"Steady-state gross removal, MtCO$_2$ yr$^{{-1}}$ (p50; whiskers p5–p95 over {J['n_draws']:,} draws)")
-        ax.legend(frameon=False, loc="lower right", handlelength=1.2)
+        ax.legend(frameon=False, loc="upper right", handlelength=1.2, bbox_to_anchor=(1.0, 0.92))
         ax.grid(True, axis="x", color="#e6e5e1", lw=0.5); ax.set_axisbelow(True)
         gaps = {"China", "Turkey"}
         for i, nm in enumerate(names):
             if nm in gaps:
                 ax.text(-0.01, ys[i], "†", transform=ax.get_yaxis_transform(), ha="right", va="center", fontsize=7, color=INK2)
-        ax.text(0.995, 0.02, "† no quarry register: delivered cost from mapped outcrop only\nintervals are common-mode across countries (same draws) and must not be added",
-                transform=ax.transAxes, ha="right", va="bottom", fontsize=5.8, color=INK2)
+        ax.text(0.995, -0.30, "† no quarry register: delivered cost from mapped outcrop only.  "
+                "Intervals are common-mode across countries (same draws) and must not be added.",
+                transform=ax.transAxes, ha="right", va="top", fontsize=5.8, color=INK2)
     else:
         ax.text(0.5, 0.5, "country_ensemble.json missing", ha="center", transform=ax.transAxes)
     panel_label(ax, "a")
@@ -440,8 +441,9 @@ def fig4():
             col = CAT["blue"] if known else INK3
             ax.errorbar(x, c["k"], yerr=[[c["k"] - c["k_lo"]], [c["k_hi"] - c["k"]]], fmt="o", ms=5,
                         color=col, ecolor=col, elinewidth=0.9, capsize=2.5)
-            ax.annotate(f"{c['cluster']}" + ("" if known else "  grind undisclosed:\n     upper bound, drawn at ref. d50"),
-                        (x, c["k"]), xytext=(6, 4 if known else 6), textcoords="offset points", fontsize=6.2, color=INK2)
+            ax.annotate(f"{c['cluster']}" + ("" if known else "  (grind undisclosed;\n     upper bound, drawn at ref. d50)"),
+                        (x, c["k"]), xytext=(6, 4) if known else (8, -20), textcoords="offset points", fontsize=6.2, color=INK2,
+                        ha="left")
         ax.axhline(1.0, color=INK3, lw=0.7, ls="--")
         ax.text(0.98, 0.03, "k = 1: the shipped anchor reproduces the delivery\n(anchor = median k of the known-grind clusters)",
                 transform=ax.transAxes, ha="right", va="bottom", fontsize=5.8, color=INK2)

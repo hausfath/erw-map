@@ -68,7 +68,7 @@ from build_v0 import master_grid, onto_grid  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 INTERIM = ROOT / "data/interim"
 
-THRESHOLD_MT = 50.0     # report countries above this p50 uncapped potential
+THRESHOLD_MT = float(sys.argv[sys.argv.index("--threshold") + 1]) if "--threshold" in sys.argv else 50.0   # report countries above this p50 uncapped potential
 N_DRAWS = int(sys.argv[sys.argv.index("--draws") + 1]) if "--draws" in sys.argv else 2000
 N_BOOT = 200            # bootstrap resamples of the draws, for Monte Carlo SEs
 SEED = 2026
