@@ -69,7 +69,8 @@ ROOT = Path(__file__).resolve().parents[2]
 INTERIM = ROOT / "data/interim"
 
 THRESHOLD_MT = 50.0     # report countries above this p50 uncapped potential
-N_DRAWS = 500
+N_DRAWS = int(sys.argv[sys.argv.index("--draws") + 1]) if "--draws" in sys.argv else 2000
+N_BOOT = 200            # bootstrap resamples of the draws, for Monte Carlo SEs
 SEED = 2026
 SCREEN = C.COST_SCREEN_USD_PER_TCO2
 
@@ -161,7 +162,10 @@ def write_docx(path, rows, world, i_inf, us_cap):
         "year-1 fraction 4-23%, anchor 12% = ensemble median; a 7.4x spread "
         "that rises with grain size); ceiling calcite SI "
         "uniform 0-1 (shipped 0.5) and dissolved Mg 1/3-3 mM (shipped 1); "
-        "the three documented quarry-gate scenarios; haul rates x0.75-1.25. "
+        "the three documented quarry-gate scenarios; haul rates x0.75-1.25; "
+        f"feedstock CO2 potential {C.DELIVERED_BASALT_RANGE[0]:.3f}-"
+        f"{C.DELIVERED_BASALT_RANGE[1]:.3f} tCO2/t (shipped "
+        f"{C.DELIVERED_BASALT_TCO2_PER_T}). "
         "Fixed: drainage variable (total runoff; the recharge bracket is "
         "-14% on the uncapped world total), protocol soil pCO2 (the paddy "
         "value is the bottom of the measured range, so paddy ceilings lean "
@@ -350,22 +354,28 @@ def main() -> int:
     mgs = split_loguniform(rng, 1.0 / 3.0, 1.0, 3.0, N_DRAWS)
     scns = rng.integers(0, 3, N_DRAWS)
     hms = rng.uniform(0.75, 1.25, N_DRAWS)
+    # Feedstock CO2 potential (Ca+Mg basis) over the supplier range, split
+    # log-uniform with the median pinned at the shipped archetype. Multiplies
+    # every carbon term; the ceiling does not depend on it.
+    ct_lo, ct_hi = C.DELIVERED_BASALT_RANGE
+    cts = split_loguniform(rng, ct_lo / C.DELIVERED_BASALT_TCO2_PER_T, 1.0,
+                           ct_hi / C.DELIVERED_BASALT_TCO2_PER_T, N_DRAWS)
 
     out = {k: np.zeros((N_DRAWS, nC)) for k in
            ("tech_un", "econ_un", "tech_cap", "econ_cap")}
     for d in range(N_DRAWS):
         u1 = ks[d] * u1v
-        cad = A * np.minimum(1.0, u1 / i_inf) * etav * ct
+        cad = A * np.minimum(1.0, u1 / i_inf) * etav * ct * cts[d]
         ceilv = ceiling_draw(10.0 ** sis[d], mgs[d])
         capped = np.minimum(cad, ceilv)
-        dpt = etav * ct * A * np.interp(u1, u1g, Dg)
+        dpt = etav * ct * cts[d] * A * np.interp(u1, u1g, Dg)
         cost = (gates[scn_list[scns[d]]] + hms[d] * ratev * dv) * A
         passes = (dpt > 0) & (cost / np.maximum(dpt, 1e-12) < SCREEN)
         for key, v in (("tech_un", cad), ("econ_un", np.where(passes, cad, 0)),
                        ("tech_cap", capped),
                        ("econ_cap", np.where(passes, capped, 0))):
             out[key][d] = np.bincount(idxv, weights=v * hav, minlength=nC) / 1e6
-        if (d + 1) % 100 == 0:
+        if (d + 1) % 250 == 0:
             print(f"  draw {d + 1}/{N_DRAWS}")
 
     # ---- aggregate and report ------------------------------------------------
@@ -429,6 +439,61 @@ def main() -> int:
           f"p50s: uncapped {p50_un:.3f} ({p50_un / ship_un - 1:+.1%}), limited "
           f"{p50_cap:.3f} ({p50_cap / ship_cap - 1:+.1%}) -- convexity, not "
           f"drift; the shipped values lie inside the p5-p95 bands.")
+
+    # ---- per-scenario economics (the pooled econ columns are a 3-component
+    # mixture; report each gate scenario on its own as well) -----------------
+    print("\nEconomic (drainage-limited) p50 by gate scenario, MtCO2/yr:")
+    per_scn = {}
+    for si, scn in enumerate(scn_list):
+        sel = scns == si
+        wcol = out["econ_cap"][sel].sum(axis=1)
+        per_scn[scn] = {"world": [float(np.percentile(wcol, q)) for q in (5, 50, 95)],
+                        "n_draws": int(sel.sum())}
+        for r in big:
+            ci = isos.index(r["iso"]) + 1
+            per_scn[scn][r["iso"]] = float(np.percentile(out["econ_cap"][sel][:, ci], 50))
+        print(f"  {scn:13s} world {per_scn[scn]['world'][1]:6.0f} "
+              f"({per_scn[scn]['world'][0]:.0f}-{per_scn[scn]['world'][2]:.0f})  "
+              + "  ".join(f"{r['iso']} {per_scn[scn][r['iso']]:.0f}" for r in big[:5]))
+
+    # ---- common-mode intervals: every country shares the same draws, so ratios
+    # are far better determined than levels. One example ratio interval. -----
+    ratio = None
+    if "IN" in isos and "BR" in isos:
+        a_ = out["tech_cap"][:, isos.index("IN") + 1]; b_ = out["tech_cap"][:, isos.index("BR") + 1]
+        rr = a_ / np.maximum(b_, 1e-9)
+        ratio = [float(np.percentile(rr, q)) for q in (5, 50, 95)]
+        print(f"\nIndia:Brazil drainage-limited ratio p50 {ratio[1]:.2f} (p5-p95 {ratio[0]:.2f}-{ratio[2]:.2f}); "
+              f"the country intervals themselves are common-mode and must not be combined.")
+
+    # ---- Monte Carlo standard errors of the world percentiles (bootstrap over draws)
+    brng = np.random.default_rng(SEED + 1)
+    mcse = {}
+    for k in out:
+        wcol = out[k].sum(axis=1)
+        bs = np.array([np.percentile(wcol[brng.integers(0, N_DRAWS, N_DRAWS)], (5, 50, 95))
+                       for _ in range(N_BOOT)])
+        mcse[k] = [float(x) for x in bs.std(axis=0)]
+    print("MC standard error of the world p5/p50/p95, Mt: "
+          + "; ".join(f"{k} {v[0]:.0f}/{v[1]:.0f}/{v[2]:.0f}" for k, v in mcse.items()))
+
+    if "--json" in sys.argv:
+        import json
+        jp = Path(sys.argv[sys.argv.index("--json") + 1]).expanduser()
+        jp.parent.mkdir(parents=True, exist_ok=True)
+        jp.write_text(json.dumps(dict(
+            n_draws=N_DRAWS, seed=SEED, screen_usd_per_tco2=SCREEN, threshold_mt=THRESHOLD_MT,
+            axes=dict(dissolution_scale_ref_frac=list(C.DISSOLVED_FRAC_REF_CLUSTER_RANGE),
+                      anchor=C.DISSOLVED_FRAC_AT_REF, ceiling_si=[0, 1], mg_mM=[1 / 3, 3],
+                      feedstock_tco2_per_t=list(C.DELIVERED_BASALT_RANGE),
+                      gate_scenarios=scn_list, haul_mult=[0.75, 1.25]),
+            shipped=dict(uncapped_gt=ship_un, limited_gt=ship_cap),
+            ensemble_world_p50=dict(uncapped_gt=p50_un, limited_gt=p50_cap),
+            rows=[dict(name=r["name"], iso=r["iso"], mha=r["mha"],
+                       **{k: list(r[k]) for k in out}) for r in table],
+            per_scenario_econ_cap=per_scn, india_brazil_limited_ratio=ratio,
+            mc_se_world=mcse), indent=1))
+        print(f"wrote {jp}")
 
     # ---- US supply cap --------------------------------------------------------
     us_i = isos.index("US") + 1

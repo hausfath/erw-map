@@ -322,6 +322,18 @@ def longitudinal_shape_test(rows, pred):
           f"{C.PSD_REF_WIDTH} matches the observation only if the first sampling was")
     for t1_alt in (t1, 150.0, 180.0, 210.0):
         print(f"    at {t1_alt:3.0f} d -> {fw_at_days(f1, t1_alt, t2):5.1%}")
+    outp = ROOT / "paper/calibration_shape.json"
+    if outp.parent.exists():
+        import json as _json
+        outp.write_text(_json.dumps(dict(
+            t1_days=t1, fw1=round(f1, 4), t2_days=t2, fw2=round(f2, 4),
+            predictions={str(n): round(fw_at_days(f1, t1, t2, n), 4)
+                         for n in (0.5, 0.7, 1.0, 1.5, 2.5)},
+            first_order=round(1 - math.exp(-k1 * t2), 4),
+            t1_alternatives={str(t): round(fw_at_days(f1, t, t2), 4)
+                             for t in (t1, 150.0, 180.0, 210.0)},
+            note="one re-sampled field, cluster-level; duration of the first "
+                 "interval is inferred, not measured"), indent=1))
     print("  i.e. roughly twice as late as stated. Either the duration is wrong by")
     print("  ~2x or a reactive fine/glassy fraction is consumed faster than any")
     print("  size distribution alone implies. Both are live; the dataset cannot")
@@ -471,13 +483,60 @@ def constancy_test(rows, feed, grid):
     print("  tail), OR tracer-free denominators and depth differences track grind")
     print("  because all three are nested in supplier. Width is the likeliest")
     print("  culprit and no PSD exists to test it. Reported, not tuned away.")
+    # Structural alternative for the grind dependence (statistics review): under
+    # the shipped Fw ~ d50^-1, k rises with d50. Removing the grind dependence
+    # entirely (d50^0) maps k -> k * d50/d_ref and WIDENS the spread, so the data
+    # favour an intermediate dependence. The fitted slope is one degree of
+    # freedom on three clusters and is reported, not adopted.
+    kd = [(c["k"], c["d50"]) for c in known]
+    k0 = [k * d / C.PSD_REF_D50_UM for k, d in kd]
+    slope = float(np.polyfit(np.log([d for _, d in kd]), np.log([k for k, _ in kd]), 1)[0])
+    print(f"  GRIND DEPENDENCE. Shipped Fw ~ d50^-1: cluster spread {spread:.1f}x. "
+          f"A d50-insensitive variant (d50^0) would give {max(k0) / min(k0):.0f}x. "
+          f"ln k vs ln d50 slope {slope:.2f} (n = {len(kd)}, 1 df) implies "
+          f"Fw ~ d50^{-(1 - slope):.2f}; not fitted (one-free-parameter budget).")
     within = [max(x["k"] for x in rs) / min(x["k"] for x in rs)
               for rs in clusters.values() if len(rs) > 1]
     print(f"  Within-supplier spread of k (same feedstock, method, climate): "
           f"{min(within):.1f}-{max(within):.1f}x.")
+    # ---- robustness of the anchor to analyst choices (statistics review,
+    # 2026-09-02): leave-one-cluster-out, the geometric mean, the bracketing
+    # threshold, and the window size. Printed, and exported anonymised.
+    print()
+    print("  ROBUSTNESS of the anchor:")
+    kk = sorted(c["k"] for c in known)
+    loo = [G(u_ref * float(np.median([x for j, x in enumerate(kk) if j != i])))
+           for i in range(len(kk))]
+    print(f"    leave-one-cluster-out anchor: {min(loo):.3f}-{max(loo):.3f} "
+          f"(shipped {frac_ref:.3f}); with n = {len(kk)} the median IS the middle "
+          f"cluster, so the anchor rests on one supplier's rows.")
+    print(f"    geometric mean of clusters: {G(u_ref * float(np.exp(np.mean(np.log(kk))))):.3f}")
+    ts = sorted({r["elapsed_days"] for r in rows})
+    near = [t for t in ts if SHORT_OBSERVATION_DAYS <= t < SHORT_OBSERVATION_DAYS + 30]
+    if near:
+        print(f"    rows observed at {near} d sit within 30 d of the "
+              f"{SHORT_OBSERVATION_DAYS:.0f}-d bracketing threshold; raising the "
+              f"threshold past them brackets the deciding cluster (see the "
+              f"specification list below).")
+    export = [dict(cluster=chr(65 + i), d50_um=c["d50"] if c["known"] else None,
+                   grind_known=c["known"], n_rows=c["n"], k=round(c["k"], 3),
+                   k_lo=round(c["lo"], 3), k_hi=round(c["hi"], 3),
+                   frac_ref=round(G(u_ref * c["k"]), 4))
+              for i, c in enumerate(sorted(cl, key=lambda c: (not c["known"], c["d50"] or 1e9)))]
+    outp = ROOT / "paper/calibration_clusters.json"
+    if outp.parent.exists():
+        import json as _json
+        outp.write_text(_json.dumps(dict(
+            anchor=round(frac_ref, 4), k_star=round(k_star, 3),
+            loo_range=[round(min(loo), 4), round(max(loo), 4)],
+            with_unknown_grind=round(G(u_ref * all_med), 4),
+            short_observation_days=SHORT_OBSERVATION_DAYS, clusters=export,
+            note="anonymised supplier clusters; no name is paired with a value"),
+            indent=1))
+        print(f"    wrote anonymised cluster table -> {outp.relative_to(ROOT)}")
     return dict(k_star=k_star, frac_ref=frac_ref, cluster_frac_range=(fr_lo, fr_hi),
                 spread=spread, n_known=len(known), n_clusters=len(cl),
-                cl=cl, recs=recs, k_all=all_med)
+                cl=cl, recs=recs, k_all=all_med, loo=(min(loo), max(loo)))
 
 
 def rate_exponent(rows):
