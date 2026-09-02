@@ -1360,12 +1360,17 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
         "terms": [
             {"key": "reactivity", "label": "Dissolution rate",
              "hint": "Palandri-Kharaka Ca+Mg release, relative to pH 6.5 / 15 C"},
-            {"key": "eta_dic", "label": "Alkalinity retained as DIC",
-             "hint": "Carbonate-equilibrium efficiency: what share of released "
-                     "alkalinity is actually held as dissolved inorganic carbon"},
-            {"key": "drainage", "label": "Drainage / transport",
-             "hint": f"q/(q+Dw) on {C.DRAINAGE_LABELS[C.DRAINAGE_VARIABLE]}; "
-                     f"low where water residence limits export"},
+            {"key": "eta_dic", "label": "Acid soil: cations neutralise acidity",
+             "hint": "Carbonate-equilibrium efficiency (Bertagni & Porporato): in "
+                     "acid soil water part of the released alkalinity neutralises "
+                     "free acidity instead of forming bicarbonate. Counted as lost, "
+                     "which is the protocols' conservative reading; some of it may "
+                     "still form bicarbonate downstream"},
+            {"key": "drainage", "label": "Slow drainage slows dissolution",
+             "hint": f"q/(q+Dw) on {C.DRAINAGE_LABELS[C.DRAINAGE_VARIABLE]}: with "
+                     f"little water passing, pore water sits near saturation and "
+                     f"the rock dissolves more slowly (Maher & Chamberlain). A rate "
+                     f"effect -- distinct from the export cap"},
         ],
         # Crop labels for the readout. names[] is 1-based to match the packed
         # ids, with index 0 the "no SPAM crop" slot. Descriptive only -- nothing

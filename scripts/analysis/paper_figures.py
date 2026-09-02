@@ -164,9 +164,9 @@ def fig1():
     ax.imshow(np.ma.masked_where(~neg, np.ones_like(cdr)), extent=extent(), origin="upper",
               cmap=mcolors.ListedColormap([NEGLIGIBLE]), interpolation="nearest", zorder=3)
     handles = [
-        Patch(color=CAT["blue"], label=f"drainage cannot carry the carbon ({shares[0]:.0f}% of area)"),
+        Patch(color=CAT["blue"], label=f"export capped by drainage ({shares[0]:.0f}% of area)"),
         Patch(color=CAT["orange"], label=f"dissolution rate (pH, temperature, moisture) ({shares[1]:.0f}%)"),
-        Patch(color=CAT["aqua"], label=f"alkalinity-to-DIC efficiency or transport term ({shares[2]:.0f}%)"),
+        Patch(color=CAT["aqua"], label=f"acid-soil efficiency or slow-drainage rate term ({shares[2]:.0f}%)"),
         Patch(color=NEGLIGIBLE, label=f"negligible, < {C.CDR_NEGLIGIBLE_T_HA_YR} tCO$_2$ ha$^{{-1}}$ yr$^{{-1}}$"),
     ]
     ax.legend(handles=handles, loc="lower left", frameon=False, ncol=2,

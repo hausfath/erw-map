@@ -17,13 +17,13 @@ window.ERW = {
     },
     {
       "key": "eta_dic",
-      "label": "Alkalinity retained as DIC",
-      "hint": "Carbonate-equilibrium efficiency: what share of released alkalinity is actually held as dissolved inorganic carbon"
+      "label": "Acid soil: cations neutralise acidity",
+      "hint": "Carbonate-equilibrium efficiency (Bertagni & Porporato): in acid soil water part of the released alkalinity neutralises free acidity instead of forming bicarbonate. Counted as lost, which is the protocols' conservative reading; some of it may still form bicarbonate downstream"
     },
     {
       "key": "drainage",
-      "label": "Drainage / transport",
-      "hint": "q/(q+Dw) on WaterGAP2-2e total runoff; low where water residence limits export"
+      "label": "Slow drainage slows dissolution",
+      "hint": "q/(q+Dw) on WaterGAP2-2e total runoff: with little water passing, pore water sits near saturation and the rock dissolves more slowly (Maher & Chamberlain). A rate effect -- distinct from the export cap"
     }
   ],
   "crops": {

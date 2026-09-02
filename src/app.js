@@ -39,7 +39,7 @@
   // Index 3 is the drainage-concentration ceiling, not one of the three terms.
   // Must match factorColor() in the shader: vec3(0.796, 0.549, 0.902).
   const FACTOR_COLORS = ["#e0704f", "#4f9fe0", "#8fd14f", "#cb8ce6"];
-  const CEIL_LABEL = "Drainage cannot carry it";
+  const CEIL_LABEL = "Export capped by drainage";
 
   let gl, prog, quad, texA, texB, texC, texD, texE, texRamp, texRampFrac, cpu = null;
   let mode = "score";
@@ -1544,11 +1544,15 @@
       <b>Limiting factor</b>, the term that costs each cell the most; and
       <b>Weathered in year&nbsp;1</b>, the fraction of applied rock predicted to
       dissolve — the quantity field trials can measure.</p>
-      <p>Read the limiting-factor layer with ${ceilOn ? "two caveats. First, " +
-      "<b>&ldquo;drainage cannot carry it&rdquo; is a bound, not a term</b>: where " +
+      <p>Read the limiting-factor layer with ${ceilOn ? "three caveats. First, " +
+      "<b>&ldquo;export capped by drainage&rdquo; is a bound, not a term</b>: where " +
       "the drainage-concentration ceiling binds it outranks all three factors, " +
       "because no rate can push more carbon out than the water can hold. That is " +
-      "most of the map. Second, among" : "one caveat. Among"} the three terms, the two
+      "most of the map. Second, the two drainage classes are different physics: " +
+      "<b>&ldquo;slow drainage slows dissolution&rdquo;</b> is the Maher&ndash;Chamberlain " +
+      "rate term q/(q+D<sub>w</sub>), which throttles how fast rock dissolves when " +
+      "pore water sits near saturation, while the export cap bounds how much " +
+      "carbon can leave once dissolved. Third, among" : "one caveat. Among"} the three terms, the two
       efficiency terms have a natural zero (efficiency&nbsp;=&nbsp;1) but the
       dissolution term is measured against a reference condition (pH&nbsp;6.5,
       15&nbsp;°C), so the answer moves with that choice: a reference
@@ -1596,19 +1600,28 @@
       distribution from the grind controls (reference d50 ${E.psd.refD50} µm,
       width ${E.psd.refWidth}). Geometric area, not BET; rate is linear in
       surface area.</li>
-      <li><b>Alkalinity retained as DIC.</b> The carbonate-equilibrium efficiency
-      of Bertagni &amp; Porporato (2022), with zero free parameters. Fast
-      dissolution in very acid soil stores little carbon; this term is why. Soil
+      <li><b>Acid-soil efficiency.</b> The carbonate-equilibrium efficiency
+      of Bertagni &amp; Porporato (2022), with zero free parameters. In acid soil
+      water part of the released alkalinity neutralises free acidity instead of
+      forming bicarbonate, so fast dissolution in very acid soil stores less
+      carbon <i>in the field water</i>. The map counts that share as lost, which
+      is the protocols' conservative reading; some of it may still end up as
+      bicarbonate downstream, where the acidity it neutralised would otherwise
+      have consumed river alkalinity. Setting this efficiency to 1 everywhere
+      would raise the uncapped total by ~13% and the drainage-limited total by
+      ~2%, because the acid soils it bites are mostly drainage-bound anyway. Soil
       pCO₂ is raised in rice paddies, mapped as GRPI inundation months ×
       SPAM all-technology rice area (all rice, not irrigated-only, since 2026-08-24 — rainfed lowland paddy is flooded too).
       The Advanced <i>paddy-field view</i> re-evaluates every paddy-bearing cell
       at 100% paddy (observed inundation months kept) — the like-for-like basis
       for a project whose fields are all paddy, since the cell mean dilutes
       flooded-soil chemistry by the cell’s non-rice share.</li>
-      <li><b>Drainage.</b> η = q/(q + D_w) on ${E.provenance.drainage}
-      (Maher &amp; Chamberlain 2014; D_w = ${p.dw ? p.dw.value : "?"} m/yr):
-      bicarbonate has to leave the field in the drainage water to count as
-      exported. Total runoff rather than groundwater recharge, because recharge
+      <li><b>Slow drainage slows dissolution.</b> η = q/(q + D_w) on ${E.provenance.drainage}
+      (Maher &amp; Chamberlain 2014; D_w = ${p.dw ? p.dw.value : "?"} m/yr): with
+      little water passing, pore water sits near saturation and the rock
+      dissolves more slowly. This is a rate term, and it is distinct from the
+      drainage limit below, which caps how much carbon can leave once
+      dissolved. Total runoff rather than groundwater recharge, because recharge
       is zero in river deltas where the water table is at the surface and
       drainage leaves laterally.</li>
       <li><b>Gross CO₂ removal.</b> The product of the terms sets how far each
