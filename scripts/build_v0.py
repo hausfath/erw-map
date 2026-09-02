@@ -742,6 +742,39 @@ def main() -> int:
           f"{C.FLUX_CEILING_PH_TARGET:g}, saturation where lower): "
           f"{gt_ph:.3f} GtCO2/yr  [viewer option; headline stays saturation]")
 
+    # ---- WIDER ACCOUNTING (viewer options, both off by default; see the
+    # constants block). Reported so the Methods panel quotes computed stakes.
+    phi = C.PEDOGENIC_CARBONATE_PHI
+    excess_ss = np.maximum(cdr_ss - ceiling, 0.0)
+    credit_ss = phi * excess_ss
+    gt_credit = float((ha * np.nan_to_num(credit_ss[m])).sum() / 1e9)
+    gt_credit_all = float((ha * np.nan_to_num(0.5 * excess_ss[m])).sum() / 1e9)
+    cdr_ss_sw = np.minimum(1.0, u1_ss / i_inf) * C.APPLICATION_RATE_T_HA_YR * ceil_t
+    gt_sw = float((ha * np.nan_to_num(cdr_ss_sw[m])).sum() / 1e9)
+    gt_sw_cap = float((ha * np.nan_to_num(np.minimum(cdr_ss_sw, ceiling)[m])).sum() / 1e9)
+    binds_ss = cdr_ss > ceiling * 1.000001
+    assert np.all(np.nan_to_num(credit_ss)[~binds_ss] == 0.0), \
+        "carbonate credit must be zero where the limit does not bind"
+    assert gt_ss_cap + gt_credit <= gt_ss * 1.0001, "export + credit exceeds uncapped"
+    print(f"    wider accounting [viewer options, OFF by default]: solid carbonate "
+          f"where the limit binds +{gt_credit:.3f} GtCO2/yr on the Ca share "
+          f"(f_Ca {C.PEDOGENIC_CARBONATE_F_CA:.3f}, phi {phi:.3f}; all cations "
+          f"+{gt_credit_all:.3f}); system-wide accounting (eta_DIC = 1): "
+          f"{gt_sw:.3f} uncapped ({gt_sw / gt_ss - 1:+.1%}), {gt_sw_cap:.3f} "
+          f"limited ({gt_sw_cap / gt_ss_cap - 1:+.1%})")
+    wider_stakes = {
+        "carbonateOn": C.WIDER_ACCOUNTING_CARBONATE_ON,
+        "systemWideOn": C.WIDER_ACCOUNTING_SYSTEMWIDE_ON,
+        "carbonatePhi": round(float(phi), 5),
+        "fCa": round(float(C.PEDOGENIC_CARBONATE_F_CA), 4),
+        "co2PerCa": C.PEDOGENIC_CARBONATE_CO2_PER_CA,
+        "stakes": {"carbonateGt": round(gt_credit, 3),
+                   "carbonateAllCationGt": round(gt_credit_all, 3),
+                   "systemWideUncappedPct": round(100 * (gt_sw / gt_ss - 1), 1),
+                   "systemWideLimitedPct": round(100 * (gt_sw_cap / gt_ss_cap - 1), 1),
+                   "limitedGt": round(gt_ss_cap, 3), "uncappedGt": round(gt_ss, 3)},
+    }
+
     # ---- GATE 2c: no wet cell may be undrained. The gate that would have caught
     # the qr delta defect. Physically impossible rather than merely unlikely, so
     # the tolerance is an allowance for 0.5-deg wet/arid straddlers, not a knob.
@@ -989,7 +1022,7 @@ def main() -> int:
             warm_cool=wc_ratio, exceed_med=e50,
             paddy_area_frac_of_cropland=float(
                 (aw * (f_flood > 0)[m]).sum() / aw.sum()),
-            paddy_source=paddy_source)
+            paddy_source=paddy_source, wider=wider_stakes)
     print()
     print("done. Open src/index.html over HTTP:")
     print("  python3 -m http.server 8000 --directory src")
@@ -1343,7 +1376,7 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
             ceiling_binds=0.0, ceiling_med=0.0,
             warm_cool=(None, None), exceed_med=0.0, crop_codes=(),
             paddy_area_frac_of_cropland=0.0,
-            paddy_source="unknown") -> None:
+            paddy_source="unknown", wider=None) -> None:
     if gha_eval is None:
         gha_eval = gha
     # PASS THESE IN, never reach for main()'s locals. Reading a caller local from
@@ -1404,6 +1437,11 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
         # Paddy-field view: tex5 swaps in L1/eta/ceiling with paddy-bearing
         # cells at 100% paddy. The viewer only needs to know the view exists
         # and how much area it can touch; all encodings are shared.
+        "widerAccounting": wider or {"carbonateOn": False, "systemWideOn": False,
+                                     "carbonatePhi": round(C.PEDOGENIC_CARBONATE_PHI, 5),
+                                     "fCa": round(C.PEDOGENIC_CARBONATE_F_CA, 4),
+                                     "co2PerCa": C.PEDOGENIC_CARBONATE_CO2_PER_CA,
+                                     "stakes": None},
         "paddyView": {
             "areaFrac": round(float(paddy_area_frac_of_cropland), 4),
             "source": paddy_source,

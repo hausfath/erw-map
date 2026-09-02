@@ -485,6 +485,11 @@ def gate8_browser_constants_match_python() -> None:
             problems.append("fluxCeiling.activities differs")
     # Paddy-field view (tex5): the viewer trusts the encodings are shared with
     # the baseline channels, so the payload block must exist and be sane.
+    wa = payload.get("widerAccounting")
+    if not wa or abs(wa.get("carbonatePhi", -1) - C.PEDOGENIC_CARBONATE_PHI) > 1e-4:
+        problems.append("widerAccounting.carbonatePhi differs from constants")
+    if wa and (wa.get("carbonateOn") or wa.get("systemWideOn")):
+        problems.append("wider-accounting options must ship OFF")
     pvw = payload.get("paddyView")
     if pvw is None or not (0.0 <= pvw.get("areaFrac", -1) <= 1.0):
         problems.append("paddyView missing or invalid")

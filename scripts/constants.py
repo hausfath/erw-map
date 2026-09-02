@@ -1875,3 +1875,39 @@ CALIBRATION_ANCHOR = {
     "target_is_cation_release": True,
     "hold_eta_dic_at_one_during_fit": True,
 }
+
+
+# ---------------------------------------------------------------------------
+# WIDER ACCOUNTING (2026-09-02, Zeke's call): two viewer options for removal the
+# headline leaves out, grouped because both are carbon the field's own drainage
+# water does not show. BOTH OFF BY DEFAULT; today's protocols credit neither.
+#
+# 1. Solid-phase (pedogenic) carbonate where the drainage limit binds. Past the
+#    ceiling the excess Ca precipitates as calcite, 2 HCO3- + Ca2+ -> CaCO3 +
+#    CO2 + H2O: silicate weathering captured 2 CO2 per Ca, precipitation gives
+#    one back, so the carbonate stores 1 CO2 per Ca. Credited on the Ca share of
+#    the feedstock only (Mg carbonates are kinetically inhibited at surface
+#    conditions; excess Mg is treated as retained, i.e. no credit). The credit
+#    is phi x max(E - ceiling, 0) with phi = (1/2) x f_Ca. It is an UPPER bound
+#    on the excess's value: competition with cation retention (exchange sites,
+#    Fe/Mn oxides, clays) is unmodelled, and durability requires the soil to
+#    stay near saturation -- most of the excess sits in soils acidic enough to
+#    redissolve carbonate once amendment stops.
+# 2. System-wide accounting in acid soils: sets the acid-soil efficiency
+#    eta_DIC to 1. Alkalinity that neutralises free acidity in acid field water
+#    leaves as cations balanced by strong-acid anions; downstream that acidity
+#    would otherwise have consumed river or ocean carbonate alkalinity and
+#    released CO2, so system-wide the export is still removal -- UNLESS the
+#    baseline acid sink is non-carbonate (Al mobilisation, exchange). The
+#    protocols take the conservative field-water reading; this option shows the
+#    other one. Stakes on the 2026-09-02 build: uncapped +12.9%, limited +1.7%.
+# ---------------------------------------------------------------------------
+WIDER_ACCOUNTING_CARBONATE_ON = False
+WIDER_ACCOUNTING_SYSTEMWIDE_ON = False
+PEDOGENIC_CARBONATE_CO2_PER_CA = 1.0      # vs 2 for bicarbonate export
+PEDOGENIC_CARBONATE_CA_ONLY = True
+_ca_kmol = FEEDSTOCK_ARCHETYPES[FEEDSTOCK_DEFAULT]["CaO_wt"] / M_CAO
+_mg_kmol = FEEDSTOCK_ARCHETYPES[FEEDSTOCK_DEFAULT]["MgO_wt"] / M_MGO
+PEDOGENIC_CARBONATE_F_CA = _ca_kmol / (_ca_kmol + _mg_kmol)     # 0.488 for delivered_basalt
+PEDOGENIC_CARBONATE_PHI = (PEDOGENIC_CARBONATE_CO2_PER_CA / 2.0) * (
+    PEDOGENIC_CARBONATE_F_CA if PEDOGENIC_CARBONATE_CA_ONLY else 1.0)

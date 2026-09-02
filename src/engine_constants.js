@@ -181,6 +181,21 @@ window.ERW = {
     "lo": -3.0,
     "hi": 3.0
   },
+  "widerAccounting": {
+    "carbonateOn": false,
+    "systemWideOn": false,
+    "carbonatePhi": 0.24391,
+    "fCa": 0.4878,
+    "co2PerCa": 1.0,
+    "stakes": {
+      "carbonateGt": 0.133,
+      "carbonateAllCationGt": 0.273,
+      "systemWideUncappedPct": 12.9,
+      "systemWideLimitedPct": 1.7,
+      "limitedGt": 0.581,
+      "uncappedGt": 1.126
+    }
+  },
   "paddyView": {
     "areaFrac": 0.1503,
     "source": "GRPI months x SPAM all-rice fraction"

@@ -560,6 +560,49 @@ it is the standing justification for field-data ask #6.
 Gates: **12** in `build_v0.py` (nothing may report more carbon than its drainage can
 carry), **13/13b/13c** in `test_kinetics.py`.
 
+### Wider accounting: two viewer options for removal the headline leaves out
+
+Added 2026-09-02 (Zeke's call), grouped in the sidebar as **Wider accounting**
+because both are carbon the field's own drainage water does not show. Both are
+**off by default**, and today's protocols credit neither.
+
+**Solid carbonate where the drainage limit binds.** Past the ceiling the excess Ca
+precipitates as calcite, 2 HCO₃⁻ + Ca²⁺ → CaCO₃ + CO₂ + H₂O. Silicate weathering
+captured two CO₂ per Ca, precipitation returns one, so the carbonate stores one
+CO₂ per Ca. The option credits φ·max(E − ceiling, 0) with φ = ½·f_Ca, where f_Ca is
+the feedstock's Ca share of Ca+Mg charge (0.488 for `delivered_basalt`); Mg
+carbonates are kinetically inhibited at surface conditions and excess Mg earns
+nothing. Export itself stays capped, the credit is reported separately in the
+footer ("of which … solid carbonate") and in the hover box, and the
+limiting-factor class still shows the cap. Two caveats travel with it: cation
+retention (exchange sites, Fe/Mn oxides, neoformed clays) competes for the same
+excess and is unmodelled, so the credit is an *upper bound* on the excess's value;
+and the carbonate persists only while the soil stays near saturation — most of the
+excess sits in soils with pH below 6.5 that would redissolve it once amendment
+stops (carbonic-acid redissolution re-exports the carbon; strong-acid dissolution
+releases it). Build gates assert the credit is zero where the limit does not bind
+and that export plus credit never exceeds the uncapped value. The build prints the
+stake; on 2026-09-02 it is +0.13 GtCO₂/yr at steady state on the Ca share (+0.27 if
+every excess cation precipitated).
+
+**System-wide accounting in acid soils.** Sets the acid-soil efficiency η_DIC to 1.
+In acid field water part of the released alkalinity neutralises free acidity
+instead of forming bicarbonate, and leaves as cations balanced by strong-acid
+anions. Downstream that acidity would otherwise have consumed river or ocean
+carbonate alkalinity and released CO₂, so on a system-wide accounting the export
+is still removal, unless the baseline acid sink is non-carbonate (aluminium
+mobilisation, cation exchange). The protocols take the conservative field-water
+reading and do not credit strong-acid-balanced cations; the map follows them by
+default and this option shows the other reading. Stake on 2026-09-02: uncapped
+1.126 → 1.272 GtCO₂/yr (+12.9%), drainage-limited 0.581 → 0.591 (+1.7%), because
+the acid soils it bites (η_DIC < 0.9 on 7.9% of cropland, median soil pH 5.3) are
+mostly drainage-bound as well.
+
+Both are byte-free options: the shader and the JS mirrors apply them live from the
+existing textures (uniforms `uCarbonate`, `uCarbPhi`, `uSystemWide`), and gate 8
+asserts the browser's φ matches `constants.PEDOGENIC_CARBONATE_PHI` and that both
+ship off.
+
 ### What "per year" means: two bases, one per surface
 
 Since August 2026 the tool carries two time bases deliberately. The **map layers

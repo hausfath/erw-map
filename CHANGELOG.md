@@ -5,6 +5,26 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Wider accounting: solid-carbonate credit and system-wide accounting (viewer options)
+
+Two options, grouped in a new top-level "Wider accounting" sidebar section
+between the drainage limit and economics, both OFF by default and neither
+credited by today's protocols (Zeke's call, 2026-09-02). (1) Solid carbonate
+where the drainage limit binds: the excess Ca precipitates as calcite at 1 CO2
+per Ca, credited as phi x max(E - ceiling, 0) with phi = 1/2 x f_Ca (0.244 for
+delivered_basalt); export stays capped and the credit is reported separately
+("of which ... solid carbonate" in the footer, its own hover row). Stake
++0.13 Gt/yr steady state (+0.27 all-cation). Upper bound: retention competes,
+durability needs saturation. (2) System-wide accounting: eta_DIC = 1, on the
+argument that acidity neutralised in acid field water would otherwise consume
+river alkalinity downstream (+12.9% uncapped, +1.7% limited). Implemented as
+shader uniforms + JS mirrors (grossCdr, cdrOfRow, globalGt, neutralBase key);
+build prints the stakes into the payload so the Methods text quotes computed
+numbers; build gates assert credit = 0 where the cap does not bind and export
++ credit <= uncapped; gate 8 checks phi and that both ship off. Limiting-factor
+classes renamed the same day: "Export capped by drainage", "Slow drainage
+slows dissolution", "Acid soil: cations neutralise acidity".
+
 ## Suitability top knot: 5.0 tCO2/ha/yr, the ceiling's own top
 
 Zeke's call after the re-anchoring: with the drainage limit on, 99.9% of

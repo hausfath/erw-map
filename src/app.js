@@ -90,6 +90,12 @@
      pH <= FC.phTarget, the agronomically-constrained option. tex4.g/b carry
      the pH-basis ceiling (baseline / paddy view) on the same CEIL_ENC. */
   let phBasis = false;
+  // Wider accounting (2026-09-02): solid carbonate where the limit binds, and
+  // system-wide accounting (eta_DIC = 1). Both OFF by default; see Methods.
+  const WA = E.widerAccounting || {carbonatePhi: 0, fCa: 0.49, stakes: null};
+  let carbonateOn = !!WA.carbonateOn;
+  let systemWide = !!WA.systemWideOn;
+  let lastCarbonateGt = 0;       // set by globalGt(); the "of which" footer part
 
   // Data extent, from the generated grid constants.
   const DATA = {
@@ -190,6 +196,9 @@
   uniform sampler2D uA, uB, uC, uD, uE, uRamp, uRampFrac;
   uniform int uPaddyView;      // 1 = swap L1/eta/ceiling bytes from tex5
   uniform int uPhBasis;        // 1 = ceiling held at the pH target (tex4.g/b)
+  uniform int uSystemWide;     // 1 = acid-soil efficiency set to 1 (wider accounting)
+  uniform int uCarbonate;      // 1 = credit solid carbonate where the limit binds
+  uniform float uCarbPhi;      // credit per unit excess: (1/2) x f_Ca
   uniform int uShowMafic;         // 1 = tint GLiM mafic outcrop
   uniform vec4 uGeo;              // lon0, lat0, lonSpan, latSpan of the visible box
   uniform vec4 uGrid;             // west, north, dlon, dlat of the data grid
@@ -308,7 +317,7 @@
     // stored unless all three are non-zero, so a compensatory mean would be
     // wrong in kind: it let good alkalinity retention offset zero reactivity.
     float lr = uExp.x * log(max(rel,  1e-12));
-    float ld = uExp.y * log(max(eDic, 1e-12));
+    float ld = uSystemWide == 1 ? 0.0 : uExp.y * log(max(eDic, 1e-12));
     float lt = uExp.z * log(max(eTr,  1e-12));
 
     // Gross CDR, then suitability as a value function OF THAT. Zero CDR gives
@@ -372,7 +381,13 @@
                                clamp((b.b * 255.0 - 5.0) / 250.0, 0.0, 1.0)))
                  * uCdrPerFrac;
     bool ceilBinds = uCeilOn == 1 && ceil < cdr;
-    if (uCeilOn == 1) cdr = min(cdr, ceil);
+    if (uCeilOn == 1) {
+      // Wider accounting: the excess the water cannot carry precipitates as
+      // calcite at 1 CO2 per Ca on the feedstock's Ca share (uCarbPhi). Export
+      // itself stays capped; the class colour below still reports the cap.
+      float excess = max(cdr - ceil, 0.0);
+      cdr = min(cdr, ceil) + (uCarbonate == 1 ? uCarbPhi * excess : 0.0);
+    }
 
     // Which term costs the most here. The ceiling gets its OWN state rather than
     // being folded into the drainage term: when it binds, the limit is not that
@@ -623,6 +638,9 @@
     gl.uniform1i(u("uCeilOn"), ceilOn ? 1 : 0);
     gl.uniform1i(u("uPaddyView"), paddyView ? 1 : 0);
     gl.uniform1i(u("uPhBasis"), phBasis ? 1 : 0);
+    gl.uniform1i(u("uSystemWide"), systemWide ? 1 : 0);
+    gl.uniform1i(u("uCarbonate"), carbonateOn ? 1 : 0);
+    gl.uniform1f(u("uCarbPhi"), WA.carbonatePhi || 0);
     const gslice = gSlice();
     gl.uniform1fv(u("uG[0]"), gslice);
     gl.uniform2f(u("uGLogU"), E.dissolution.uLog.lo, E.dissolution.uLog.hi);
@@ -734,7 +752,7 @@
      generated constants both read from agree with Python. */
   function grossCdr(rel, eDic, eTr, ceil) {
     const lr = termExp.reactivity * Math.log(Math.max(rel, 1e-12));
-    const ld = termExp.eta_dic * Math.log(Math.max(eDic, 1e-12));
+    const ld = systemWide ? 0 : termExp.eta_dic * Math.log(Math.max(eDic, 1e-12));
     const lt = termExp.drainage * Math.log(Math.max(eTr, 1e-12));
     // Dissolution drivers only in X; eta_DIC discounts the carbon afterwards
     // (it does not slow the rock). rel already carries the grind shift, so cdr
@@ -745,9 +763,13 @@
     // unbounded and cdr is capped. Mirrors the shader exactly; gate 8 in
     // test_kinetics.py asserts both read the same generated constants.
     const uncapped = frac * Math.exp(ld) * E.cdrPerFrac;
-    const capped = (ceilOn && ceil !== undefined) ? Math.min(uncapped, ceil)
-                                                 : uncapped;
-    return {cdr: capped, cdrUncapped: uncapped, ceil, frac,
+    let capped = uncapped, carbonate = 0;
+    if (ceilOn && ceil !== undefined) {
+      capped = Math.min(uncapped, ceil);
+      if (carbonateOn) carbonate = (WA.carbonatePhi || 0) * Math.max(uncapped - ceil, 0);
+    }
+    return {cdr: capped + carbonate, cdrExport: capped, carbonate,
+            cdrUncapped: uncapped, ceil, frac,
             ceilBinds: ceilOn && ceil !== undefined && ceil < uncapped,
             contrib: [lr, ld, lt]};
   }
@@ -1073,6 +1095,39 @@
     if (fb) fb.classList.toggle("hidden", !ceilOn);
   }
 
+  function syncWider() {
+    const st = WA.stakes || {};
+    const cb = $("chk-carbonate"), ch = $("carbonate-hint");
+    if (cb) {
+      cb.disabled = !ceilOn;
+      cb.checked = carbonateOn;
+      ch.innerHTML = !ceilOn
+        ? `Needs the drainage limit on: the credit is the excess the water cannot carry.`
+        : (carbonateOn
+          ? `<b>On.</b> Where the limit binds, the excess Ca precipitates as calcite `
+            + `and stores 1 CO₂ per Ca (half the bicarbonate credit) on the feedstock's `
+            + `Ca share (f<sub>Ca</sub> = ${WA.fCa}). Counted separately in the footer. `
+            + `An upper bound: retention competes for the same cations, and the `
+            + `carbonate persists only while the soil stays near saturation.`
+          : `Where the limit binds, excess Ca precipitates as calcite storing 1 CO₂ `
+            + `per Ca. Adds up to ${st.carbonateGt !== undefined ? st.carbonateGt.toFixed(2) : "?"} Gt/yr `
+            + `on the Ca share (${st.carbonateAllCationGt !== undefined ? st.carbonateAllCationGt.toFixed(2) : "?"} if `
+            + `all cations precipitated). Not credited by protocols; durability untested.`);
+    }
+    const sb = $("chk-systemwide"), sh = $("systemwide-hint");
+    if (sb) {
+      sb.checked = systemWide;
+      sh.innerHTML = systemWide
+        ? `<b>On.</b> Alkalinity that neutralises acidity in acid field water is `
+          + `counted as removal, because downstream that acid would otherwise consume `
+          + `river alkalinity and release CO₂. Acid-soil efficiency set to 1.`
+        : `Counts alkalinity that neutralises acidity in acid soils as removal `
+          + `(the acid would otherwise consume river alkalinity downstream). `
+          + `${st.systemWideUncappedPct !== undefined ? `+${st.systemWideUncappedPct}% uncapped, +${st.systemWideLimitedPct}% with the limit.` : ""} `
+          + `Protocols do not credit it.`;
+    }
+  }
+
   function syncPaddy() {
     const el = $("paddy-hint");
     if (!el) return;
@@ -1193,6 +1248,11 @@
           `${g.cdrUncapped < 0.01 ? g.cdrUncapped.toExponential(1) : g.cdrUncapped.toFixed(2)}` +
           ` tCO₂/ha/yr</td></tr>`
         : ``) +
+      (carbonateOn && g.carbonate > 0
+        ? `<tr><td class="k">Of which solid carbonate</td><td class="v">` +
+          `${g.carbonate.toFixed(2)} tCO₂/ha/yr</td></tr>` : ``) +
+      (systemWide
+        ? `<tr><td class="k">Accounting</td><td class="v">system-wide (acid-soil efficiency set to 1)</td></tr>` : ``) +
       `<tr><td class="k">Limiting factor</td><td class="v">${limLabel}</td></tr>` +
       `<tr><td class="k">Soil pH (0–15 cm)</td><td class="v">${soilPh.toFixed(1)}</td></tr>` +
       // Context, not an input. The model reads crop identity nowhere except rice,
@@ -1311,7 +1371,7 @@
     return Math.exp(exps[0] * Math.log(Math.max(rel, 1e-12))
                   + exps[2] * Math.log(Math.max(rawByte(row[2]), 1e-12)));
   }
-  const eDicOfRow = (row, exps) =>
+  const eDicOfRow = (row, exps) => systemWide ? 1 :
     Math.pow(Math.max(rawByte(
       paddyView && row[7] !== undefined ? row[7] : row[1]), 1e-12), exps[1]);
 
@@ -1329,7 +1389,9 @@
     // stability metric and the decile edges would be computed on a different
     // model from the one being drawn.
     if (ceilOn && row[5] !== undefined) {
-      cdr = Math.min(cdr, decodeCeil(ceilByteOfRow(row)));
+      const c = decodeCeil(ceilByteOfRow(row));
+      const credit = carbonateOn ? (WA.carbonatePhi || 0) * Math.max(cdr - c, 0) : 0;
+      cdr = Math.min(cdr, c) + credit;
     }
     return cdr;
   }
@@ -1377,7 +1439,7 @@
     const CPF = E.cdrPerFrac, iInf = iInfOf();
     const pow = new Float64Array(TMAX + 1), l10t = new Float64Array(TMAX + 1);
     for (let t = 1; t <= TMAX; t++) { pow[t] = Math.pow(1 + DR, t); l10t[t] = Math.log10(t); }
-    let num = 0, den = 0, kept = 0;
+    let num = 0, den = 0, kept = 0, numC = 0;
     for (const r of sample) {
       const X = xOfRow(r, exps), eDic = eDicOfRow(r, exps);
       const u1 = kU * X;
@@ -1386,9 +1448,12 @@
         ? decodeCeil(ceilByteOfRow(r)) : Infinity;
       // Steady-state removal, capped at one application per year and at the
       // drainage ceiling.
-      let cdr = Math.min(1, u1 / iInf) * eDic * CPF;
+      let cdr = Math.min(1, u1 / iInf) * eDic * CPF, credit = 0;
       if (!(cdr > 0)) cdr = 0;
-      if (cdr > ceil) cdr = ceil;
+      if (cdr > ceil) {
+        if (carbonateOn) credit = (WA.carbonatePhi || 0) * (cdr - ceil);
+        cdr = ceil;
+      }
       if (screening) {
         const usdT = costUsdT(fl + rawByte(r[4] === undefined ? 255 : r[4]) * (1 - fl));
         let tonnes = 0, prev = 0;
@@ -1414,10 +1479,11 @@
             || usdT * rate / tonnes >= E.cost.screenUsdPerTco2) { den += r[3]; continue; }
         kept += r[3];
       }
-      num += cdr * r[3]; den += r[3];
+      num += (cdr + credit) * r[3]; numC += credit * r[3]; den += r[3];
     }
     if (!(den > 0)) return null;
     lastKeptAreaFrac = screening ? kept / den : 1;
+    lastCarbonateGt = (numC / den) * (E.stats.evaluatedGha ?? E.stats.croplandGha);
     // Scale by the EVALUATED area, not all cropland: the sample only covers cells
     // with a computable rate, and multiplying its mean by the full extent would
     // credit removal to the cells we declined to evaluate.
@@ -1465,6 +1531,7 @@
   function neutralBase() {
     const key = ssaShift().toFixed(6) + "|" + econ.costExp + "|" + (ceilOn ? 1 : 0)
               + "|" + (paddyView ? 1 : 0) + "|" + (phBasis ? 1 : 0)
+              + "|" + (carbonateOn ? 1 : 0) + "|" + (systemWide ? 1 : 0)
               + "|" + econ.gate.toFixed(4) + "|" + econ.truckMult.toFixed(6);
     if (baseKey !== key || !baseScores) {
       baseScores = scoresFor(CRIT.map(() => 1));
@@ -1645,6 +1712,25 @@
       dissolution anchor was re-derived from the verified deliveries). The same bound is
       published independently as "carrying capacity" (Mayer et al. 2025), whose
       54 PHREEQC cases this solve reproduces to 0.95–1.00.</li>
+      <li><b>Wider accounting</b> (two options, both off by default; the
+      protocols credit neither). <i>Solid carbonate:</i> where the drainage
+      limit binds, the excess Ca precipitates as calcite, 2 HCO₃⁻ + Ca²⁺ →
+      CaCO₃ + CO₂ + H₂O, storing one CO₂ per Ca instead of two. The option
+      credits (1/2)·f<sub>Ca</sub> of the excess (f<sub>Ca</sub> = ${WA.fCa},
+      the feedstock's Ca share; Mg carbonates are kinetically inhibited), which
+      adds ${WA.stakes ? WA.stakes.carbonateGt.toFixed(2) : "?"} Gt/yr at
+      steady state (${WA.stakes ? WA.stakes.carbonateAllCationGt.toFixed(2) : "?"}
+      if every excess cation precipitated). It is an upper bound: cation
+      retention competes for the same excess and is not modelled, and the
+      carbonate persists only while the soil stays near saturation — most of the
+      excess sits in soils acidic enough to redissolve it once amendment stops.
+      <i>System-wide accounting:</i> sets the acid-soil efficiency to 1, on the
+      argument that acidity neutralised in the field would otherwise consume
+      river or ocean alkalinity and release CO₂ downstream, so the export is
+      still removal unless the baseline acid sink is non-carbonate (aluminium
+      mobilisation, exchange). Stake:
+      ${WA.stakes ? `+${WA.stakes.systemWideUncappedPct}% uncapped, +${WA.stakes.systemWideLimitedPct}% with the limit` : "see build"}.
+      The footer reports the carbonate part separately and labels both.</li>
       <li><b>Suitability.</b> A piecewise-linear score of gross CO₂ removal —
       ${knots} tCO₂/ha/yr — so zero removal scores zero by construction, and
       100 sits at about the most a metre of drainage can carry at calcite
@@ -1913,7 +1999,10 @@
         + (ceilOn ? "" : " \u00b7 drainage limit OFF")
         + (ceilOn && phBasis
             ? ` \u00b7 pH \u2264 ${FC.phTarget ?? 7.5} basis` : "")
-        + (paddyView ? " \u00b7 paddy-field view" : "");
+        + (paddyView ? " \u00b7 paddy-field view" : "")
+        + (carbonateOn && ceilOn
+            ? ` \u00b7 of which ${lastCarbonateGt.toFixed(2)} Gt solid carbonate` : "")
+        + (systemWide ? " \u00b7 system-wide accounting" : "");
   }
 
   /* The two whole-sample statistics -- the stability sentence and the footer total
@@ -2133,9 +2222,23 @@
       // so it has to be regenerated or it describes the other setting.
       $("method-body").innerHTML = methodsHTML();
       syncFlux();
+      syncWider();
       refresh();
     });
     syncFlux();
+
+    // Wider accounting: two options for removal the headline leaves out.
+    const cbx = $("chk-carbonate");
+    if (cbx) cbx.addEventListener("change", (e) => {
+      carbonateOn = e.target.checked;
+      $("method-body").innerHTML = methodsHTML(); syncWider(); refresh();
+    });
+    const swx = $("chk-systemwide");
+    if (swx) swx.addEventListener("change", (e) => {
+      systemWide = e.target.checked;
+      $("method-body").innerHTML = methodsHTML(); syncWider(); refresh();
+    });
+    syncWider();
 
     // Ceiling basis segment: calcite saturation (default, the headline and
     // the Mayer et al. anchor) vs pore water held at the pH target.
