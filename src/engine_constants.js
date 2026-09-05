@@ -1636,6 +1636,239 @@ window.ERW = {
     "tco2PerT": 0.295,
     "rateTHaYr": 30.0
   },
+  "feedstocks": {
+    "order": [
+      "delivered_basalt",
+      "aheim_dunite"
+    ],
+    "default": "delivered_basalt",
+    "delivered_basalt": {
+      "label": "Basalt (delivered)",
+      "tco2PerT": 0.295,
+      "cdrPerFrac": 8.849815,
+      "retreatScale": 1.0,
+      "fieldFactor": 1.0,
+      "mgMM": 1.0,
+      "calibrated": true,
+      "fCa": 0.4878,
+      "carbonatePhi": 0.2439,
+      "niMgKg": 100.0,
+      "crMgKg": 120.0,
+      "traceSource": "Lewis et al. 2021 Table 6 (six ERW basalts); Beerling et al. 2024 Dataset S1",
+      "traceBudget": {
+        "eu_86_278_low": {
+          "label": "EU sludge directive, lower national limit",
+          "budgetTHa": 390.0,
+          "rateMaxTHaYr": 19.5,
+          "binding": "soil concentration",
+          "scale": 0.65,
+          "limitedGt": 0.5324,
+          "bindsAreaFrac": 0.4235
+        },
+        "eu_86_278_high": {
+          "label": "EU sludge directive, upper national limit",
+          "budgetTHa": 1560.0,
+          "rateMaxTHaYr": 30.0,
+          "binding": "annual loading",
+          "scale": 1.0,
+          "limitedGt": 0.6327,
+          "bindsAreaFrac": 0.0
+        },
+        "br_conama_420_prev": {
+          "label": "Brazil CONAMA 420/2009, prevention",
+          "budgetTHa": 390.0,
+          "rateMaxTHaYr": 19.5,
+          "binding": "soil concentration",
+          "scale": 0.65,
+          "limitedGt": 0.5324,
+          "bindsAreaFrac": 0.4235
+        },
+        "br_conama_420_agri": {
+          "label": "Brazil CONAMA 420/2009, agricultural investigation",
+          "budgetTHa": 1430.0,
+          "rateMaxTHaYr": 71.5,
+          "binding": "soil concentration",
+          "scale": 1.0,
+          "limitedGt": 0.6327,
+          "bindsAreaFrac": 0.0
+        },
+        "us_epa_503": {
+          "label": "US EPA 40 CFR 503 biosolids",
+          "budgetTHa": 4200.0,
+          "rateMaxTHaYr": 210.0,
+          "binding": "cumulative loading",
+          "scale": 1.0,
+          "limitedGt": 0.6327,
+          "bindsAreaFrac": 0.0
+        },
+        "puro_2025": {
+          "label": "Puro.earth ERW 2025 v1",
+          "budgetTHa": 3510.0,
+          "rateMaxTHaYr": 175.5,
+          "binding": "soil concentration",
+          "scale": 1.0,
+          "limitedGt": 0.6327,
+          "bindsAreaFrac": 0.0
+        }
+      },
+      "tex": {
+        "main": "tex1",
+        "paddy": "tex5"
+      },
+      "stakes": {
+        "uncappedGt": 1.2913,
+        "limitedGt": 0.6327,
+        "bindsAreaFrac": 0.7696
+      }
+    },
+    "aheim_dunite": {
+      "label": "Olivine (Aheim dunite)",
+      "source": "Amann et al. 2020, Biogeosciences 17, 103, Table 1 (XRF, n = 3), doi:10.5194/bg-17-103-2020",
+      "tco2PerT": 0.9886,
+      "cdrPerFrac": 29.657745,
+      "retreatScale": 0.2713,
+      "chargeRatioRef": 5.636,
+      "fieldFactor": 1.0,
+      "mgMM": 2.0,
+      "calibrated": false,
+      "fCa": 0.0063,
+      "carbonatePhi": 0.00317,
+      "niMgKg": 2889.0,
+      "crMgKg": 2156.0,
+      "traceSource": "Amann et al. 2020, Biogeosciences 17, 103, Table 1 (XRF, n = 3), doi:10.5194/bg-17-103-2020",
+      "traceBudget": {
+        "eu_86_278_low": {
+          "label": "EU sludge directive, lower national limit",
+          "budgetTHa": 13.5,
+          "rateMaxTHaYr": 0.675,
+          "binding": "soil concentration",
+          "scale": 0.0225,
+          "limitedGt": 0.1321,
+          "bindsAreaFrac": 0.9515
+        },
+        "eu_86_278_high": {
+          "label": "EU sludge directive, upper national limit",
+          "budgetTHa": 54.0,
+          "rateMaxTHaYr": 1.038,
+          "binding": "annual loading",
+          "scale": 0.0346,
+          "limitedGt": 0.1988,
+          "bindsAreaFrac": 0.9051
+        },
+        "br_conama_420_prev": {
+          "label": "Brazil CONAMA 420/2009, prevention",
+          "budgetTHa": 13.5,
+          "rateMaxTHaYr": 0.675,
+          "binding": "soil concentration",
+          "scale": 0.0225,
+          "limitedGt": 0.1321,
+          "bindsAreaFrac": 0.9515
+        },
+        "br_conama_420_agri": {
+          "label": "Brazil CONAMA 420/2009, agricultural investigation",
+          "budgetTHa": 49.5,
+          "rateMaxTHaYr": 2.475,
+          "binding": "soil concentration",
+          "scale": 0.0825,
+          "limitedGt": 0.4149,
+          "bindsAreaFrac": 0.7108
+        },
+        "us_epa_503": {
+          "label": "US EPA 40 CFR 503 biosolids",
+          "budgetTHa": 145.38,
+          "rateMaxTHaYr": 7.269,
+          "binding": "annual loading",
+          "scale": 0.2423,
+          "limitedGt": 0.753,
+          "bindsAreaFrac": 0.2561
+        },
+        "puro_2025": {
+          "label": "Puro.earth ERW 2025 v1",
+          "budgetTHa": 121.5,
+          "rateMaxTHaYr": 6.075,
+          "binding": "soil concentration",
+          "scale": 0.2025,
+          "limitedGt": 0.7042,
+          "bindsAreaFrac": 0.3384
+        }
+      },
+      "tex": {
+        "main": "tex6",
+        "paddy": "tex7"
+      },
+      "stakes": {
+        "uncappedGt": 5.9618,
+        "limitedGt": 0.9158,
+        "medianUncapped": 3.1112,
+        "medianLimited": 0.4885,
+        "bindsAreaFrac": 0.9865,
+        "ceilRatioP50": 1.213,
+        "ceilRatioP10": 1.18,
+        "ceilRatioP90": 1.282,
+        "uncappedVsBasalt": 4.617,
+        "limitedVsBasalt": 1.447,
+        "silicaSuperShare": 0.4762,
+        "degeneracyP90": 0.733
+      }
+    }
+  },
+  "traceMetal": {
+    "on": true,
+    "default": "puro_2025",
+    "regimes": {
+      "eu_86_278_low": {
+        "label": "EU sludge directive, lower national limit",
+        "soilLimitMgKg": 30.0,
+        "annualKgHaYr": 3.0,
+        "cumulativeKgHa": null,
+        "source": "Directive 86/278/EEC Annex IA (Ni 30-75 mg/kg for soil pH 6-7; member states set the value) and Annex IC (3 kg Ni/ha/yr, 10-yr average)"
+      },
+      "eu_86_278_high": {
+        "label": "EU sludge directive, upper national limit",
+        "soilLimitMgKg": 75.0,
+        "annualKgHaYr": 3.0,
+        "cumulativeKgHa": null,
+        "source": "Directive 86/278/EEC Annex IA upper value; Annex IC loading"
+      },
+      "br_conama_420_prev": {
+        "label": "Brazil CONAMA 420/2009, prevention",
+        "soilLimitMgKg": 30.0,
+        "annualKgHaYr": null,
+        "cumulativeKgHa": null,
+        "source": "Resolucao CONAMA 420/2009 Anexo II, valor de prevencao Ni 30 mg/kg"
+      },
+      "br_conama_420_agri": {
+        "label": "Brazil CONAMA 420/2009, agricultural investigation",
+        "soilLimitMgKg": 70.0,
+        "annualKgHaYr": null,
+        "cumulativeKgHa": null,
+        "source": "Resolucao CONAMA 420/2009 Anexo II, investigacao agricola Ni 70 mg/kg"
+      },
+      "us_epa_503": {
+        "label": "US EPA 40 CFR 503 biosolids",
+        "soilLimitMgKg": null,
+        "annualKgHaYr": 21.0,
+        "cumulativeKgHa": 420.0,
+        "source": "40 CFR 503.13 Table 2 cumulative 420 kg Ni/ha; Table 4 annual 21 kg/ha"
+      },
+      "puro_2025": {
+        "label": "Puro.earth ERW 2025 v1",
+        "soilLimitMgKg": 150.0,
+        "annualKgHaYr": null,
+        "cumulativeKgHa": null,
+        "source": "Puro.earth Enhanced Rock Weathering methodology, edition 2025 v1, Table 4.3: soil Ni 150, Cr 100 mg/kg"
+      }
+    },
+    "baselineNiMgKg": 15.0,
+    "baselineRange": [
+      5.0,
+      40.0
+    ],
+    "mixingDepthM": 0.2,
+    "bulkDensityKgM3": 1300.0,
+    "horizonYr": 20.0,
+    "rateTHaYr": 30.0
+  },
   "stats": {
     "croplandGha": 1.215,
     "evaluatedGha": 1.209,

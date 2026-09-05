@@ -524,6 +524,27 @@ Gate 2c now asserts the impossibility directly: a cell receiving more than a met
 of rain a year cannot drain less than a millimetre. Run
 `scripts/analysis/drainage_variable.py` to reproduce every figure above.
 
+### A second feedstock: olivine (branch `olivine`, not live)
+
+Olivine is a switchable viewer option since 2026-09-05, **uncalibrated and labelled
+so**: no verified olivine delivery exists, so the basalt lab-to-field anchor is
+transferred. Åheim dunite (Amann et al. 2020 assay) carries 0.989 tCO₂/t, 3.35×
+delivered basalt; its Palandri & Kharaka charge release is 5.6× basalt's at the
+reference condition, but it packs 3.7× more charge per volume, so at the same grind
+it dissolves 1.5× faster by mass and delivers 4.7× the removal per hectare at the
+same 30 t/ha. Its Mg-dominated drainage raises the ceiling 1.2× at the median cell
+(pore-water Mg 2 mM; 5 mM makes the ceiling degenerate and is the upper
+sensitivity). What actually binds is nickel: dunite carries ~2,900 mg/kg Ni, and a
+cumulative loading budget on total applied Ni permits 6 of 30 t/ha/yr under Puro's
+2025 soil limit, 7 under US 40 CFR 503, and 1 under the EU sludge directive's
+annual rule; basalt itself, at a literature 100 mg/kg Ni, sits exactly on that EU
+annual rule at 30 t/ha/yr and is capped to 65% by the strictest soil limits. Steady-state totals: 5.96 Gt/yr uncapped, 0.92 Gt drainage-limited,
+0.70 Gt under the default trace-metal regime, 0.13–0.20 Gt under the EU rules. The
+regime is a sidebar selector because the spread is the finding. Olivine supply and
+delivery cost are not yet modelled, so the economics toggle is off for it. Plan,
+reviews and dispositions: `OLIVINE_SCOPING_2026-09.md`,
+`OLIVINE_REVIEWS_2026-09-05.md`; methods in `docs/METHODOLOGY.md` §2b.
+
 ### Still not fixed
 
 | Problem | Effect |
@@ -725,7 +746,7 @@ products are kept, sufficient to regenerate every figure without re-downloading.
 Thresholds are set before the pipeline runs, and violations are published even
 if we release anyway. Current status:
 
-`python3 scripts/test_kinetics.py` — **18 gates, 16 passing and 2 failing.**
+`python3 scripts/test_kinetics.py` — **31 gates, 28 passing, 2 failing, 1 skipped** (2026-09-05; the six gate-16 checks cover the olivine feedstock).
 
 Be careful how that count is read. Exactly **one** gate compares the model
 against independent measurements it was not built from (gate 11, Gudbrandsson et
@@ -750,6 +771,7 @@ it verifies, so it tests arithmetic rather than the archetype.
 | Basaltic glass absent from Palandri & Kharaka | confirmed |
 | Per-mineral CO₂ capacity vs Puro.earth Table 1.1 | max deviation 4.7% |
 | `delivered_basalt` vs verified deliveries | 0.295 vs 0.295 tCO₂/t, supplier-mean Ca+Mg assays (arithmetic check, not a test) |
+| Olivine (gate 16a–f) | dunite 0.989 tCO₂/t from its oxides; dunite/basalt charge ratio 4.1–5.9 inside 4.0–6.0; no rate double count (per-hectare ratio 5.12 = charge × density); ceiling 2[Mg]/A ≤ 0.75; trace-metal budget arithmetic; browser payload matches Python |
 
 One gate failed on first run and was informative: a stoichiometric ceiling set
 from basalt, which ultramafic legitimately exceeded. The threshold was wrong, not

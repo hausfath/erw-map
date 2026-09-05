@@ -243,13 +243,18 @@ def rate_ca_mg_release(archetype: str, pH, T_K, *, return_parts: bool = False):
     spec = C.FEEDSTOCK_ARCHETYPES[archetype]
     fracs = spec["minerals"]
     norm = sum(fracs.values())
+    # Per-archetype override of the divalent count, for solid solutions: Fo92
+    # olivine carries 1.84 Mg per formula, not forsterite's 2.0, and its Fe2+
+    # release is cancelled by oxidation (no durable alkalinity).
+    divalent = dict(DIVALENT_PER_FORMULA)
+    divalent.update(spec.get("divalent", {}))
 
     parts = {}
     total = None
     for mineral, frac in fracs.items():
         contrib = (
             (frac / norm)
-            * DIVALENT_PER_FORMULA[mineral]
+            * divalent[mineral]
             * 2.0  # charge per divalent cation
             * mineral_rate(mineral, pH, T_K)
         )
@@ -807,3 +812,107 @@ def cascade_baseline_index(pH, T_K, moisture, ea_kj: float = 68.8):
     """
     a_h = np.power(10.0, -np.asarray(pH, dtype=float))
     return np.asarray(moisture, dtype=float) * a_h * arrhenius_factor(ea_kj, T_K)
+
+
+# ---------------------------------------------------------------------------
+# Second feedstock (2026-09-05): per-archetype bulk quantities and the scaling
+# that lets one micrometre-anchored retreat serve two rocks. See the SECOND
+# FEEDSTOCK section of constants.py for the reasoning and the review findings.
+# ---------------------------------------------------------------------------
+def charge_kmol_per_tonne(archetype: str) -> float:
+    """Ca+Mg charge released on complete dissolution, kmol charge per tonne,
+    from the archetype's oxide assay (2 eq per divalent cation)."""
+    spec = C.FEEDSTOCK_ARCHETYPES[archetype]
+    return 2.0 * 1000.0 * (spec["CaO_wt"] / C.M_CAO + spec["MgO_wt"] / C.M_MGO)
+
+
+def co2_t_per_tonne(archetype: str) -> float:
+    """CO2 potential on the map's Ca+Mg basis, t CO2 per t rock: 1 CO2 per
+    equivalent (2 per divalent cation)."""
+    return charge_kmol_per_tonne(archetype) * C.MOL_CO2_PER_KMOL_CHARGE_T
+
+
+def volume_per_eq_m3(archetype: str) -> float:
+    """Bulk rock volume that carries one kmol of charge, m3 per kmol. A
+    charge-release rate (mol m-2 s-1) times this is a retreat rate (m s-1)
+    under the shrinking-core geometry the map uses."""
+    spec = C.FEEDSTOCK_ARCHETYPES[archetype]
+    rho = spec.get("density_kg_m3", C.FEEDSTOCK_DENSITY_KG_M3)     # kg m-3
+    kmol_per_t = charge_kmol_per_tonne(archetype)                    # kmol t-1
+    return 1000.0 / (rho * kmol_per_t)                                # m3 kmol-1
+
+
+def retreat_scale(archetype: str, ref_archetype: str = None) -> float:
+    """Geometric factor converting the reference rock's anchored retreat to this
+    rock's retreat AT THE SAME CHARGE-RELEASE RATE: (V/z) / (V/z)_ref, the bulk
+    volume per equivalent. The RATE ratio is NOT in here -- it travels in the
+    L1 texture (log10 R/R_ref, basalt reference), so u = deltaRef x
+    retreat_scale x 10^L1 x eta_tr / d50 applies each once.
+
+    Dunite packs ~3.7x more charge per m3 than delivered basalt, so at equal
+    charge flux its surface retreats 0.27x as fast; with its ~5.6x charge rate
+    the retreat is ~1.5x basalt's, while each tonne dissolved carries 3.35x
+    the CO2. Per hectare that is charge ratio x density ratio (~5.1x), as it
+    must be (gate 16c). The first cut of this function also multiplied by the
+    rate ratio and the build reported 17.7x -- the double count gate 16c now
+    catches."""
+    ref = ref_archetype or C.FEEDSTOCK_DEFAULT
+    return volume_per_eq_m3(archetype) / volume_per_eq_m3(ref)
+
+
+def ceiling_mg_mM_for(archetype: str) -> float:
+    """Pore-water [Mg] the drainage ceiling holds fixed for this feedstock."""
+    return C.FLUX_CEILING_MG_MM_BY_FEEDSTOCK.get(archetype, C.FLUX_CEILING_MG_MM)
+
+
+def silica_am_solubility_mol_l(T_K):
+    """Amorphous silica solubility, mol/L, Gunnarsson & Arnorsson 2000:
+    log K = a + b/T + c T^2 + d log10 T. 1.16 / 1.46 / 1.94 mM at 10/15/25 C."""
+    a, b, c, d = C.SILICA_AM_SOLUBILITY_COEFFS
+    T = np.asarray(T_K, dtype=float)
+    return np.power(10.0, a + b / T + c * T * T + d * np.log10(T))
+
+
+def ceiling_silica_supersaturated(alk_mol_l, T_K):
+    """True where an all-forsterite ceiling solution (Si = A/4) exceeds
+    amorphous-silica solubility at the cell temperature. A diagnostic, not a
+    cap (constants, item 6 of the SECOND FEEDSTOCK note)."""
+    si = np.asarray(alk_mol_l, dtype=float) * C.FORSTERITE_SI_PER_CHARGE_EQ
+    return si > silica_am_solubility_mol_l(T_K)
+
+
+def trace_metal_budget_t_ha(archetype: str, regime: str = None,
+                            baseline_mg_kg=None, horizon_yr=None):
+    """Cumulative rock budget (t/ha) and sustainable annual rate (t/ha/yr)
+    before topsoil Ni crosses the regime's limit, plus which rule binds.
+
+    Returns (budget_t_ha, rate_t_ha_yr, binding) with NaN where the archetype
+    has no Ni assay. Concentration regimes: (limit - baseline) x soil mass /
+    Ni_rock. Loading regimes: cumulative / Ni_rock and annual / Ni_rock. The
+    sustainable rate is the tightest of budget / horizon and the annual rule.
+    Scalar baseline; a per-cell baseline raster can be passed when one exists.
+    """
+    spec = C.FEEDSTOCK_ARCHETYPES[archetype]
+    ni = spec.get("Ni_mg_kg")
+    if ni is None:
+        return float("nan"), float("nan"), "no assay"
+    regime = regime or C.TRACE_METAL_REGIME_DEFAULT
+    _, soil_lim, annual, cumulative, _ = C.TRACE_METAL_REGIMES[regime]
+    base = C.TRACE_METAL_BASELINE_NI_MG_KG if baseline_mg_kg is None else baseline_mg_kg
+    H = C.TRACE_METAL_HORIZON_YR if horizon_yr is None else horizon_yr
+    soil_t_ha = C.TRACE_METAL_MIXING_DEPTH_M * C.TRACE_METAL_BULK_DENSITY_KG_M3 * 1e4 / 1000.0
+    budgets, rates = {}, {}
+    if soil_lim is not None:
+        # mg/kg headroom x t soil/ha / (mg Ni per kg rock) = t rock/ha
+        b = np.maximum(soil_lim - base, 0.0) * soil_t_ha / ni
+        budgets["soil concentration"] = b
+        rates["soil concentration"] = b / H
+    if cumulative is not None:
+        b = cumulative * 1e6 / ni / 1000.0      # kg Ni/ha -> t rock/ha
+        budgets["cumulative loading"] = b
+        rates["cumulative loading"] = b / H
+    if annual is not None:
+        rates["annual loading"] = annual * 1e6 / ni / 1000.0
+    budget = min(budgets.values()) if budgets else float("inf")
+    binding = min(rates, key=lambda k: float(np.min(rates[k])))
+    return budget, rates[binding], binding

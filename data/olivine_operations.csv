@@ -1,0 +1,11 @@
+name,country,iso,lat,lon,operator,status,output_t_yr,output_year,coord_basis,source_url
+Aheim / Gusdal (Almklovdalen),Norway,NO,62.02,5.59,Sibelco Nordic,active,1400000,2014,NGU deposit record,https://geo.ngu.no/api/faktaark/mineralressurser/visIndustrimineraler.php?objid=7866
+Bryggja / Lefdal,Norway,NO,61.93,5.51,North Cape Minerals,suspended since 2007,,,NGU deposit record,https://aps.ngu.no/pls/oradb/minres_deposit_fakta_NY_KS.Main?p_objid=7891
+Raudbergvika (Norddal),Norway,NO,62.26,7.10,ex North Cape Minerals,closed 2020,,,approximate from map,https://raudbergvika.no/
+Twin Sisters (Swen Larsen quarry),United States,US,48.80,-122.07,disputed in sources,active,40000,1997,USGS MRDS,https://mrdata.usgs.gov/mrds/show-mrds.php?dep_id=10253379
+Day Book dunite,United States,US,35.97,-82.28,,likely inactive (1941-73),,,USGS MRDS,https://mrdata.usgs.gov/mrds/show-mrds.php?dep_id=10025782
+Beykrom Akseki,Turkey,TR,37.05,31.79,Beykrom Madencilik,active (plant listed for sale),,,district approximate,https://madencilikturkiye.com/antalya-aksekide-satilik-olivin-madeni-sahasi-ve-tesisi/
+Skoumtsa (Mt Vourinos),Greece,GR,40.05,21.77,Thermolith S.A.,active,35000,2010-2016,Mindat,https://www.mindat.org/loc-23129.html
+Nuova Cives (Vidracco),Italy,IT,45.43,7.75,Nuova Cives SRL,active,,,approximate from map,https://www.nuovacives.com
+Chettichavadi Jaghir (Salem),India,IN,11.73,78.14,Dalmia Bharat,active,77745,2012-13,Mindat (district total),https://www.mindat.org/loc-426607.html
+TANMAG Chalk Hills (Salem),India,IN,11.73,78.12,Tamil Nadu Magnesite Ltd,active,101768,FY2023-24,approximate,Tamil Nadu government policy note 2024

@@ -5,6 +5,67 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Olivine as a switchable second feedstock, with a trace-metal loading cap (branch `olivine`, not yet live)
+
+Zeke asked (2026-09-05) how olivine would change the global picture: more CO2
+per tonne, so cheaper to move, and an Mg-dominated drainage that might loosen
+the drainage limit. Scoped in `OLIVINE_SCOPING_2026-09.md`, reviewed by three
+agents before implementation (`OLIVINE_REVIEWS_2026-09-05.md`), then built as
+phases A (physics) and B (trace-metal cap) of that plan. Phases C2 (ultramafic
+outcrop inventory), D (seaborne, rail and barge delivery) and A' (ensemble
+branches) are not done; the economics toggle is disabled for olivine until D1
+exists.
+
+What shipped on the branch:
+
+- **Archetype `aheim_dunite`**, composition and trace metals from Amann et al.
+  2020 (XRF, n = 3): MgO 45.0, CaO 0.40 wt%; Ni 2,889, Cr 2,156 mg/kg; 90%
+  olivine at Fo92 with the divalent count set to 1.84 (Fe2+ carries no durable
+  alkalinity). CO2 potential 0.989 tCO2/t, 3.35x delivered basalt.
+- **Kinetics**: the existing Palandri & Kharaka mixture gives dunite 5.6x
+  basalt's Ca+Mg charge release at the reference condition (4.1-5.9 over pH
+  4.5-8, 10-25 C; gate 16b). Because dunite packs 3.7x more charge per volume,
+  its surface retreats only 1.53x faster at the same grind; per hectare at the
+  same 30 t/ha the uncapped removal is 4.7x basalt's (charge ratio x density
+  ratio; gate 16c). A first cut applied the rate ratio twice and the build
+  reported 17.7x; gate 16c now catches that.
+- **Ceiling with feedstock Mg**: pore-water Mg 2 mM for dunite (basalt 1 mM),
+  raising the drainage ceiling 1.21x at the median cell (p10-p90 1.18-1.28).
+  5 mM was rejected as the central because 93% of the alkalinity would then be
+  Mg-balanced and the ceiling stops being a ceiling (gate 16d, 2[Mg]/A <= 0.75).
+  A silica diagnostic reports the olivine ceiling solution supersaturated with
+  amorphous silica on 47.6% of cropland; reported, not applied.
+- **Trace-metal loading cap** (new limiting-factor class, on by default for
+  olivine): a cumulative rock budget on TOTAL applied Ni, (limit - baseline) x
+  plough-layer mass / Ni in rock, over 20 years, or the regime's annual
+  loading rule. Six regimes read from the legal texts and protocol PDF; default
+  Puro Table 4.3 (Ni 150 mg/kg) permits 6.1 of 30 t/ha/yr; EU 86/278 Annex IC
+  (3 kg Ni/ha/yr) permits 1.0; US 40 CFR 503 permits 7.3. Basalt is evaluated
+  at a literature Ni of 100 mg/kg (Lewis et al. 2021, six ERW quarries 18-195;
+  the calibration assays carry no Ni): no bind under Puro, exactly the display
+  rate under the EU annual rule, 65% under the strictest soil limits. Not
+  expressible as a budget: EU 2019/1009 caps Ni in CE-marked
+  fertilising products at 90-100 mg/kg, ~30x below dunite.
+- **Numbers at steady state (build 2026-09-05)**: olivine uncapped 5.96 Gt/yr
+  (4.6x basalt), drainage-limited 0.916 Gt (1.45x; the limit binds on 98.7% of
+  area), and under the default trace-metal regime 0.704 Gt; under the strict
+  EU regimes 0.13-0.20 Gt. The trace-metal cap, not kinetics or drainage, is
+  the operative bound on 34% of cropland under Puro and 90-95% under the EU
+  rules.
+- **Uncalibrated and labelled so** everywhere it appears: no verified olivine
+  delivery exists; the basalt lab-to-field anchor is transferred (defensible in
+  part because 80% of the modelled basalt rate is already its 10% olivine).
+  Field evidence runs from ten Berge et al. 2012 (faster than lab at 1.6 t/ha)
+  to Amann et al. 2020 (2-3 orders slower at 220 t/ha); passivation is not
+  modelled.
+- **Rejected on review**: crediting all-cation carbonate in calcareous soils
+  (carbon-neutral when the Ca comes from soil carbonate; to_do 12b keeps the
+  exchange-stock version); a Ca:Mg exchange flag (not computable from
+  SoilGrids).
+- Viewer: Feedstock group with a Basalt / Olivine segment, trace-metal cap
+  checkbox and regime selector; tex6/tex7 carry the olivine bytes in the tex1/
+  tex5 encodings; new gates 16a-16f in `test_kinetics.py`.
+
 ## Pore-water pH-target basis withdrawn from the sidebar
 
 The "Hold pH <= 7.5" ceiling basis (2026-08-26) is no longer exposed (Zeke,

@@ -1220,6 +1220,144 @@ def report_calibration_arithmetic() -> None:
               f"{frac:5.1%} dissolved over 4 yr  [{flag}]")
 
 
+# ---------------------------------------------------------------------------
+# Gate 16: the second feedstock (olivine, 2026-09-05). See the SECOND FEEDSTOCK
+# section of constants.py and OLIVINE_REVIEWS_2026-09-05.md.
+# ---------------------------------------------------------------------------
+def gate16a_dunite_co2_potential_from_oxides() -> None:
+    """The archetype oxides reproduce the stated CO2 potential (0.95-1.05
+    tCO2/t for Aheim dunite on the Ca+Mg basis), and pure forsterite gives
+    1.25: an arithmetic check that the oxide->CO2 chain is not off by a
+    stoichiometric factor for a rock that is nearly all Mg."""
+    ct = K.co2_t_per_tonne("aheim_dunite")
+    fo = 2.0 * 1000.0 * (2.0 * 40.304 / 140.69 / C.M_MGO) * C.MOL_CO2_PER_KMOL_CHARGE_T
+    ok = 0.95 <= ct <= 1.05 and abs(fo - 1.251) < 0.01
+    record("gate16a_dunite_co2_potential", ok,
+           f"Aheim dunite {ct:.3f} tCO2/t (basalt {K.co2_t_per_tonne(C.FEEDSTOCK_DEFAULT):.3f}); "
+           f"pure forsterite {fo:.3f}")
+
+
+def gate16b_dunite_basalt_charge_ratio_band() -> None:
+    """Mixture-level rate check (reviewer F17): the dunite / delivered_basalt
+    Ca+Mg charge-release ratio stays within 4.0-6.0 over pH 4.5-8 and 10-25 C.
+    Any edit to the mineral table or the divalent counts that moves the
+    headline ratio trips this rather than silently rescaling the olivine map."""
+    ratios = []
+    for ph in (4.5, 5.5, 6.5, 7.5, 8.0):
+        for t in (10.0, 15.0, 25.0):
+            T = t + 273.15
+            ratios.append(float(K.rate_ca_mg_release("aheim_dunite", ph, T)
+                                / K.rate_ca_mg_release(C.FEEDSTOCK_DEFAULT, ph, T)))
+    lo, hi = min(ratios), max(ratios)
+    ok = 4.0 <= lo and hi <= 6.0
+    record("gate16b_charge_ratio_band", ok,
+           f"dunite/basalt charge release {lo:.2f}-{hi:.2f} over pH 4.5-8, 10-25 C (band 4.0-6.0)")
+
+
+def gate16c_no_rate_double_count() -> None:
+    """The per-hectare removal ratio at small u must equal the charge-release
+    ratio times the density ratio: retreat_scale x rate ratio x CT ratio ==
+    (R_o/R_b) x (rho_b/rho_o). The first implementation put the rate ratio in
+    BOTH the L1 texture and the retreat scale and the build reported 17.7x
+    basalt; this gate exists so that cannot recur."""
+    T = C.L1_REF["T_soil_C"] + 273.15
+    r = float(K.rate_ca_mg_release("aheim_dunite", C.L1_REF["pH"], T)
+              / K.rate_ca_mg_release(C.FEEDSTOCK_DEFAULT, C.L1_REF["pH"], T))
+    got = (K.retreat_scale("aheim_dunite") * r
+           * K.co2_t_per_tonne("aheim_dunite") / K.co2_t_per_tonne(C.FEEDSTOCK_DEFAULT))
+    rho_b = C.FEEDSTOCK_ARCHETYPES[C.FEEDSTOCK_DEFAULT]["density_kg_m3"]
+    rho_o = C.FEEDSTOCK_ARCHETYPES["aheim_dunite"]["density_kg_m3"]
+    want = r * rho_b / rho_o
+    ok = abs(got / want - 1.0) < 1e-9 and 1.0 < K.retreat_scale("aheim_dunite") * r < 2.5
+    record("gate16c_no_rate_double_count", ok,
+           f"frac x CT ratio {got:.3f} vs charge x density ratio {want:.3f}; "
+           f"retreat ratio {K.retreat_scale('aheim_dunite') * r:.3f} (rate alone {r:.2f})")
+
+
+def gate16d_olivine_ceiling_not_degenerate() -> None:
+    """2[Mg]/A <= FLUX_CEILING_MG_DEGENERACY_MAX at the shipped olivine Mg over
+    the protocol pCO2 range and 5-25 C (reviewer F6): otherwise the ceiling is
+    a restatement of the Mg input. Also asserts the 5 mM upper sensitivity
+    WOULD fail, so the bound is doing work."""
+    mg = K.ceiling_mg_mM_for("aheim_dunite")
+    worst = 0.0
+    for pco2 in (C.PCO2_UNSATURATED_UATM, 10_000.0, C.PCO2_SATURATED_UATM):
+        for t in (5.0, 15.0, 25.0):
+            A = float(K.alkalinity_ceiling_mol_l(pco2, t + 273.15, mg_mM=mg)) * 1e3
+            worst = max(worst, 2.0 * mg / A)
+    A5 = float(K.alkalinity_ceiling_mol_l(C.PCO2_UNSATURATED_UATM, 288.15, mg_mM=5.0)) * 1e3
+    ok = worst <= C.FLUX_CEILING_MG_DEGENERACY_MAX and 2.0 * 5.0 / A5 > C.FLUX_CEILING_MG_DEGENERACY_MAX
+    record("gate16d_ceiling_not_degenerate", ok,
+           f"2[Mg]/A worst {worst:.3f} at Mg {mg:g} mM (max {C.FLUX_CEILING_MG_DEGENERACY_MAX}); "
+           f"at 5 mM it would be {2.0 * 5.0 / A5:.3f}")
+
+
+def gate16e_trace_metal_budget_arithmetic() -> None:
+    """Hand arithmetic for the default regime and the two loading regimes, and
+    the regime ordering the constants note states. Soil mass 2,600 t/ha at
+    0.20 m x 1,300 kg/m3."""
+    soil = C.TRACE_METAL_MIXING_DEPTH_M * C.TRACE_METAL_BULK_DENSITY_KG_M3 * 10.0   # t/ha
+    ni = C.FEEDSTOCK_ARCHETYPES["aheim_dunite"]["Ni_mg_kg"]
+    lim = C.TRACE_METAL_REGIMES["puro_2025"][1]
+    want = (lim - C.TRACE_METAL_BASELINE_NI_MG_KG) * soil / ni
+    bud, rate, binding = K.trace_metal_budget_t_ha("aheim_dunite", "puro_2025")
+    eu_hi = K.trace_metal_budget_t_ha("aheim_dunite", "eu_86_278_high")
+    us = K.trace_metal_budget_t_ha("aheim_dunite", "us_epa_503")
+    ok = (abs(bud - want) < 1e-6 and abs(rate - want / C.TRACE_METAL_HORIZON_YR) < 1e-6
+          and binding == "soil concentration"
+          and eu_hi[2] == "annual loading" and abs(eu_hi[1] - 3.0e3 / ni) < 1e-6
+          and us[2] == "annual loading" and abs(us[1] - 21.0e3 / ni) < 1e-6
+          and rate < C.APPLICATION_RATE_T_HA_YR
+          # basalt at its literature Ni: does not bind under the default, and
+          # the EU annual rule lands exactly on the display rate
+          and K.trace_metal_budget_t_ha(C.FEEDSTOCK_DEFAULT)[1] > C.APPLICATION_RATE_T_HA_YR
+          and abs(K.trace_metal_budget_t_ha(C.FEEDSTOCK_DEFAULT, "eu_86_278_high")[1]
+                  - 3.0e3 / C.FEEDSTOCK_ARCHETYPES[C.FEEDSTOCK_DEFAULT]["Ni_mg_kg"]) < 1e-6)
+    record("gate16e_trace_metal_budget", ok,
+           f"puro_2025 budget {bud:.1f} t/ha, {rate:.2f} t/ha/yr ({binding}); EU high "
+           f"{eu_hi[1]:.2f} t/ha/yr ({eu_hi[2]}); US 503 {us[1]:.2f} ({us[2]}); "
+           f"display rate {C.APPLICATION_RATE_T_HA_YR:g}; basalt (Ni "
+           f"{C.FEEDSTOCK_ARCHETYPES[C.FEEDSTOCK_DEFAULT]['Ni_mg_kg']:g} mg/kg) default "
+           f"{K.trace_metal_budget_t_ha(C.FEEDSTOCK_DEFAULT)[1]:.0f} t/ha/yr, EU annual "
+           f"{K.trace_metal_budget_t_ha(C.FEEDSTOCK_DEFAULT, 'eu_86_278_high')[1]:.1f}")
+
+
+def gate16f_browser_feedstock_payload() -> None:
+    """The emitted payload carries the second feedstock with scalars that
+    reproduce Python (CT, retreat scale, Mg, carbonate phi), its textures are
+    on disk, and the trace-metal regimes match the constants."""
+    import json
+    root = Path(__file__).resolve().parent.parent
+    js = root / "src/engine_constants.js"
+    if not js.exists():
+        record("gate16f_browser_feedstock_payload", None, "skipped: no engine_constants.js")
+        return
+    txt = js.read_text()
+    payload = json.loads(txt[txt.index("{"):txt.rindex("}") + 1])
+    fs = payload.get("feedstocks", {})
+    o = fs.get("aheim_dunite")
+    if not o:
+        record("gate16f_browser_feedstock_payload", False, "payload has no aheim_dunite")
+        return
+    ca = C.FEEDSTOCK_ARCHETYPES["aheim_dunite"]["CaO_wt"] / C.M_CAO
+    f_ca = ca / (ca + C.FEEDSTOCK_ARCHETYPES["aheim_dunite"]["MgO_wt"] / C.M_MGO)
+    checks = {
+        "tco2PerT": abs(o["tco2PerT"] - K.co2_t_per_tonne("aheim_dunite")) < 1e-3,
+        "retreatScale": abs(o["retreatScale"] - K.retreat_scale("aheim_dunite")) < 1e-3,
+        "mgMM": o["mgMM"] == K.ceiling_mg_mM_for("aheim_dunite"),
+        "carbonatePhi": abs(o["carbonatePhi"] - 0.5 * f_ca) < 1e-4,
+        "calibrated": o["calibrated"] == C.OLIVINE_IS_CALIBRATED,
+        "textures": all((root / "src/textures" / f"{o['tex'][k]}.png").exists() for k in ("main", "paddy")),
+        "regimes": set(payload.get("traceMetal", {}).get("regimes", {})) == set(C.TRACE_METAL_REGIMES),
+        "default": payload.get("traceMetal", {}).get("default") == C.TRACE_METAL_REGIME_DEFAULT,
+        "budget": abs(o["traceBudget"][C.TRACE_METAL_REGIME_DEFAULT]["rateMaxTHaYr"]
+                      - K.trace_metal_budget_t_ha("aheim_dunite")[1]) < 1e-3,
+    }
+    bad = [k for k, v in checks.items() if not v]
+    record("gate16f_browser_feedstock_payload", not bad,
+           "all payload scalars match Python" if not bad else f"mismatch: {bad}")
+
+
 def main() -> int:
     print("=" * 78)
     print("ERW Atlas -- kinetics gates")
@@ -1242,7 +1380,13 @@ def main() -> int:
                gate13d_ceiling_reproduces_mayer_phreeqc,
                gate13e_ph_basis_consistent_with_ceiling,
                gate14_dissolution_table_matches_exact,
-               gate15_no_grind_double_count):
+               gate15_no_grind_double_count,
+               gate16a_dunite_co2_potential_from_oxides,
+               gate16b_dunite_basalt_charge_ratio_band,
+               gate16c_no_rate_double_count,
+               gate16d_olivine_ceiling_not_degenerate,
+               gate16e_trace_metal_budget_arithmetic,
+               gate16f_browser_feedstock_payload):
         try:
             fn()
         except Exception as exc:  # a crashing gate is a failing gate

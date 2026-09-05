@@ -42,8 +42,16 @@
     </section>
 
     <section class="group" id="psd-group">
-      <h2>Feedstock grind <span class="tag" id="psd-tag"></span></h2>
-      <p class="hint">How finely the rock is ground. Finer rock weathers faster.</p>
+      <h2>Feedstock <span class="tag" id="psd-tag"></span></h2>
+      <div class="seg" id="feed-seg"></div>
+      <p class="hint" id="feed-hint"></p>
+      <div id="trace-block">
+        <label class="check"><input type="checkbox" id="chk-trace">
+          <span>Trace-metal loading cap</span></label>
+        <select class="sel" id="sel-trace"></select>
+        <p class="hint" id="trace-hint"></p>
+      </div>
+      <p class="hint" style="margin-top:14px">How finely the rock is ground. Finer rock weathers faster.</p>
       <div id="psd-sliders"></div>
       <p class="hint stability" id="psd-readout"></p>
       <button class="mini" id="btn-psd-reset" style="margin-top:10px">Reset grind</button>
@@ -58,6 +66,8 @@
         <button class="seg-btn" data-econ="1">Delivered cost</button>
       </div>
       <div id="econ-sliders"></div>
+      <p class="hint hidden" id="econ-unavailable">Unavailable for olivine: its supply
+        and delivered cost are not yet modelled.</p>
       <p class="hint stability" id="econ-readout"></p>
     </section>
 

@@ -38,10 +38,14 @@
   };
   // Index 3 is the drainage-concentration ceiling, not one of the three terms.
   // Must match factorColor() in the shader: vec3(0.796, 0.549, 0.902).
-  const FACTOR_COLORS = ["#e0704f", "#4f9fe0", "#8fd14f", "#cb8ce6"];
+  const FACTOR_COLORS = ["#e0704f", "#4f9fe0", "#8fd14f", "#cb8ce6", "#e8d44d"];
   const CEIL_LABEL = "Export capped by drainage";
+  // Index 4: the trace-metal loading cap on the application rate (olivine).
+  // Must match factorColor(4) in the shader: vec3(0.910, 0.831, 0.302).
+  const NI_LABEL = "Trace-metal loading caps application";
 
-  let gl, prog, quad, texA, texB, texC, texD, texE, texRamp, texRampFrac, cpu = null;
+  let gl, prog, quad, texA, texB, texC, texD, texE, texF = null, texG = null,
+      texRamp, texRampFrac, cpu = null;
   let mode = "score";
   let showQuarries = false;
   let showMafic = false;
@@ -96,6 +100,39 @@
   let carbonateOn = !!WA.carbonateOn;
   let systemWide = !!WA.systemWideOn;
   let lastCarbonateGt = 0;       // set by globalGt(); the "of which" footer part
+
+  // Switchable feedstock (2026-09-05). The second feedstock ships as its own
+  // byte source (tex6 baseline, tex7 paddy view) in the SAME encodings as
+  // tex1/tex5, plus per-feedstock scalars: CO2 per unit dissolved fraction,
+  // the retreat scale (charge rate x volume per equivalent, relative to the
+  // basalt anchor), a lab-to-field branch factor, and its own carbonate phi.
+  // Anything not marked calibrated is labelled UNCALIBRATED wherever it shows.
+  const FEED = E.feedstocks || {order: [E.feedstock.archetype], default: E.feedstock.archetype};
+  let feedstock = FEED.default;
+  const fsSpec = () => FEED[feedstock] || {
+    label: "Basalt (delivered)", cdrPerFrac: E.cdrPerFrac, retreatScale: 1,
+    fieldFactor: 1, carbonatePhi: WA.carbonatePhi, calibrated: true,
+    tex: {main: "tex1", paddy: "tex5"}, traceBudget: {}};
+  const isAlt = () => feedstock !== FEED.default;           // not the headline feedstock
+  const cdrPerFrac = () => fsSpec().cdrPerFrac ?? E.cdrPerFrac;
+  const carbPhi = () => (fsSpec().carbonatePhi ?? WA.carbonatePhi) || 0;
+  // u = (deltaRef x retreatScale x fieldFactor / d50) x X; grind enters here.
+  const uScaleK = () => E.dissolution.deltaRefUm * (fsSpec().retreatScale || 1)
+                        * (fsSpec().fieldFactor || 1) / psd.d50;
+  // Trace-metal loading cap: a regime-dependent permitted rock rate, applied
+  // as min(1, permitted / display rate) on the rock applied. Removal is linear
+  // in the rock rate, so on the year-1 layers it scales the uncapped removal
+  // before the drainage ceiling; on the steady-state footer it caps the
+  // reapplication rate. Only feedstocks with a Ni assay carry a budget.
+  const TM = E.traceMetal || {on: false, regimes: {}, default: null};
+  let traceOn = !!TM.on;
+  let traceRegime = TM.default;
+  let econParked = null;         // econ.costExp saved while an alt feedstock is shown
+  function traceEntry() {
+    const tb = fsSpec().traceBudget;
+    return (tb && traceRegime && tb[traceRegime]) ? tb[traceRegime] : null;
+  }
+  const niScale = () => { const t = traceEntry(); return (traceOn && t) ? Math.min(1, t.scale) : 1; };
 
   // Data extent, from the generated grid constants.
   const DATA = {
@@ -193,8 +230,10 @@
   in vec2 vUV;
   out vec4 fragColor;
 
-  uniform sampler2D uA, uB, uC, uD, uE, uRamp, uRampFrac;
+  uniform sampler2D uA, uB, uC, uD, uE, uTexF, uTexG, uRamp, uRampFrac;
   uniform int uPaddyView;      // 1 = swap L1/eta/ceiling bytes from tex5
+  uniform int uFeedstock;      // 1 = second feedstock: L1/eta/ceiling from tex6 (tex7 in paddy view)
+  uniform float uNiScale;      // trace-metal cap: permitted / display rock rate, <= 1
   uniform int uPhBasis;        // 1 = ceiling held at the pH target (tex4.g/b)
   uniform int uSystemWide;     // 1 = acid-soil efficiency set to 1 (wider accounting)
   uniform int uCarbonate;      // 1 = credit solid carbonate where the limit binds
@@ -250,7 +289,8 @@
     if (i == 0) return vec3(0.878, 0.439, 0.310);
     if (i == 1) return vec3(0.310, 0.624, 0.878);
     if (i == 2) return vec3(0.561, 0.820, 0.310);
-    return vec3(0.796, 0.549, 0.902);          // 3 = drainage cannot carry it
+    if (i == 3) return vec3(0.796, 0.549, 0.902);   // 3 = export capped by drainage
+    return vec3(0.910, 0.831, 0.302);               // 4 = trace-metal loading cap
   }
 
   void main() {
@@ -271,13 +311,21 @@
     vec4 a = vec4(texelFetch(uA, px, 0));
     vec4 b = vec4(texelFetch(uB, px, 0));
     vec4 cc = vec4(texelFetch(uC, px, 0));
-    if (uPaddyView == 1) {
+    if (uFeedstock == 1) {
+      // Second feedstock: L1, eta_DIC and the ceiling from its own textures,
+      // same encodings (the ceiling relative to ITS cdrPerFrac, passed as the
+      // uniform below). Paddy view picks the tex7 bytes.
+      vec4 f6 = vec4(texelFetch(uTexF, px, 0));
+      vec4 f7 = vec4(texelFetch(uTexG, px, 0));
+      vec4 fo = uPaddyView == 1 ? f7 : f6;
+      a.r = fo.r; a.g = fo.g; b.b = fo.b;
+    } else if (uPaddyView == 1) {
       // Paddy-field view: same three quantities, cell re-evaluated at 100%
       // paddy. Identical encodings, so only the byte source changes.
       vec4 pv = vec4(texelFetch(uE, px, 0));
       a.r = pv.r; a.g = pv.g; b.b = pv.b;
     }
-    if (uPhBasis == 1) {
+    if (uPhBasis == 1 && uFeedstock == 0) {
       // Ceiling basis: pore water held at the pH target instead of rising to
       // calcite saturation. Same encoding, different byte source.
       vec4 d4 = vec4(texelFetch(uD, px, 0));
@@ -365,7 +413,9 @@
     // integral. It was applied twice once before, via a surface-area multiplier
     // on the rate AND again on the CO2 figure, which inflated CO2 by 3.45x at the
     // fine end and broke the stoichiometric ceiling.
-    float cdr = frac * exp(ld) * uCdrPerFrac;
+    // uNiScale: the trace-metal cap on the rock rate; removal is linear in
+    // rock applied, so it scales the uncapped removal before the ceiling.
+    float cdr = frac * exp(ld) * uCdrPerFrac * uNiScale;
 
     // DRAINAGE-CONCENTRATION CEILING. The carbon has to leave dissolved in the
     // water that leaves, so it is bounded by q * [HCO3-]_max * 44 no matter how
@@ -381,6 +431,9 @@
                                clamp((b.b * 255.0 - 5.0) / 250.0, 0.0, 1.0)))
                  * uCdrPerFrac;
     bool ceilBinds = uCeilOn == 1 && ceil < cdr;
+    // The trace-metal cap is the operative bound where it cuts the rate and
+    // the drainage could still have carried the (capped) carbon.
+    bool niBinds = uNiScale < 1.0 && !ceilBinds;
     if (uCeilOn == 1) {
       // Wider accounting: the excess the water cannot carry precipitates as
       // calcite at 1 CO2 per Ca on the feedstock's Ca share (uCarbPhi). Export
@@ -395,6 +448,7 @@
     // any speed -- and on 91.0% of cropland that is the operative limit, which is
     // exactly the thing a reader needs to be told.
     if (uMode == 1) {
+      if (niBinds)   { fragColor = withMafic(factorColor(4), mafic); return; }
       if (ceilBinds) { fragColor = withMafic(factorColor(3), mafic); return; }
       int lo = (lr <= ld && lr <= lt) ? 0 : ((ld <= lt) ? 1 : 2);
       fragColor = withMafic(factorColor(lo), mafic);
@@ -571,7 +625,7 @@
   }
 
   /* ---------------- CPU-side copy for the readout ---------------- */
-  function decodeToCPU(bmpA, bmpB, bmpC, bmpE, bmpD) {
+  function decodeToCPU(bmpA, bmpB, bmpC, bmpE, bmpD, bmpF, bmpG) {
     const cv = document.createElement("canvas");
     cv.width = G.width; cv.height = G.height;
     const ctx = cv.getContext("2d", { willReadFrequently: true });
@@ -581,7 +635,7 @@
       return ctx.getImageData(0, 0, cv.width, cv.height).data;
     };
     return { A: grab(bmpA), B: grab(bmpB), C: grab(bmpC), E: grab(bmpE),
-             D: grab(bmpD) };
+             D: grab(bmpD), F: bmpF ? grab(bmpF) : null, G: bmpG ? grab(bmpG) : null };
   }
 
   /* ---------------- geometry of the current view ---------------- */
@@ -640,12 +694,14 @@
     gl.uniform1i(u("uPhBasis"), phBasis ? 1 : 0);
     gl.uniform1i(u("uSystemWide"), systemWide ? 1 : 0);
     gl.uniform1i(u("uCarbonate"), carbonateOn ? 1 : 0);
-    gl.uniform1f(u("uCarbPhi"), WA.carbonatePhi || 0);
+    gl.uniform1f(u("uCarbPhi"), carbPhi());
+    gl.uniform1i(u("uFeedstock"), isAlt() ? 1 : 0);
+    gl.uniform1f(u("uNiScale"), niScale());
     const gslice = gSlice();
     gl.uniform1fv(u("uG[0]"), gslice);
     gl.uniform2f(u("uGLogU"), E.dissolution.uLog.lo, E.dissolution.uLog.hi);
-    gl.uniform1f(u("uUScale"), E.dissolution.deltaRefUm / psd.d50);
-    gl.uniform1f(u("uCdrPerFrac"), E.cdrPerFrac);
+    gl.uniform1f(u("uUScale"), uScaleK());
+    gl.uniform1f(u("uCdrPerFrac"), cdrPerFrac());
     gl.uniform1f(u("uNegligible"), E.cdrNegligible);
     gl.uniform1f(u("uFracRampMax"), E.fracRampMax || 1.0);
     gl.uniform1i(u("uShowMafic"), showMafic ? 1 : 0);
@@ -656,6 +712,12 @@
     gl.uniform1f(u("uTruckScale"), truckScale());
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texA);
     gl.uniform1i(u("uA"), 0);
+    if (texF && texG) {
+      gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, texF);
+      gl.uniform1i(u("uTexF"), 7);
+      gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, texG);
+      gl.uniform1i(u("uTexG"), 8);
+    }
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texB);
     gl.uniform1i(u("uB"), 1);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, texC);
@@ -762,15 +824,17 @@
     // The ceiling bounds the CARBON and not the rock, so frac is returned
     // unbounded and cdr is capped. Mirrors the shader exactly; gate 8 in
     // test_kinetics.py asserts both read the same generated constants.
-    const uncapped = frac * Math.exp(ld) * E.cdrPerFrac;
+    const ni = niScale();
+    const uncapped = frac * Math.exp(ld) * cdrPerFrac() * ni;
     let capped = uncapped, carbonate = 0;
     if (ceilOn && ceil !== undefined) {
       capped = Math.min(uncapped, ceil);
-      if (carbonateOn) carbonate = (WA.carbonatePhi || 0) * Math.max(uncapped - ceil, 0);
+      if (carbonateOn) carbonate = carbPhi() * Math.max(uncapped - ceil, 0);
     }
+    const ceilBinds = ceilOn && ceil !== undefined && ceil < uncapped;
     return {cdr: capped + carbonate, cdrExport: capped, carbonate,
-            cdrUncapped: uncapped, ceil, frac,
-            ceilBinds: ceilOn && ceil !== undefined && ceil < uncapped,
+            cdrUncapped: uncapped, cdrNoCap: uncapped / Math.max(ni, 1e-12), ceil, frac,
+            ceilBinds, niBinds: ni < 1 && !ceilBinds,
             contrib: [lr, ld, lt]};
   }
 
@@ -794,11 +858,14 @@
     const raw = (b) => clamp(0, (b - 5) / 250, 1);
     // Paddy-field view swaps the three affected bytes; eta_transport and cost
     // are unchanged by design (same water flux, same haul).
-    const bL1 = paddyView ? P[i] : A[i];
-    const bEd = paddyView ? P[i + 1] : A[i + 1];
+    const alt = isAlt() && cpu.F && cpu.G;
+    const F = alt ? (paddyView ? cpu.G : cpu.F) : null;
+    const bL1 = alt ? F[i] : (paddyView ? P[i] : A[i]);
+    const bEd = alt ? F[i + 1] : (paddyView ? P[i + 1] : A[i + 1]);
     const D = cpu.D;
-    const bCl = phBasis ? (paddyView ? D[i + 2] : D[i + 1])
-                        : (paddyView ? P[i + 2] : B[i + 2]);
+    const bCl = alt ? F[i + 2]
+              : (phBasis ? (paddyView ? D[i + 2] : D[i + 1])
+                         : (paddyView ? P[i + 2] : B[i + 2]));
     const l1 = E.l1Enc.lo + raw(bL1) * (E.l1Enc.hi - E.l1Enc.lo);   // no grind term
     const fl = E.cost ? E.cost.floor : 1;
     return {rel: Math.pow(10, l1), l1, eDic: raw(bEd), eTr: raw(A[i + 2]),
@@ -867,7 +934,7 @@
 
   function fracOf(X, years) {
     const D = E.dissolution, g = gSlice();
-    const u = (D.deltaRefUm / psd.d50) * X * (years === undefined ? 1 : years);
+    const u = uScaleK() * X * (years === undefined ? 1 : years);
     if (!(u > 0)) return 0;
     return fracAtLog10u(Math.log10(u), g, D);
   }
@@ -876,7 +943,7 @@
      One definition, used by the hover readout and the stability sample. */
   function decodeCeil(byte) {
     const t = clamp(0, (byte - 5) / 250, 1);
-    return Math.pow(10, FC.enc.lo + t * (FC.enc.hi - FC.enc.lo)) * E.cdrPerFrac;
+    return Math.pow(10, FC.enc.lo + t * (FC.enc.hi - FC.enc.lo)) * cdrPerFrac();
   }
 
   /* Invert the cost value function to report $/t, so the readout shows the
@@ -964,7 +1031,7 @@
       ? "The reference grind, against which the other settings are compared"
       : (rel >= 1 ? rel.toFixed(2) + "\u00d7 faster" : (1 / rel).toFixed(2) + "\u00d7 slower")
         + " weathering than the reference grind";
-    $("psd-tag").textContent = atRef ? "Reference" : "Custom";
+    $("psd-tag").textContent = atRef ? "Reference grind" : "Custom grind";
   }
 
   function buildEconSliders() {
@@ -1095,6 +1162,93 @@
     if (fb) fb.classList.toggle("hidden", !ceilOn);
   }
 
+  /* Methods text for the switchable feedstock and the trace-metal cap. Every
+     number is read from the build payload, never typed here. */
+  function feedstockMethodsLi() {
+    const alt = FEED.order.find((k) => k !== FEED.default);
+    if (!alt || !FEED[alt]) return "";
+    const o = FEED[alt], b = FEED[FEED.default] || {}, st = o.stakes || {};
+    const f = (x, nd = 2) => (x === undefined || x === null ? "?" : (+x).toFixed(nd));
+    const tb = o.traceBudget || {};
+    const regimes = Object.keys(tb).map((k) =>
+      `${TM.regimes[k] ? TM.regimes[k].label : k}: ${f(tb[k].rateMaxTHaYr, 1)} t/ha/yr ` +
+      `(${tb[k].binding})${k === TM.default ? " <i>default</i>" : ""}`).join("; ");
+    return `
+      <li><b>Second feedstock: olivine</b> (viewer option, ${o.calibrated ? "calibrated" : "<b>UNCALIBRATED</b>"}).
+      ${o.label}, composition from ${o.source || "the archetype source"}:
+      ${f(o.tco2PerT, 3)} tCO₂/t on the Ca+Mg basis (${f(o.tco2PerT / (b.tco2PerT || E.feedstock.tco2PerT))}×
+      basalt). Its charge release per m² is ${f(o.chargeRatioRef, 1)}× basalt's at the
+      reference condition (Palandri &amp; Kharaka forsterite, Fo92 divalent count), but it
+      packs ${f(1 / (o.retreatScale || 1), 1)}× more charge per unit volume, so its surface
+      retreats only ${f((o.retreatScale || 1) * (o.chargeRatioRef || 1), 2)}× faster at the same
+      grind; per hectare at the same ${E.feedstock.rateTHaYr} t/ha the uncapped removal is
+      ${f(st.uncappedVsBasalt, 1)}× basalt's. Its Mg-dominated drainage is solved with pore-water
+      Mg ${o.mgMM} mM (basalt ${b.mgMM ?? "1"}), which raises the drainage ceiling
+      ×${f(st.ceilRatioP50)} at the median cell (p10–p90 ${f(st.ceilRatioP10)}–${f(st.ceilRatioP90)});
+      the limit then binds on ${f((st.bindsAreaFrac || 0) * 100, 0)}% of cropland and the
+      drainage-limited total is ${f(st.limitedGt)} Gt/yr (${f(st.limitedVsBasalt)}× basalt,
+      before the trace-metal cap). <b>Why uncalibrated:</b> no verified olivine delivery
+      exists, so the basalt lab-to-field anchor is transferred unchanged (defensible in part
+      because ~80% of the modelled basalt rate is already its 10% olivine); field evidence
+      runs from ten Berge et al. 2012 (faster than lab at 1.6 t/ha) to Amann et al. 2020
+      (2–3 orders slower at 220 t/ha), a dose dependence the shrinking-core model has no
+      term for, so passivation is unmodelled. The ceiling solution is supersaturated with
+      amorphous silica on ${f((st.silicaSuperShare || 0) * 100, 0)}% of cropland (reported,
+      not applied). Olivine supply and delivered cost are not yet modelled, so the
+      economics toggle is unavailable for it.</li>
+      <li><b>Trace-metal loading cap.</b> Dunite carries ${o.niMgKg} mg/kg Ni and
+      ${o.crMgKg} mg/kg Cr (${o.source || ""}). The cap is a cumulative rock budget per
+      hectare: (soil limit − baseline ${TM.baselineNiMgKg} mg/kg) × plough-layer mass
+      (${TM.mixingDepthM} m × ${TM.bulkDensityKgM3} kg/m³) ÷ Ni in the rock, on TOTAL applied
+      Ni as Puro's rule 3.6.2(e) requires, spread over ${TM.horizonYr} years, or the
+      regime's annual loading rule where that is tighter. Removal is linear in the rock
+      rate, so the year-1 layers scale by permitted ÷ ${E.feedstock.rateTHaYr} t/ha and the
+      steady-state footer caps the reapplication rate. Regimes: ${regimes}. Limits were read
+      from the legal texts; Cr is secondary (chromite-hosted Cr(III); neither 86/278/EEC nor
+      40 CFR 503 limits it). Not expressible as a budget: EU Regulation 2019/1009 caps Ni in
+      CE-marked fertilising products at 90–100 mg/kg, ~30× below dunite, and Puro requires
+      asbestiform screening of ultramafic feedstocks. Baseline soil Ni is a single global
+      assumption (no gridded layer exists). Basalt is evaluated at a literature Ni of
+      ${b.niMgKg} mg/kg (${b.traceSource || "Lewis et al. 2021"}; the calibration assays carry
+      no Ni), which does not bind under the default regime and sits exactly on the EU annual
+      rule at ${E.feedstock.rateTHaYr} t/ha/yr.</li>`;
+  }
+
+  function syncFeed() {
+    const sp = fsSpec(), alt = isAlt();
+    document.querySelectorAll("#feed-seg .seg-btn").forEach((b) =>
+      b.classList.toggle("active", b.dataset.feed === feedstock));
+    const h = $("feed-hint");
+    if (h) h.innerHTML = alt
+      ? `<b>Uncalibrated.</b> ${sp.label}, ${(+sp.tco2PerT).toFixed(2)} tCO₂/t; no verified `
+        + `olivine delivery, so basalt's field anchor is transferred. Economics unavailable.`
+      : `${sp.label}, ${(+(sp.tco2PerT ?? E.feedstock.tco2PerT)).toFixed(3)} tCO₂/t, `
+        + `calibrated on the verified deliveries.`;
+    const cb = $("chk-trace"), sel = $("sel-trace"), th = $("trace-hint");
+    if (cb) {
+      cb.checked = traceOn;
+      const te = traceEntry();
+      const hasAssay = sp.niMgKg !== null && sp.niMgKg !== undefined;
+      cb.disabled = !hasAssay;
+      if (sel) sel.disabled = !traceOn || !hasAssay;
+      th.innerHTML = !hasAssay
+        ? `No Ni assay for ${sp.label.toLowerCase()} yet, so the cap is not evaluated.`
+        : (traceOn && te
+          ? (te.rateMaxTHaYr >= E.feedstock.rateTHaYr
+            ? `<b>On, not binding.</b> Ni would permit ${te.rateMaxTHaYr.toFixed(0)} t/ha/yr `
+              + `(${te.binding}); ${sp.niMgKg} mg/kg Ni in the rock.`
+            : `<b>On.</b> Ni permits ${te.rateMaxTHaYr.toFixed(1)} of ${E.feedstock.rateTHaYr} t/ha/yr `
+              + `(${te.binding}); ${sp.niMgKg} mg/kg Ni in the rock.`)
+          : `Caps the rock rate where cumulative Ni would cross a soil or loading limit.`);
+    }
+    // Economics: the cost surface is basalt's (mafic quarries, truck). Until an
+    // olivine supply/delivery model exists the toggle is disabled for it.
+    const eg = document.querySelectorAll("#econ-seg .seg-btn");
+    eg.forEach((b) => { b.disabled = alt; });
+    const eh = $("econ-unavailable");
+    if (eh) eh.classList.toggle("hidden", !alt);
+  }
+
   function syncWider() {
     const st = WA.stakes || {};
     const g = (x, nd = 2) => (x === undefined || x === null ? "?" : x.toFixed(nd));
@@ -1210,7 +1364,8 @@
     // because it is a bound rather than a rate.
     let lo = 0;
     for (let k = 1; k < 3; k++) if (g.contrib[k] < g.contrib[lo]) lo = k;
-    const limLabel = g.ceilBinds ? CEIL_LABEL : CRIT[lo].label;
+    const limLabel = g.niBinds ? NI_LABEL : (g.ceilBinds ? CEIL_LABEL : CRIT[lo].label);
+    const te = traceEntry();
 
     const cdr = g.cdr;
     const pe = E.phEncoding;
@@ -1250,6 +1405,16 @@
           `${g.carbonate.toFixed(2)} tCO₂/ha/yr</td></tr>` : ``) +
       (systemWide
         ? `<tr><td class="k">Accounting</td><td class="v">system-wide (acid-soil efficiency set to 1)</td></tr>` : ``) +
+      (isAlt()
+        ? `<tr><td class="k">Feedstock</td><td class="v">${fsSpec().label}` +
+          `${fsSpec().calibrated ? "" : " <span class=\"warn-inline\">(uncalibrated)</span>"}</td></tr>` : ``) +
+      (traceOn && te
+        ? `<tr><td class="k">Trace-metal cap</td><td class="v">${te.rateMaxTHaYr.toFixed(1)} of ` +
+          `${E.feedstock.rateTHaYr} t/ha/yr permitted (${te.binding}, ${TM.regimes[traceRegime].label})</td></tr>`
+        : (traceOn && isAlt() ? `` : ``)) +
+      (traceOn && isAlt() && g.niBinds && g.cdrNoCap > g.cdr
+        ? `<tr><td class="k">Without the trace-metal cap</td><td class="v">` +
+          `${g.cdrNoCap < 0.01 ? g.cdrNoCap.toExponential(1) : g.cdrNoCap.toFixed(2)} tCO₂/ha/yr</td></tr>` : ``) +
       `<tr><td class="k">Limiting factor</td><td class="v">${limLabel}</td></tr>` +
       `<tr><td class="k">Soil pH (0–15 cm)</td><td class="v">${soilPh.toFixed(1)}</td></tr>` +
       // Context, not an input. The model reads crop identity nowhere except rice,
@@ -1298,6 +1463,9 @@
       if (ceilOn) rows.push(
         `<div class="lrow"><span class="sw" style="background:${FACTOR_COLORS[3]}"></span>` +
         `<span class="lbl">${CEIL_LABEL}</span></div>`);
+      if (niScale() < 1) rows.push(
+        `<div class="lrow"><span class="sw" style="background:${FACTOR_COLORS[4]}"></span>` +
+        `<span class="lbl">${NI_LABEL}</span></div>`);
       L.innerHTML = rows.join("") + eligRows();
       return;
     }
@@ -1349,9 +1517,14 @@
         if (!(B[i + 1] & 1)) continue;
         const crop = B[i] / 255;
         if (crop < 0.01) continue;
-        out.push([A[i], A[i + 1], A[i + 2], crop * wLat, cpu.C[i + 2], B[i + 2],
-                  cpu.E[i], cpu.E[i + 1], cpu.E[i + 2],
-                  cpu.D[i + 1], cpu.D[i + 2]]);
+        const row = [A[i], A[i + 1], A[i + 2], crop * wLat, cpu.C[i + 2], B[i + 2],
+                     cpu.E[i], cpu.E[i + 1], cpu.E[i + 2],
+                     cpu.D[i + 1], cpu.D[i + 2]];
+        // Second feedstock bytes, 11..16: L1, eta, ceiling (baseline), then
+        // the same three in the paddy view.
+        if (cpu.F && cpu.G) row.push(cpu.F[i], cpu.F[i + 1], cpu.F[i + 2],
+                                     cpu.G[i], cpu.G[i + 1], cpu.G[i + 2]);
+        out.push(row);
       }
     }
     sample = out;
@@ -1363,31 +1536,36 @@
      the decile edges and the global total in the footer, so those three can never
      disagree about what is being drawn. */
   function xOfRow(row, exps) {
-    const b0 = paddyView && row[6] !== undefined ? row[6] : row[0];
+    const b0 = isAlt() && row[11] !== undefined
+      ? (paddyView ? row[14] : row[11])
+      : (paddyView && row[6] !== undefined ? row[6] : row[0]);
     const rel = Math.pow(10, E.l1Enc.lo + rawByte(b0) * (E.l1Enc.hi - E.l1Enc.lo));
     return Math.exp(exps[0] * Math.log(Math.max(rel, 1e-12))
                   + exps[2] * Math.log(Math.max(rawByte(row[2]), 1e-12)));
   }
   const eDicOfRow = (row, exps) => systemWide ? 1 :
     Math.pow(Math.max(rawByte(
-      paddyView && row[7] !== undefined ? row[7] : row[1]), 1e-12), exps[1]);
+      isAlt() && row[12] !== undefined ? (paddyView ? row[15] : row[12])
+      : (paddyView && row[7] !== undefined ? row[7] : row[1])), 1e-12), exps[1]);
 
   /* The ceiling byte for a row under the current basis and view. One
      definition so the map, the stability metric and the footer cannot pick
      different ceilings. */
-  const ceilByteOfRow = (row) => phBasis
-    ? (paddyView && row[10] !== undefined ? row[10] : row[9])
-    : (paddyView && row[8] !== undefined ? row[8] : row[5]);
+  const ceilByteOfRow = (row) => (isAlt() && row[13] !== undefined)
+    ? (paddyView ? row[16] : row[13])
+    : (phBasis
+      ? (paddyView && row[10] !== undefined ? row[10] : row[9])
+      : (paddyView && row[8] !== undefined ? row[8] : row[5]));
 
   function cdrOfRow(row, exps) {
     const X = xOfRow(row, exps), eDic = eDicOfRow(row, exps);
-    let cdr = fracOf(X) * eDic * E.cdrPerFrac;
+    let cdr = fracOf(X) * eDic * cdrPerFrac() * niScale();
     // Same ceiling as the shader and the hover readout. Without it here the
     // stability metric and the decile edges would be computed on a different
     // model from the one being drawn.
     if (ceilOn && row[5] !== undefined) {
       const c = decodeCeil(ceilByteOfRow(row));
-      const credit = carbonateOn ? (WA.carbonatePhi || 0) * Math.max(cdr - c, 0) : 0;
+      const credit = carbonateOn ? carbPhi() * Math.max(cdr - c, 0) : 0;
       cdr = Math.min(cdr, c) + credit;
     }
     return cdr;
@@ -1432,8 +1610,8 @@
     // TMAX years, past which 5% discounting and the dissolved tail make the
     // increments negligible. Early-exits once the cohort is spent.
     const TMAX = 60;
-    const D = E.dissolution, g = gSlice(), kU = D.deltaRefUm / psd.d50;
-    const CPF = E.cdrPerFrac, iInf = iInfOf();
+    const D = E.dissolution, g = gSlice(), kU = uScaleK();
+    const CPF = cdrPerFrac(), iInf = iInfOf(), ni = niScale();
     const pow = new Float64Array(TMAX + 1), l10t = new Float64Array(TMAX + 1);
     for (let t = 1; t <= TMAX; t++) { pow[t] = Math.pow(1 + DR, t); l10t[t] = Math.log10(t); }
     let num = 0, den = 0, kept = 0, numC = 0;
@@ -1445,10 +1623,12 @@
         ? decodeCeil(ceilByteOfRow(r)) : Infinity;
       // Steady-state removal, capped at one application per year and at the
       // drainage ceiling.
-      let cdr = Math.min(1, u1 / iInf) * eDic * CPF, credit = 0;
+      // The trace-metal cap bounds the REAPPLICATION rate at steady state, so
+      // it is a min with the kinetic rate, not a product (year-1 layers scale).
+      let cdr = Math.min(Math.min(1, u1 / iInf), ni) * eDic * CPF, credit = 0;
       if (!(cdr > 0)) cdr = 0;
       if (cdr > ceil) {
-        if (carbonateOn) credit = (WA.carbonatePhi || 0) * (cdr - ceil);
+        if (carbonateOn) credit = carbPhi() * (cdr - ceil);
         cdr = ceil;
       }
       if (screening) {
@@ -1727,6 +1907,7 @@
       mobilisation, exchange). Stake:
       ${WA.stakes ? `+${WA.stakes.systemWideUncappedPct}% uncapped, +${WA.stakes.systemWideLimitedPct}% with the limit` : "see build"}.
       The footer reports the carbonate part separately and labels both.</li>
+      ${feedstockMethodsLi()}
       <li><b>Suitability.</b> A piecewise-linear score of gross CO₂ removal —
       ${knots} tCO₂/ha/yr — so zero removal scores zero by construction, and
       100 sits at about the most a metre of drainage can carry at calcite
@@ -1765,9 +1946,11 @@
       <table>
         <tr><th>Assumption</th><th>Value</th></tr>
         <tr><td>Application rate</td><td>${E.feedstock.rateTHaYr} t/ha/yr</td></tr>
-        <tr><td>Feedstock</td><td>delivered basalt, ${E.feedstock.tco2PerT} tCO₂/t
-          (Ca+Mg basis; supplier mean of the verified deliveries' feedstock
-          assays)</td></tr>
+        <tr><td>Feedstock</td><td>${isAlt()
+          ? `${fsSpec().label}, ${(+fsSpec().tco2PerT).toFixed(3)} tCO₂/t (Ca+Mg basis; `
+            + `UNCALIBRATED viewer option, see above)`
+          : `delivered basalt, ${E.feedstock.tco2PerT} tCO₂/t (Ca+Mg basis; supplier `
+            + `mean of the verified deliveries' feedstock assays)`}</td></tr>
         <tr><td>Reference grind</td><td>d50 ${E.psd.refD50} µm, width
           ${E.psd.refWidth} (width assumed; narrow for a commercial crush)</td></tr>
         <tr><td>Year-1 dissolved fraction at reference</td>
@@ -1999,7 +2182,10 @@
         + (paddyView ? " \u00b7 paddy-field view" : "")
         + (carbonateOn && ceilOn
             ? ` \u00b7 of which ${lastCarbonateGt.toFixed(2)} Gt solid carbonate` : "")
-        + (systemWide ? " \u00b7 system-wide accounting" : "");
+        + (systemWide ? " \u00b7 system-wide accounting" : "")
+        + (isAlt() ? ` \u00b7 ${fsSpec().label}${fsSpec().calibrated ? "" : " (UNCALIBRATED)"}` : "")
+        + (traceOn && traceEntry() && niScale() < 1
+            ? ` \u00b7 trace-metal cap ${traceEntry().rateMaxTHaYr.toFixed(1)} t/ha/yr` : "");
   }
 
   /* The two whole-sample statistics -- the stability sentence and the footer total
@@ -2169,14 +2355,20 @@
     initGL();
     texRamp = makeRampTexture(E.ramp, gl.TEXTURE3);
     texRampFrac = makeRampTexture(E.rampFrac, gl.TEXTURE4);
-    const [a, b, cTex, , dTex, , eTex] = await Promise.all([
+    const alt = FEED.order.find((k) => k !== FEED.default);
+    const altTex = alt && FEED[alt] && FEED[alt].tex;
+    const [a, b, cTex, , dTex, , eTex, fTex, gTex] = await Promise.all([
       loadTexture("textures/tex1.png", 0), loadTexture("textures/tex2.png", 1),
       loadTexture("textures/tex3.png", 2), loadAdminIds(),
       loadTexture("textures/tex4.png", 5), loadCropMix(),
       loadTexture("textures/tex5.png", 6),
+      altTex ? loadTexture(`textures/${altTex.main}.png`, 7) : Promise.resolve(null),
+      altTex ? loadTexture(`textures/${altTex.paddy}.png`, 8) : Promise.resolve(null),
     ]);
     texA = a.tex; texB = b.tex; texC = cTex.tex; texD = dTex.tex;
-    cpu = decodeToCPU(a.bmp, b.bmp, cTex.bmp, eTex.bmp, dTex.bmp);
+    if (fTex && gTex) { texF = fTex.tex; texG = gTex.tex; }
+    cpu = decodeToCPU(a.bmp, b.bmp, cTex.bmp, eTex.bmp, dTex.bmp,
+                      fTex ? fTex.bmp : null, gTex ? gTex.bmp : null);
     $("loading").remove();
     buildSample();
 
@@ -2236,6 +2428,42 @@
       $("method-body").innerHTML = methodsHTML(); syncWider(); refresh();
     });
     syncWider();
+
+    // Feedstock segment (2026-09-05): built from the payload so a third
+    // feedstock needs no HTML change. Switching is a byte-source swap plus
+    // two uniforms; the Methods text is regenerated because it is
+    // feedstock-conditional.
+    const fseg = $("feed-seg");
+    if (fseg) {
+      fseg.innerHTML = FEED.order.map((k) =>
+        `<button class="seg-btn${k === feedstock ? " active" : ""}" data-feed="${k}">` +
+        `${(FEED[k] && FEED[k].label) ? FEED[k].label.replace(/ \(.*\)$/, "") : k}</button>`).join("");
+      fseg.querySelectorAll(".seg-btn").forEach((b) => b.addEventListener("click", () => {
+        if (b.dataset.feed === feedstock) return;
+        if (!FEED[b.dataset.feed] || (b.dataset.feed !== FEED.default && !(cpu && cpu.F))) return;
+        feedstock = b.dataset.feed;
+        // Economics has no olivine cost surface yet: park the setting while an
+        // alternative feedstock is shown and restore it on return to basalt.
+        if (isAlt()) { econParked = econ.costExp; econ.costExp = 0; syncEcon(); }
+        else if (econParked !== null) { econ.costExp = econParked; econParked = null; syncEcon(); }
+        $("method-body").innerHTML = methodsHTML();
+        syncFeed(); refresh();
+      }));
+    }
+    const tcb = $("chk-trace"), tsel = $("sel-trace");
+    if (tsel) {
+      tsel.innerHTML = Object.keys(TM.regimes || {}).map((k) =>
+        `<option value="${k}"${k === traceRegime ? " selected" : ""}>${TM.regimes[k].label}</option>`).join("");
+      tsel.addEventListener("change", (e) => {
+        traceRegime = e.target.value;
+        $("method-body").innerHTML = methodsHTML(); syncFeed(); refresh();
+      });
+    }
+    if (tcb) tcb.addEventListener("change", (e) => {
+      traceOn = e.target.checked;
+      $("method-body").innerHTML = methodsHTML(); syncFeed(); refresh();
+    });
+    syncFeed();
 
     // Ceiling basis segment: calcite saturation (default, the headline and
     // the Mayer et al. anchor) vs pore water held at the pH target.

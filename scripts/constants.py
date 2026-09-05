@@ -389,9 +389,69 @@ FEEDSTOCK_ARCHETYPES = {
     # overstate delivered CDR by ~13%, and the nominal 0.33 tCO2/t by ~12%.
     "delivered_basalt": {"CaO_wt": 0.0917, "MgO_wt": 0.0692,
                          "minerals": {"labradorite": 0.45, "augite": 0.30,
-                                      "forsterite": 0.10}},
+                                      "forsterite": 0.10},
+                         # Bulk density for the retreat <-> mass conversion
+                         # (FEEDSTOCK_DENSITY_KG_M3, the long-standing basalt
+                         # value). Trace metals: the calibration assays carry
+                         # no Ni/Cr, so these are LITERATURE values for ERW
+                         # basalts, not this map's suppliers: Lewis et al. 2021
+                         # (Appl. Geochem. 132, 105023, Table 6, ICP-OES) span
+                         # Ni 18-195 and Cr 35-350 mg/kg over six quarried ERW
+                         # basalts (Oregon CRBG 17.8/34.8, Whin Sill 49.4/68.1,
+                         # Blue Ridge 142/154, Tawau 17.9/51.4, Tichum 192/214,
+                         # Hillhouse 195/350); the Blue Ridge rock read Ni
+                         # 115-148 across three labs in Beerling et al. 2024
+                         # Dataset S1. Median ~100 Ni, ~120 Cr. GEOROC flood-
+                         # basalt medians are lower (Deccan Ni 77, Parana 50).
+                         # A starting envelope, not a validated distribution;
+                         # supplier assays should replace it.
+                         "density_kg_m3": 3000.0,
+                         "Ni_mg_kg": 100.0, "Cr_mg_kg": 120.0,
+                         "Ni_range_mg_kg": (20.0, 200.0), "Cr_range_mg_kg": (35.0, 350.0),
+                         "trace_source": ("Lewis et al. 2021 Table 6 (six ERW basalts); "
+                                          "Beerling et al. 2024 Dataset S1"),
+                         "label": "Basalt (delivered)"},
+    # SECOND FEEDSTOCK (2026-09-05): commercial dunite from the Almklovdalen /
+    # Aheim complex, Norway -- the world's largest traded olivine source and
+    # the material of the only peer-reviewed cropland olivine mesocosm at
+    # field-relevant grind. Composition is the XRF of Amann et al. 2020
+    # (Biogeosciences 17, 103-119, Table 1, n = 3): MgO 44.99, CaO 0.40,
+    # Fe2O3 6.75, SiO2 40.14, Al2O3 0.70, LOI 6.48 wt%; ~90% olivine (Fo92),
+    # remainder lizardite, Cr-chlorite/chromite, trace hornblende. The Sibelco
+    # OLIDENSE datasheet for the same complex reads MgO 47.0 / SiO2 43.0 /
+    # Fe2O3 7.5 -- normal quarry heterogeneity, and the assayed research
+    # material is preferred over the datasheet for the same reason
+    # delivered_basalt is preferred over fresh_basalt: it is what was spread.
+    #
+    # Rate minerals: forsterite 0.90 with the divalent count set to Fo92
+    # (1.84 Mg per formula, not 2.0 -- Fe2+ release is cancelled by its own
+    # oxidation, 4Fe2+ + O2 + 6H2O -> 4FeOOH + 8H+, so it carries no durable
+    # alkalinity; counting it would overstate charge release by ~8%). The 10%
+    # remainder (serpentine, chlorite) dissolves 1-2 orders slower; enstatite
+    # stands in for it and contributes <0.1% of the charge either way.
+    #
+    # CO2 potential on the map's Ca+Mg basis: 0.989 tCO2/t (gate 16 asserts
+    # the oxides reproduce it), 3.35x delivered_basalt. Density 3,300 kg/m3
+    # from mineral densities (Fo92 olivine 3.35, ~10% serpentine 2.55), not a
+    # measured bulk.
+    #
+    # Trace metals, same table: Ni 2889 +/- 18, Cr 2156 +/- 3, Co 105 +/- 2
+    # mg/kg. These drive the trace-metal loading cap (TRACE_METAL_* below),
+    # which is why the archetype carries them.
+    "aheim_dunite": {"CaO_wt": 0.0040, "MgO_wt": 0.4499,
+                     "minerals": {"forsterite": 0.90, "enstatite": 0.10},
+                     "divalent": {"forsterite": 1.84},
+                     "density_kg_m3": 3300.0,
+                     "Ni_mg_kg": 2889.0, "Cr_mg_kg": 2156.0, "Co_mg_kg": 105.0,
+                     "label": "Olivine (Aheim dunite)",
+                     "source": ("Amann et al. 2020, Biogeosciences 17, 103, "
+                                "Table 1 (XRF, n = 3), doi:10.5194/bg-17-103-2020")},
 }
 FEEDSTOCK_DEFAULT = "delivered_basalt"
+# The feedstocks the build ships as switchable layers, in display order. The
+# first is the headline; everything else is a viewer option and is labelled
+# UNCALIBRATED wherever it has no verified-delivery cluster of its own.
+FEEDSTOCKS_SHIPPED = ("delivered_basalt", "aheim_dunite")
 
 # Stapafell crystalline basalt as characterised by Gudbrandsson et al. 2011, for
 # the no-free-parameter kinetics validation. Reported VOLUME fractions.
@@ -1911,3 +1971,227 @@ _mg_kmol = FEEDSTOCK_ARCHETYPES[FEEDSTOCK_DEFAULT]["MgO_wt"] / M_MGO
 PEDOGENIC_CARBONATE_F_CA = _ca_kmol / (_ca_kmol + _mg_kmol)     # 0.488 for delivered_basalt
 PEDOGENIC_CARBONATE_PHI = (PEDOGENIC_CARBONATE_CO2_PER_CA / 2.0) * (
     PEDOGENIC_CARBONATE_F_CA if PEDOGENIC_CARBONATE_CA_ONLY else 1.0)
+
+# ---------------------------------------------------------------------------
+# SECOND FEEDSTOCK: OLIVINE (2026-09-05). Everything olivine-specific that is
+# not part of the archetype itself. Plan in OLIVINE_SCOPING_2026-09.md; the
+# three-reviewer pass on that plan is in OLIVINE_REVIEWS_2026-09-05.md and
+# several of the choices below are its findings, cited by number (F-numbers =
+# geochemistry reviewer, M-numbers = methods reviewer, S-numbers = soils).
+#
+# 1. RATE. Nothing new: rate_ca_mg_release already mixes Palandri & Kharaka
+#    minerals, and dunite is 90% forsterite. At the reference condition (pH
+#    6.5, 15 C) the charge-release ratio dunite / delivered_basalt is ~5.3
+#    (4.6-6.6 over pH 4.5-8, 10-25 C -- gate 16b pins that band, F17). The
+#    temperature response is the same to within 5% (effective Ea 66 vs 69
+#    kJ/mol over 10-25 C, F2); the pH response is slightly flatter (forsterite
+#    n_acid 0.47 vs 0.63-0.70), worth <1.5x. So the olivine map is close to a
+#    rescaled basalt map, not a re-shaped one.
+#
+#    THE BASALT ANCHOR IS ALREADY MOSTLY A FORSTERITE ANCHOR (F3): in the
+#    model's own attribution 80% of delivered_basalt's Ca+Mg charge release at
+#    the reference condition comes from its 10 vol% olivine. That makes
+#    transferring the anchor to dunite more defensible than it first looks,
+#    and also bounds the transfer uncertainty: Gudbrandsson et al. 2011's
+#    fitted SURFACE fractions put olivine at 2.8% of basalt surface against 17%
+#    by volume, which would reallocate release to ~44% forsterite -- a ~2x
+#    attribution uncertainty on the transferred anchor, independent of the
+#    field question below.
+#
+# 2. RETREAT <-> MASS. The shrinking-core retreat is anchored in MICROMETRES
+#    for basalt (DISSOLVED_FRAC_AT_REF). A charge-release rate converts to a
+#    retreat rate through the bulk volume per equivalent, (M/z)/rho, and dunite
+#    packs ~4x more charge per volume than basalt. So at the same charge rate
+#    dunite retreats SLOWER, and the two effects nearly cancel on the rock:
+#    dunite's mass dissolves ~1.35x faster per year than basalt at the same
+#    grind, while delivering 3.35x the CO2 per tonne dissolved. Per hectare at
+#    the same rock rate the uncapped removal is therefore ~4.7x basalt (the
+#    charge ratio 5.3 times the density ratio 3.0/3.3), and per tonne of rock
+#    hauled it is the same 4.7x -- which is the economic point. See
+#    kinetics.retreat_scale, which does this arithmetic from the archetype
+#    fields, and gate 16c, which asserts frac x CT reproduces the charge ratio.
+#
+# 3. LAB-TO-FIELD. No olivine delivery is in the calibration set, so the
+#    olivine layer is UNCALIBRATED and says so. Two public anchors exist and
+#    disagree by orders of magnitude in a dose-dependent way (F4):
+#      ten Berge et al. 2012 (PLoS ONE 7, e42098), pot trial, 32 weeks, fine
+#        olivine (66% 2-50 um): 14.8% dissolved at 1.63 t/ha, 1.1% at 204 t/ha
+#        -- a 13x fall with dose within one experiment.
+#      Amann et al. 2020, mesocosm, 220 t/ha: 10^-13.12 (coarse) to 10^-13.75
+#        (fine) mol Mg m-2 s-1 on BET area, i.e. 0.02-0.05 tCO2/ha/yr from
+#        220 t/ha -- 2-3 orders below any lab rate law.
+#    The map's 30 t/ha sits between them with no observation on it. The
+#    shipped olivine layer uses the BASALT-ANCHORED branch (factor 1.0: same
+#    lab-to-field transfer as basalt, defended by F3), and the ensemble reports
+#    the other branch CONDITIONALLY, never pooled into one interval (M1b).
+#    scripts/analysis/olivine_field_check.py derives the branch factors from
+#    the two studies through this model's own kinetics; the bracket below is
+#    a placeholder until it has run and is asserted against it.
+OLIVINE_FIELD_FACTOR = 1.0                 # shipped: basalt-anchored transfer
+OLIVINE_FIELD_FACTOR_BRANCHES = {
+    "basalt_anchored": 1.0,
+    # filled by olivine_field_check.py; None = not yet derived
+    "ten_berge_2012_low_dose": None,
+    "amann_2020_220tha": None,
+}
+OLIVINE_IS_CALIBRATED = False              # flips when a verified olivine cluster exists
+# Passivation (F5): ten Berge's dose series is a passivation curve and the
+# shrinking-core model has no term for it. NOT modelled; the model is unbounded
+# in application rate for a feedstock whose only dose-resolved dataset shows a
+# 13x fall. Stated in the UI and METHODOLOGY, and the reason 30 t/ha is a
+# display convention rather than a recommendation for olivine.
+OLIVINE_PASSIVATION_MODELLED = False
+
+# 4. CEILING Mg PER FEEDSTOCK. The drainage ceiling holds [Mg] explicit (see
+#    FLUX_CEILING_MG_MM) and only Ca is constrained by calcite, so an
+#    Mg-dominated drainage carries more DIC before saturating -- the physical
+#    reason olivine could loosen the drainage limit. Two cautions from review:
+#    (F6) as [Mg] rises the cubic asymptotes to A -> 2[Mg] and the "ceiling"
+#    becomes a restatement of the Mg input: at 5 mM, 4,000 uatm, 15 C, 93% of
+#    the alkalinity is Mg-balanced and [Ca] is 0.4 mM. Gate 16d asserts
+#    2[Mg]/A <= 0.75 for every shipped default (0.62 at 2 mM, 0.80 at 3 mM).
+#    (F9) the "up to 5 mM" observation is Amann's 220 t/ha fine treatment at
+#    pore-water pH ~9, seven times the modelled loading; it is the upper
+#    sensitivity, not the central. Central 2.0 mM for dunite at 30 t/ha, range
+#    1-5. Effect on the ceiling at 15 C (F7): 2 mM / 1 mM = ~1.2x at 4,000
+#    uatm, less under paddy pCO2; 5 mM / 1 mM = 2.16 / 1.78 / 1.57 at 4,000 /
+#    10,000 / 20,000 uatm. Under the withdrawn pH <= 7.5 basis the Mg upside
+#    is 1.00x at <= 10,000 uatm (F8) -- the olivine ceiling gain is
+#    basis-dependent and the SI says so.
+FLUX_CEILING_MG_MM_BY_FEEDSTOCK = {"delivered_basalt": FLUX_CEILING_MG_MM,
+                                   "aheim_dunite": 2.0}
+FLUX_CEILING_MG_MM_RANGE_BY_FEEDSTOCK = {"delivered_basalt": (1.0 / 3.0, 3.0),
+                                         "aheim_dunite": (1.0, 5.0)}
+FLUX_CEILING_MG_DEGENERACY_MAX = 0.75      # 2[Mg]/A must stay below this (gate 16d)
+# Silica (F13). Forsterite releases 1 Si per 4 charge equivalents, so an
+# all-Mg ceiling solution of A mmol/L carries A/4 mmol/L Si. Amorphous silica
+# solubility is ~1.1 mM at 10 C to ~2 mM at 25 C (Gunnarsson & Arnorsson 2000,
+# GCA 64, 2295: log K = -8.476 - 485.24/T - 2.268e-6 T^2 + 3.068 log T for
+# SiO2(am), giving 1.16 / 1.46 / 1.94 mM at 10 / 15 / 25 C). Where the
+# implied Si exceeds it, amorphous silica or -- worse -- sepiolite can form;
+# sepiolite consumes 2 H+ per Mg, i.e. exactly the alkalinity that Mg was
+# credited with. Reported as a build DIAGNOSTIC (share of cropland where the
+# dunite ceiling solution is Si-supersaturated), not applied as a cap: the
+# repo already records a Mg-specific over-prediction of the same sign (gate
+# 11, KINETICS_OVERPREDICTS) and one bias should not be corrected twice.
+SILICA_AM_SOLUBILITY_COEFFS = (-8.476, -485.24, -2.268e-6, 3.068)   # log K(T) for SiO2(am)
+FORSTERITE_SI_PER_CHARGE_EQ = 0.25
+
+# 5. CARBONATE CREDIT FOR OLIVINE. f_Ca for dunite is 0.016, so the Ca-only
+#    credit is ~nil. The plan proposed crediting all cations where the soil is
+#    calcareous (Mg-derived alkalinity precipitating soil Ca). REJECTED on
+#    review (F11): if the Ca comes from dissolving soil carbonate the cycle
+#    CaCO3 + CO2 + H2O -> Ca2+ + 2HCO3- -> CaCO3 + CO2 + H2O is carbon-neutral,
+#    so soil calcareousness identifies where Ca is PRESENT, not where it is
+#    RENEWABLY SUPPLIED. The credit is real only from the exchange complex (a
+#    finite stock: ~120 kmol Ca/ha at CEC 15, 90% BS, 70% Ca, 20 cm -- 5.4
+#    tCO2/ha one-off, 0.27 tCO2/ha/yr over 20 yr, F12) or from external
+#    non-carbonate Ca (gypsum, dust). The right design is a depleting
+#    exchange-stock credit conditioned on SoilGrids CEC, which is to_do item
+#    12b, not this build. The carbonate option therefore stays Ca-only for
+#    both feedstocks, and for olivine it is close to zero BY DESIGN.
+PEDOGENIC_CARBONATE_CALCAREOUS_CONDITIONING = False   # rejected, see above
+
+# 6. TRACE-METAL LOADING CAP. Dunite carries ~2,900 mg/kg Ni and ~2,200 Cr
+#    (archetype). A cumulative budget per hectare, not a rate:
+#        budget_t_ha = (limit - baseline) x soil_mass_t_ha / Ni_rock_mg_kg
+#    for concentration regimes, and limit / Ni_rock for loading regimes, with
+#    the sustainable annual rock rate = budget / horizon (or the annual
+#    loading limit / Ni_rock where a regime has one). Removal under the cap is
+#    cdr x min(1, rate_max / APPLICATION_RATE_T_HA_YR): carbon is linear in
+#    the rock rate. Ni is treated as the binding element; Cr in dunite sits
+#    mostly in chromite / Cr-chlorite as Cr(III), and neither 86/278/EEC nor
+#    40 CFR 503 sets a Cr limit (both explicitly decline). All limits below
+#    were read from the legal text or the protocol PDF (see
+#    OLIVINE_REVIEWS_2026-09-05.md for URLs); anything not read is absent.
+#
+#    REGIMES differ by an order of magnitude and that spread is the finding,
+#    so they ship as a viewer segment and an ensemble axis (M3c), never as one
+#    number. Isometric's feedstock module (v1.1 s3.4.1) requires Ni/Cr
+#    REPORTING and defers to "applicable regulatory limits" without a value.
+TRACE_METAL_REGIMES = {
+    # key: (label, soil concentration limit mg/kg or None,
+    #       annual loading kg/ha/yr or None, cumulative loading kg/ha or None,
+    #       source)
+    "eu_86_278_low": (
+        "EU sludge directive, lower national limit", 30.0, 3.0, None,
+        "Directive 86/278/EEC Annex IA (Ni 30-75 mg/kg for soil pH 6-7; member "
+        "states set the value) and Annex IC (3 kg Ni/ha/yr, 10-yr average)"),
+    "eu_86_278_high": (
+        "EU sludge directive, upper national limit", 75.0, 3.0, None,
+        "Directive 86/278/EEC Annex IA upper value; Annex IC loading"),
+    "br_conama_420_prev": (
+        "Brazil CONAMA 420/2009, prevention", 30.0, None, None,
+        "Resolucao CONAMA 420/2009 Anexo II, valor de prevencao Ni 30 mg/kg"),
+    "br_conama_420_agri": (
+        "Brazil CONAMA 420/2009, agricultural investigation", 70.0, None, None,
+        "Resolucao CONAMA 420/2009 Anexo II, investigacao agricola Ni 70 mg/kg"),
+    "us_epa_503": (
+        "US EPA 40 CFR 503 biosolids", None, 21.0, 420.0,
+        "40 CFR 503.13 Table 2 cumulative 420 kg Ni/ha; Table 4 annual 21 kg/ha"),
+    "puro_2025": (
+        "Puro.earth ERW 2025 v1", 150.0, None, None,
+        "Puro.earth Enhanced Rock Weathering methodology, edition 2025 v1, "
+        "Table 4.3: soil Ni 150, Cr 100 mg/kg"),
+}
+TRACE_METAL_REGIME_DEFAULT = "puro_2025"
+# Why Puro Table 4.3 is the default (soils reviewer S4, adopted): it is the
+# only single-valued, global, ERW-specific limit and the operative one for
+# anyone selling credits; Puro's rule 3.6.2(e) also mandates exactly this
+# construct -- a soil + feedstock mass balance assuming ALL feedstock
+# dissolves and no metal leaves (S1), so the budget is on TOTAL applied Ni,
+# never on the dissolved fraction. The sludge directive is a sludge
+# instrument whose Annex IA band is defined only for pH 6-7 and whose
+# Article 8 gives no formula below pH 6, so it cannot be mapped as a central
+# case; it and the loading rules are the strict end of the viewer segment.
+# The methods rule (prefer the option conservative toward the claim being
+# critiqued) pulls toward the strict end for a claim that olivine EXPANDS
+# potential, which is why every regime is one click away and the ensemble
+# samples them as a categorical axis. To be confirmed with Zeke (plan s9.2).
+#
+# Two constraints the budget cannot express, stated where the cap is shown
+# (S10, S11): under EU Regulation 2019/1009 Annex I the product limits are Ni
+# 90 mg/kg (PFC 2 liming) and 100 mg/kg (PFC 3(B) soil improver), so dunite at
+# ~2,900 mg/kg cannot be CE-marked as an EU fertilising product at any rate;
+# and Puro requires asbestiform screening (<= 0.25 wt%) for ultramafic
+# feedstocks, a supply-inventory gate (plan s4). Amann et al. 2020 close by
+# recommending AGAINST Ni- and Cr-rich olivine for cropland ERW; the layer
+# exists to quantify that judgement, not to contest it.
+TRACE_METAL_EU_FPR_PRODUCT_LIMIT_NI_MG_KG = (90.0, 100.0)   # PFC 2 liming, PFC 3(B) soil improver
+TRACE_METAL_ASBESTIFORM_MAX_WT = 0.0025                     # Puro ERW 2025, ultramafic feedstocks
+# Baseline topsoil Ni. No global gridded layer exists: SoilGrids and WoSIS
+# carry no Ni; USGS DS 801 (Smith et al. 2013) gives the conterminous-US
+# median 13.5 mg/kg (0-5 cm); GEMAS (Europe, Ap horizon) could not be read
+# in-session. A single global default with a range, flagged as an
+# ASSUMPTION in the UI; parent-material variation (serpentinitic soils run
+# to hundreds of mg/kg) is exactly what this misses (M6d).
+TRACE_METAL_BASELINE_NI_MG_KG = 15.0
+TRACE_METAL_BASELINE_NI_RANGE = (5.0, 40.0)
+TRACE_METAL_MIXING_DEPTH_M = 0.20          # plough layer; no-till would halve the budget
+TRACE_METAL_BULK_DENSITY_KG_M3 = 1300.0    # SoilGrids bdod could replace this (to_do)
+TRACE_METAL_HORIZON_YR = 20.0              # budget spread over this many years
+TRACE_METAL_CAP_ON = True                  # viewer default; central regime above
+# What the regimes imply for dunite before any spatial input (soil mass 2,600
+# t/ha, baseline 15 mg/kg, Ni 2,889 mg/kg; gate 16e asserts these):
+#   puro_2025 (default)  headroom 135 -> 121.5 t/ha cumulative, 6.1 t/ha/yr
+#                        over 20 yr = 20% of the display rate
+#   us_epa_503           145 t/ha; the 21 kg/ha/yr annual rule binds, 7.3 t/ha/yr
+#   br_conama_420_agri   49.5 t/ha, 2.5 t/ha/yr
+#   eu_86_278_high       54 t/ha; the 3 kg/ha/yr annual rule binds, 1.0 t/ha/yr
+#   eu_86_278_low, br_conama_420_prev   13.5 t/ha, 0.7 t/ha/yr
+# A ~13x spread on the cumulative budget, ~30x with the EU annual rule. For
+# basalt (literature Ni 100 mg/kg, Lewis et al. 2021; the calibration assays
+# carry no Ni) the cap is evaluated too (S3): under Puro the budget is 3,510
+# t/ha (175 t/ha/yr, does not bind); under the EU annual rule 30 t/ha/yr,
+# exactly the display rate; under the EU lower value / CONAMA prevention 390
+# t/ha, 19.5 t/ha/yr, i.e. the strict regimes cap basalt at 65% of the
+# display rate as well. Gate 16e asserts the basalt arithmetic.
+# Mixing depth is a parameter, not a constant, because no-till leaves
+# broadcast rock in the top ~5 cm and quadruples the concentration increment
+# (S6).
+
+# 7. APPLICATION RATE. The same 30 t/ha rock rate is used for both feedstocks
+#    so the layers compare like with like on the operational quantity; the
+#    stoichiometric maximum therefore differs (8.85 vs 29.7 tCO2/ha/yr) and the
+#    ceiling encoding is relative to each feedstock's own cdrPerFrac. The
+#    trace-metal cap then reports how much of that rate is permissible.

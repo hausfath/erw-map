@@ -441,6 +441,38 @@ def main() -> int:
         eta_pad = K.eta_dic(ph_pad, pco2_pad, T_K)
     ceiling_pad = K.flux_ceiling_t_ha_yr(q, pco2_pad, T_ceil_K)
 
+    # ---- SECOND FEEDSTOCK (2026-09-05): the same chain for the shipped
+    # olivine archetype (constants.FEEDSTOCKS_SHIPPED[1], Aheim dunite). Same
+    # monthly integration and rate-weighted eta_DIC; the drainage ceiling is
+    # re-solved with the feedstock's own pore-water [Mg]. Reported and shipped
+    # as a switchable layer, never mixed into the basalt headline. See the
+    # SECOND FEEDSTOCK note in constants.py for the physics and the review
+    # findings behind each choice.
+    def _rate_eta(arch, ph_arr, pco2_arr):
+        if monthly:
+            r_sum = np.zeros_like(ph); re_sum = np.zeros_like(ph)
+            n_fin = np.zeros_like(ph)
+            for i in range(12):
+                r_i = K.rate_ca_mg_release(arch, ph_arr, soilT_K[i]) * sat_m[i]
+                e_i = K.eta_dic(ph_arr, pco2_arr, soilT_K[i])
+                fin = np.isfinite(r_i)
+                r_sum += np.where(fin, r_i, 0.0)
+                re_sum += np.where(fin & np.isfinite(e_i), r_i * e_i, 0.0)
+                n_fin += fin
+            with np.errstate(invalid="ignore"):
+                return (np.where(n_fin > 0, r_sum / np.maximum(n_fin, 1), np.nan),
+                        re_sum / np.maximum(r_sum, 1e-30))
+        return (K.rate_ca_mg_release(arch, ph_arr, T_K) * wet,
+                K.eta_dic(ph_arr, pco2_arr, T_K))
+
+    OLIV = C.FEEDSTOCKS_SHIPPED[1]
+    reactivity_o, eta_o = _rate_eta(OLIV, ph_chem, pco2)
+    reactivity_o_pad, eta_o_pad = _rate_eta(OLIV, ph_pad, pco2_pad)
+    mg_o = K.ceiling_mg_mM_for(OLIV)
+    ceiling_o = K.flux_ceiling_t_ha_yr(q, pco2, T_ceil_K, mg_mM=mg_o)
+    ceiling_o_pad = K.flux_ceiling_t_ha_yr(q, pco2_pad, T_ceil_K, mg_mM=mg_o)
+    alk_o = K.alkalinity_ceiling_mol_l(pco2, T_ceil_K, mg_mM=mg_o)
+
     # ---- pH-TARGET BASIS (2026-08-26): the ceiling with pore water HELD AT
     # pH <= FLUX_CEILING_PH_TARGET instead of rising to calcite saturation --
     # the 'do not push soils basic' operating point. Saturation still binds
@@ -464,6 +496,12 @@ def main() -> int:
     with np.errstate(divide="ignore", invalid="ignore"):
         L1 = np.log10(reactivity / float(ref))
         L1_pad = np.log10(reactivity_pad / float(ref))
+        # Olivine L1 is log10(R_olivine / R_ref,basalt): the SAME reference, so
+        # the shader's X = 10^L1 * eta_tr needs no second code path and the
+        # feedstock difference in retreat per unit charge enters once, through
+        # kinetics.retreat_scale, on the u-scale.
+        L1_o = np.log10(reactivity_o / float(ref))
+        L1_o_pad = np.log10(reactivity_o_pad / float(ref))
 
     cascade = K.cascade_baseline_index(ph, T_K, wet)
 
@@ -570,6 +608,19 @@ def main() -> int:
         cdr = np.minimum(cdr_uncapped, ceiling)
     else:
         cdr = cdr_uncapped
+
+    # ---- SECOND FEEDSTOCK removal. Same rock rate (30 t/ha), the anchored
+    # basalt retreat scaled by retreat_scale (charge rate x volume per
+    # equivalent) and by the lab-to-field branch factor (1.0 = basalt-anchored
+    # transfer, the shipped branch; the olivine layer is UNCALIBRATED).
+    rs_o = K.retreat_scale(OLIV) * C.OLIVINE_FIELD_FACTOR
+    ceil_t_o = K.co2_t_per_tonne(OLIV)
+    X_o = (reactivity_o / float(ref)) * eta_tr
+    u_o = delta_ref * rs_o * np.clip(X_o, 0.0, None) / C.PSD_REF_D50_UM
+    frac_o = np.interp(u_o, u_grid, g_grid)
+    cdr_o_uncapped = frac_o * eta_o * C.APPLICATION_RATE_T_HA_YR * ceil_t_o
+    cdr_o = (np.minimum(cdr_o_uncapped, ceiling_o) if C.FLUX_CEILING_ON
+             else cdr_o_uncapped)
 
     # Paddy-view effect, REPORTED: what the toggle changes on paddy cells.
     u_pad = delta_ref * np.clip((10.0 ** L1_pad) * eta_tr, 0.0, None) \
@@ -957,6 +1008,124 @@ def main() -> int:
     else:
         print("    Mayer et al. 2025 replication SKIPPED: no recharge (qr) tif")
 
+    # ---- SECOND FEEDSTOCK report, gates and payload stakes.
+    o_spec = C.FEEDSTOCK_ARCHETYPES[OLIV]
+    print(f"  second feedstock: {o_spec['label']} ({OLIV})  "
+          f"[{'calibrated' if C.OLIVINE_IS_CALIBRATED else 'UNCALIBRATED: no verified delivery cluster'}]")
+    gt_o = float((ha * np.nan_to_num(cdr_o[m])).sum() / 1e9)
+    gt_o_un = float((ha * np.nan_to_num(cdr_o_uncapped[m])).sum() / 1e9)
+    bound_o = float((aw * (cdr_o_uncapped[m] > ceiling_o[m] * 1.000001)).sum() / aw.sum())
+    ou50, oc50 = wq(cdr_o_uncapped, (0.5,))[0], wq(cdr_o, (0.5,))[0]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ceil_ratio = ceiling_o / np.maximum(ceiling, 1e-12)
+    cr10, cr50, cr90 = wq(ceil_ratio, (0.1, 0.5, 0.9))
+    print(f"    CO2 potential {ceil_t_o:.3f} tCO2/t ({ceil_t_o / ceil_t:.2f}x basalt); "
+          f"retreat scale {rs_o:.3f} (charge rate x volume per eq; field factor "
+          f"{C.OLIVINE_FIELD_FACTOR:g}); pore-water Mg {mg_o:g} mM (basalt {C.FLUX_CEILING_MG_MM:g})")
+    print(f"    uncapped: median {ou50:.3f} tCO2/ha/yr ({ou50 / max(u50, 1e-12):.2f}x basalt), "
+          f"global {gt_o_un:.3f} Gt ({gt_o_un / max(gt_un, 1e-12):.2f}x)")
+    print(f"    ceiling ratio olivine/basalt at each cell: p10 {cr10:.2f}  p50 {cr50:.2f}  p90 {cr90:.2f}")
+    print(f"    drainage-limited: median {oc50:.3f} ({oc50 / max(capped50, 1e-12):.2f}x basalt), "
+          f"global {gt_o:.3f} Gt ({gt_o / max(gt, 1e-12):.2f}x); limit binds on {bound_o:.1%} "
+          f"of area (basalt {bound:.1%})")
+    # GATE 16d: the ceiling must still be a ceiling (2[Mg]/A bounded, F6)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        degen = 2.0 * mg_o / np.maximum(alk_o * 1e3, 1e-12)
+    d50_deg, d90_deg = wq(degen, (0.5, 0.9))
+    ok16d = d90_deg <= C.FLUX_CEILING_MG_DEGENERACY_MAX
+    print(f"  GATE 16d olivine ceiling not degenerate: 2[Mg]/A p50 {d50_deg:.3f} "
+          f"p90 {d90_deg:.3f} <= {C.FLUX_CEILING_MG_DEGENERACY_MAX}  [{'PASS' if ok16d else 'FAIL'}]")
+    # Silica diagnostic (F13): where the all-Mg ceiling solution would be
+    # supersaturated with amorphous silica. Reported, not applied.
+    si_sup = K.ceiling_silica_supersaturated(alk_o, T_ceil_K)
+    si_share = float((aw * si_sup[m]).sum() / aw.sum())
+    si_bind = float((aw * (si_sup & (cdr_o_uncapped > ceiling_o))[m]).sum() / aw.sum())
+    print(f"    silica diagnostic: olivine ceiling solution Si-supersaturated on "
+          f"{si_share:.1%} of area ({si_bind:.1%} where the limit also binds) -- "
+          f"reported, not applied")
+    # Trace-metal loading cap, per regime and per feedstock. Removal is linear
+    # in the rock rate, so the cap scales the uncapped removal before the
+    # ceiling applies. Basalt is evaluated too (review S3): its Ni is a
+    # literature value (constants), not this map's supplier assays.
+    def _trace_table(arch, cdr_un, ceil_arr, tag):
+        out = {}
+        for key, (lab, *_r) in C.TRACE_METAL_REGIMES.items():
+            bud, rmax, binding = K.trace_metal_budget_t_ha(arch, key)
+            if not np.isfinite(rmax):
+                continue
+            scale = min(1.0, float(rmax) / C.APPLICATION_RATE_T_HA_YR)
+            cdr_ni = np.minimum(cdr_un * scale, ceil_arr) if C.FLUX_CEILING_ON \
+                else cdr_un * scale
+            gt_ni = float((ha * np.nan_to_num(cdr_ni[m])).sum() / 1e9)
+            ni_binds = float((aw * ((cdr_un * scale < np.minimum(cdr_un, ceil_arr))
+                                    & (scale < 1.0))[m]).sum() / aw.sum())
+            out[key] = {"label": lab, "budgetTHa": round(float(bud), 2),
+                        "rateMaxTHaYr": round(float(rmax), 3), "binding": binding,
+                        "scale": round(scale, 4), "limitedGt": round(gt_ni, 4),
+                        "bindsAreaFrac": round(ni_binds, 4)}
+            mark = " <- default" if key == C.TRACE_METAL_REGIME_DEFAULT else ""
+            print(f"    trace-metal cap {tag} [{key}] {lab}: budget {bud:.1f} t/ha, "
+                  f"{rmax:.2f} t/ha/yr ({binding}) = {scale:.1%} of the display rate; "
+                  f"drainage+Ni-limited global {gt_ni:.3f} Gt; Ni is the operative "
+                  f"bound on {ni_binds:.1%} of area{mark}")
+        return out
+    trace = _trace_table(OLIV, cdr_o_uncapped, ceiling_o, "olivine")
+    trace_b = _trace_table(C.FEEDSTOCK_DEFAULT, cdr_uncapped, ceiling, "basalt")
+    # GATE 16f: internal consistency of the second feedstock
+    ok16f = (bool(np.all(np.nan_to_num(cdr_o[m]) <= np.nan_to_num(cdr_o_uncapped[m]) + 1e-9))
+             and gt_o <= gt_o_un + 1e-9
+             and all(v["limitedGt"] <= gt_o + 1e-6 for v in trace.values()))
+    print(f"  GATE 16f olivine limited <= uncapped, Ni-limited <= limited  "
+          f"[{'PASS' if ok16f else 'FAIL'}]")
+    ca_o = o_spec["CaO_wt"] / C.M_CAO
+    f_ca_o = ca_o / (ca_o + o_spec["MgO_wt"] / C.M_MGO)
+    olivine_stakes = {
+        "uncappedGt": round(gt_o_un, 4), "limitedGt": round(gt_o, 4),
+        "medianUncapped": round(ou50, 4), "medianLimited": round(oc50, 4),
+        "bindsAreaFrac": round(bound_o, 4),
+        "ceilRatioP50": round(cr50, 3), "ceilRatioP10": round(cr10, 3),
+        "ceilRatioP90": round(cr90, 3),
+        "uncappedVsBasalt": round(gt_o_un / max(gt_un, 1e-12), 3),
+        "limitedVsBasalt": round(gt_o / max(gt, 1e-12), 3),
+        "silicaSuperShare": round(si_share, 4), "degeneracyP90": round(d90_deg, 3),
+    }
+    feedstocks_payload = {
+        "order": list(C.FEEDSTOCKS_SHIPPED), "default": C.FEEDSTOCK_DEFAULT,
+        C.FEEDSTOCK_DEFAULT: {
+            "label": C.FEEDSTOCK_ARCHETYPES[C.FEEDSTOCK_DEFAULT]["label"],
+            "tco2PerT": round(float(ceil_t), 4),
+            "cdrPerFrac": round(float(C.APPLICATION_RATE_T_HA_YR * ceil_t), 6),
+            "retreatScale": 1.0, "fieldFactor": 1.0,
+            "mgMM": C.FLUX_CEILING_MG_MM, "calibrated": True,
+            "fCa": round(C.PEDOGENIC_CARBONATE_F_CA, 4),
+            "carbonatePhi": round(C.PEDOGENIC_CARBONATE_PHI, 4),
+            "niMgKg": C.FEEDSTOCK_ARCHETYPES[C.FEEDSTOCK_DEFAULT]["Ni_mg_kg"],
+            "crMgKg": C.FEEDSTOCK_ARCHETYPES[C.FEEDSTOCK_DEFAULT]["Cr_mg_kg"],
+            "traceSource": C.FEEDSTOCK_ARCHETYPES[C.FEEDSTOCK_DEFAULT].get("trace_source", ""),
+            "traceBudget": trace_b, "tex": {"main": "tex1", "paddy": "tex5"},
+            "stakes": {"uncappedGt": round(gt_un, 4), "limitedGt": round(gt, 4),
+                       "bindsAreaFrac": round(float(bound), 4)},
+        },
+        OLIV: {
+            "label": o_spec["label"], "source": o_spec.get("source", ""),
+            "tco2PerT": round(float(ceil_t_o), 4),
+            "cdrPerFrac": round(float(C.APPLICATION_RATE_T_HA_YR * ceil_t_o), 6),
+            "retreatScale": round(float(K.retreat_scale(OLIV)), 4),
+            "chargeRatioRef": round(float(
+                K.rate_ca_mg_release(OLIV, C.L1_REF["pH"], C.L1_REF["T_soil_C"] + 273.15)
+                / K.rate_ca_mg_release(C.FEEDSTOCK_DEFAULT, C.L1_REF["pH"],
+                                       C.L1_REF["T_soil_C"] + 273.15)), 3),
+            "fieldFactor": C.OLIVINE_FIELD_FACTOR,
+            "mgMM": mg_o, "calibrated": C.OLIVINE_IS_CALIBRATED,
+            "fCa": round(f_ca_o, 4),
+            "carbonatePhi": round((C.PEDOGENIC_CARBONATE_CO2_PER_CA / 2.0) * f_ca_o, 5),
+            "niMgKg": o_spec["Ni_mg_kg"], "crMgKg": o_spec["Cr_mg_kg"],
+            "traceSource": o_spec.get("source", ""),
+            "traceBudget": trace, "tex": {"main": "tex6", "paddy": "tex7"},
+            "stakes": olivine_stakes,
+        },
+    }
+
     # ---- Quarry overlay: copy the point list into src/ so the page can draw it
     qp = INTERIM / "quarry_points.json"
     if qp.exists():
@@ -980,6 +1149,11 @@ def main() -> int:
         eta_tr=eta_tr.astype("float32"), cdr=cdr.astype("float32"),
         cdr_uncapped=cdr_uncapped.astype("float32"),
         ceiling=ceiling.astype("float32"),
+        # Second feedstock (olivine), same basis, for the analysis scripts.
+        cdr_o=cdr_o.astype("float32"),
+        cdr_o_uncapped=cdr_o_uncapped.astype("float32"),
+        ceiling_o=ceiling_o.astype("float32"),
+        L1_o=L1_o.astype("float32"), eta_o=eta_o.astype("float32"),
         alk_ceiling=alk_ceiling.astype("float32"),
         cascade=cascade.astype("float32"), p_soc=p_soc,
         q=q.astype("float32"), f_flood=f_flood.astype("float32"),
@@ -1011,7 +1185,11 @@ def main() -> int:
                    no_input=no_input, mafic_frac=mafic_frac,
                    L1_pad=L1_pad, eta_pad=eta_pad, ceiling_pad=ceiling_pad,
                    paddy_sel=f_flood > 0,
-                   ceiling_ph=ceiling_ph, ceiling_ph_pad=ceiling_ph_pad)
+                   ceiling_ph=ceiling_ph, ceiling_ph_pad=ceiling_ph_pad,
+                   L1_o=L1_o, eta_o=eta_o, ceiling_o=ceiling_o,
+                   cdr_per_frac_o=C.APPLICATION_RATE_T_HA_YR * ceil_t_o,
+                   L1_o_pad=L1_o_pad, eta_o_pad=eta_o_pad,
+                   ceiling_o_pad=ceiling_o_pad)
     gha_eval = float(((crop * area)[m & np.isfinite(L1)]).sum() * 100.0 / 1e9)
     emit_js(transform, w, h, gha, p50,
             cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
@@ -1022,7 +1200,8 @@ def main() -> int:
             warm_cool=wc_ratio, exceed_med=e50,
             paddy_area_frac_of_cropland=float(
                 (aw * (f_flood > 0)[m]).sum() / aw.sum()),
-            paddy_source=paddy_source, wider=wider_stakes)
+            paddy_source=paddy_source, wider=wider_stakes,
+            feedstocks=feedstocks_payload)
     print()
     print("done. Open src/index.html over HTTP:")
     print("  python3 -m http.server 8000 --directory src")
@@ -1134,7 +1313,9 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
                    *, cascade, ph, L1, eta, eta_tr, v_cost, cost_conf,
                    ceiling, cdr_per_frac, no_input, mafic_frac,
                    L1_pad, eta_pad, ceiling_pad, paddy_sel,
-                   ceiling_ph, ceiling_ph_pad) -> None:
+                   ceiling_ph, ceiling_ph_pad,
+                   L1_o=None, eta_o=None, ceiling_o=None, cdr_per_frac_o=None,
+                   L1_o_pad=None, eta_o_pad=None, ceiling_o_pad=None) -> None:
     from PIL import Image
     out = SRC / "textures"
     out.mkdir(parents=True, exist_ok=True)
@@ -1282,9 +1463,40 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
     g5 = np.where(paddy_sel, g5, g1)
     b5 = np.where(paddy_sel, b5, b2)
 
-    for name, img in (("tex1", rgba(r1, g1, b1)), ("tex2", rgba(r2, flags, b2)),
-                      ("tex3", rgba(r3, g3, b3)), ("tex4", rgba(r4, g4, b4)),
-                      ("tex5", rgba(r5, g5, b5))):
+    texs = [("tex1", rgba(r1, g1, b1)), ("tex2", rgba(r2, flags, b2)),
+            ("tex3", rgba(r3, g3, b3)), ("tex4", rgba(r4, g4, b4)),
+            ("tex5", rgba(r5, g5, b5))]
+
+    # tex6 / tex7: the SECOND FEEDSTOCK (olivine), baseline and paddy view, in
+    # the SAME encodings as tex1 / tex5 (r = L1 on L1_ENC, g = linear eta_DIC,
+    # b = ceiling on CEIL_ENC) -- except that the ceiling is stored relative to
+    # the olivine cdrPerFrac, which the viewer passes as its own uniform when
+    # the feedstock is switched. So the switch is a byte-source swap plus two
+    # scalar uniforms, and every downstream path is shared.
+    if L1_o is not None:
+        l1o = np.clip((np.nan_to_num(L1_o, nan=lo) - lo) / (hi - lo), 0.0, 1.0)
+        r6 = np.where(valid, np.rint(5 + l1o * 250.0), 0).astype("uint8")
+        g6 = np.where(valid, enc(eta_o), 0).astype("uint8")
+
+        def enc_ceil_o(cv):
+            with np.errstate(divide="ignore", invalid="ignore"):
+                x = np.log10(np.maximum(cv / max(cdr_per_frac_o, 1e-12), 1e-30))
+            x = np.clip((np.nan_to_num(x, nan=lo_c, neginf=lo_c) - lo_c)
+                        / (hi_c - lo_c), 0.0, 1.0)
+            return np.where(valid, np.rint(5 + x * 250.0), 0).astype("uint8")
+        b6 = enc_ceil_o(ceiling_o)
+        l1op = np.clip((np.nan_to_num(L1_o_pad, nan=lo) - lo) / (hi - lo), 0.0, 1.0)
+        r7 = np.where(paddy_sel, np.where(valid, np.rint(5 + l1op * 250.0), 0), r6).astype("uint8")
+        g7 = np.where(paddy_sel, np.where(valid, enc(eta_o_pad), 0), g6).astype("uint8")
+        b7 = np.where(paddy_sel, enc_ceil_o(ceiling_o_pad), b6).astype("uint8")
+        # The olivine ceiling must not clip at the top of CEIL_ENC: its
+        # cdrPerFrac is 3.35x basalt's, so the stored ratio sits lower, and
+        # the bottom clip (1e-4 of cdrPerFrac) is far below CDR_NEGLIGIBLE.
+        top = float((b6[valid] >= 255).mean()) if valid.any() else 0.0
+        assert top < 1e-4, f"olivine ceiling clips at the top of CEIL_ENC on {top:.2%}"
+        texs += [("tex6", rgba(r6, g6, b6)), ("tex7", rgba(r7, g7, b7))]
+
+    for name, img in texs:
         p = out / f"{name}.png"
         img.save(p, optimize=True)
         print(f"  wrote {p} ({p.stat().st_size / 1e6:.2f} MB)")
@@ -1376,7 +1588,7 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
             ceiling_binds=0.0, ceiling_med=0.0,
             warm_cool=(None, None), exceed_med=0.0, crop_codes=(),
             paddy_area_frac_of_cropland=0.0,
-            paddy_source="unknown", wider=None) -> None:
+            paddy_source="unknown", wider=None, feedstocks=None) -> None:
     if gha_eval is None:
         gha_eval = gha
     # PASS THESE IN, never reach for main()'s locals. Reading a caller local from
@@ -1572,6 +1784,26 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
         "feedstock": {"archetype": C.FEEDSTOCK_DEFAULT,
                       "tco2PerT": round(C.DELIVERED_BASALT_TCO2_PER_T, 3),
                       "rateTHaYr": C.APPLICATION_RATE_T_HA_YR},
+        # Switchable feedstocks (2026-09-05). Per-feedstock scalars the viewer
+        # needs to swap the byte source and the two uniforms; the stakes are
+        # build-time numbers for the Methods text. Every non-default feedstock
+        # carries calibrated=False until it has a verified-delivery cluster.
+        "feedstocks": feedstocks or {"order": [C.FEEDSTOCK_DEFAULT],
+                                      "default": C.FEEDSTOCK_DEFAULT},
+        "traceMetal": {
+            "on": C.TRACE_METAL_CAP_ON,
+            "default": C.TRACE_METAL_REGIME_DEFAULT,
+            "regimes": {k: {"label": v[0], "soilLimitMgKg": v[1],
+                            "annualKgHaYr": v[2], "cumulativeKgHa": v[3],
+                            "source": v[4]}
+                        for k, v in C.TRACE_METAL_REGIMES.items()},
+            "baselineNiMgKg": C.TRACE_METAL_BASELINE_NI_MG_KG,
+            "baselineRange": list(C.TRACE_METAL_BASELINE_NI_RANGE),
+            "mixingDepthM": C.TRACE_METAL_MIXING_DEPTH_M,
+            "bulkDensityKgM3": C.TRACE_METAL_BULK_DENSITY_KG_M3,
+            "horizonYr": C.TRACE_METAL_HORIZON_YR,
+            "rateTHaYr": C.APPLICATION_RATE_T_HA_YR,
+        },
         # evaluatedGha is the area the browser's sample can actually see: in-domain
         # AND with a computable rate. Scaling a mean over evaluated cells by TOTAL
         # cropland would attribute removal to cells we declined to evaluate.
