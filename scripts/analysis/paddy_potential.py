@@ -63,8 +63,19 @@ def main() -> int:
     m = (crop >= C.CROPLAND_MIN_FRACTION) & np.isfinite(ph) & np.isfinite(L1)
     ha_paddy = np.clip(parea, 0, 1) * area * 100.0            # ha of rice per cell
     inund = months > 0
-    sel = m & inund & (ha_paddy > 0)
     sel_hole = m & ~inund & (ha_paddy > 0)
+    # --all-rice: count every SPAM rice hectare on the grid, not only the cells
+    # GRPI flags as inundated. GRPI's presence grid has documented holes (a
+    # verified bunded-paddy site reads 0 months while every neighbour reads 6),
+    # and in India 11 of 30 Mha of SPAM rice sits on zero-month cells. The
+    # paddy-view chemistry does not exist on those cells (f_pad = 0), so it is
+    # IMPUTED: each unflagged rice cell takes the paddy-view per-hectare values
+    # of the nearest GRPI-flagged rice cell within FILL_KM; beyond that it keeps
+    # the cell-mean chemistry. The cell-mean rows need no imputation and are
+    # the no-assumption comparison. The share of hectares imputed is printed.
+    ALL_RICE = "--all-rice" in sys.argv
+    FILL_KM = 100.0
+    sel = m & (ha_paddy > 0) if ALL_RICE else (m & inund & (ha_paddy > 0))
 
     # ---- kinetics scaffolding, identical to the build's and the footer's
     spec = C.FEEDSTOCK_ARCHETYPES[C.FEEDSTOCK_DEFAULT]
@@ -87,6 +98,23 @@ def main() -> int:
                 "y1_un": y1_un, "y1_lim": np.minimum(y1_un, ceilx), "ceil": ceilx}
 
     chem = {"cell mean": per_ha(L1, eta, ceil_c), "paddy view": per_ha(L1p, etap, ceil_p)}
+    imputed_share = 0.0
+    if ALL_RICE:
+        from scipy import ndimage
+        flagged = m & inund & (ha_paddy > 0)
+        dist, (iy, ix) = ndimage.distance_transform_edt(~flagged, return_indices=True)
+        km_per_cell = abs(transform.a) * 111.0          # ~11 km at 0.1 deg; equatorial, conservative fill radius
+        fill = sel_hole & (dist * km_per_cell <= FILL_KM)
+        pv = chem["paddy view"]
+        for k in list(pv):
+            arr = pv[k].copy()
+            arr[fill] = pv[k][iy[fill], ix[fill]]
+            pv[k] = arr
+        imputed_share = float(ha_paddy[fill].sum() / ha_paddy[sel].sum())
+        print(f"  ALL SPAM RICE counted; paddy-view chemistry imputed from the nearest "
+              f"GRPI-flagged rice cell within {FILL_KM:.0f} km on {imputed_share:.1%} of rice "
+              f"hectares (unflagged rice beyond that keeps cell-mean chemistry: "
+              f"{float(ha_paddy[sel_hole & ~fill].sum() / ha_paddy[sel].sum()):.1%})")
 
     idx, isos, names = country_raster(transform, w, h)
 
@@ -99,7 +127,8 @@ def main() -> int:
         return [float(v[o][np.searchsorted(cw, t)]) for t in qs]
 
     print(f"Rice-paddy ERW potential, basalt, {A:g} t/ha; paddy area = SPAM rice fraction x cell "
-          "area on GRPI-inundated cells; totals are sums over paddy hectares (area-weighted)")
+          + ("area on ALL rice cells" if ALL_RICE else "area on GRPI-inundated cells")
+          + "; totals are sums over paddy hectares (area-weighted)")
     print(f"  steady-state basis: I_inf = {i_inf:.3f}; CO2 potential {ct:.3f} tCO2/t; "
           f"ceiling Omega = {C.FLUX_CEILING_OMEGA:.3g}, Mg = {C.FLUX_CEILING_MG_MM:g} mM\n")
 
@@ -149,9 +178,9 @@ def main() -> int:
 
     import json
     (ROOT / "data/processed").mkdir(exist_ok=True, parents=True)
-    tag = "" if A == C.APPLICATION_RATE_T_HA_YR else f"_{A:g}tha"
+    tag = ("" if A == C.APPLICATION_RATE_T_HA_YR else f"_{A:g}tha") + ("_allrice" if ALL_RICE else "")
     with open(ROOT / f"data/processed/paddy_potential{tag}.json", "w") as f:
-        json.dump({"basis": f"basalt {A:g} t/ha; steady state and year 1; Mt CO2/yr; paddy = SPAM rice x GRPI-inundated",
+        json.dump({"basis": f"basalt {A:g} t/ha; steady state and year 1; Mt CO2/yr; paddy = SPAM rice x " + ("all rice cells, paddy view imputed within 100 km" if ALL_RICE else "GRPI-inundated"), "imputed_share": imputed_share,
                    "rows": rows}, f, indent=1)
     print(f"\nwrote data/processed/paddy_potential{tag}.json")
     return 0
