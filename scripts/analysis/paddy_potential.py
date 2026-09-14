@@ -70,7 +70,10 @@ def main() -> int:
     spec = C.FEEDSTOCK_ARCHETYPES[C.FEEDSTOCK_DEFAULT]
     ct = ((spec["CaO_wt"] / C.M_CAO + spec["MgO_wt"] / C.M_MGO)
           * 1000.0 * 2.0 * C.MOL_CO2_PER_KMOL_CHARGE_T)
-    A = C.APPLICATION_RATE_T_HA_YR
+    # --rate N overrides the display application rate (t/ha) for a what-if;
+    # removal is linear in it before the ceiling, so this is exact, not a
+    # rescaling, and the ceiling then binds on more of the area.
+    A = float(sys.argv[sys.argv.index('--rate') + 1]) if '--rate' in sys.argv else C.APPLICATION_RATE_T_HA_YR
     d_ref = K.retreat_at_reference()
     ug = np.concatenate([[0.0], np.geomspace(1e-5, 200.0, 900)])
     gg = np.concatenate([[0.0], K.dissolved_fraction(ug[1:], C.PSD_REF_WIDTH)])
@@ -95,7 +98,7 @@ def main() -> int:
         cw = np.cumsum(wts[o]) / wts.sum()
         return [float(v[o][np.searchsorted(cw, t)]) for t in qs]
 
-    print("Rice-paddy ERW potential, basalt, 30 t/ha; paddy area = SPAM rice fraction x cell "
+    print(f"Rice-paddy ERW potential, basalt, {A:g} t/ha; paddy area = SPAM rice fraction x cell "
           "area on GRPI-inundated cells; totals are sums over paddy hectares (area-weighted)")
     print(f"  steady-state basis: I_inf = {i_inf:.3f}; CO2 potential {ct:.3f} tCO2/t; "
           f"ceiling Omega = {C.FLUX_CEILING_OMEGA:.3g}, Mg = {C.FLUX_CEILING_MG_MM:g} mM\n")
@@ -146,10 +149,11 @@ def main() -> int:
 
     import json
     (ROOT / "data/processed").mkdir(exist_ok=True, parents=True)
-    with open(ROOT / "data/processed/paddy_potential.json", "w") as f:
-        json.dump({"basis": "basalt 30 t/ha; steady state and year 1; Mt CO2/yr; paddy = SPAM rice x GRPI-inundated",
+    tag = "" if A == C.APPLICATION_RATE_T_HA_YR else f"_{A:g}tha"
+    with open(ROOT / f"data/processed/paddy_potential{tag}.json", "w") as f:
+        json.dump({"basis": f"basalt {A:g} t/ha; steady state and year 1; Mt CO2/yr; paddy = SPAM rice x GRPI-inundated",
                    "rows": rows}, f, indent=1)
-    print("\nwrote data/processed/paddy_potential.json")
+    print(f"\nwrote data/processed/paddy_potential{tag}.json")
     return 0
 
 
