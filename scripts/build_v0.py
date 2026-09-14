@@ -1149,6 +1149,15 @@ def main() -> int:
         eta_tr=eta_tr.astype("float32"), cdr=cdr.astype("float32"),
         cdr_uncapped=cdr_uncapped.astype("float32"),
         ceiling=ceiling.astype("float32"),
+        # Paddy-field view (every paddy-bearing cell at 100% paddy, observed
+        # inundation months kept) and the paddy inputs, so analyses of rice
+        # potential can use the float chemistry rather than the 8-bit tex5.
+        L1_pad=L1_pad.astype("float32"), eta_pad=eta_pad.astype("float32"),
+        ceiling_pad=ceiling_pad.astype("float32"),
+        paddy_area_frac=(np.clip(parea, 0, 1).astype("float32")
+                         if paddy_months is not None else np.zeros_like(ph, dtype="float32")),
+        paddy_months=(paddy_months.astype("float32") if paddy_months is not None
+                      else np.zeros_like(ph, dtype="float32")),
         # Second feedstock (olivine), same basis, for the analysis scripts.
         cdr_o=cdr_o.astype("float32"),
         cdr_o_uncapped=cdr_o_uncapped.astype("float32"),
