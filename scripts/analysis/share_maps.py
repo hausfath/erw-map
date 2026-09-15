@@ -5,7 +5,10 @@
   docs/figures/erw_weathered_year1.png    share of applied basalt weathered in
                                           the first year at the reference grind
 
-  python3 scripts/analysis/share_maps.py
+  python3 scripts/analysis/share_maps.py [--region eu]
+
+--region eu draws only EU27 + UK cropland on a European extent, with the
+statistics in the captions computed over those cells; files get an _eu suffix.
 
 Same arithmetic as the viewer: suitability is the piecewise value function of
 gross removal (drainage-limited, year 1), multiplied by the delivered-cost
@@ -33,7 +36,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import constants as C  # noqa: E402
 import kinetics as K  # noqa: E402
 from build_v0 import RAMP, RAMP_FRAC, master_grid, onto_grid, piecewise  # noqa: E402
-from analysis.paper_figures import LAND, MASK, Z, extent, AREA_W  # noqa: E402
+from analysis.paper_figures import LAND, Z, extent, AREA_W  # noqa: E402
+import analysis.paper_figures as PF  # noqa: E402
+from analysis.region_potential import EU27  # noqa: E402
+
+REGIONS = {
+    "world": {"title_where": "the world's cropland", "xlim": (-170, 180), "ylim": (-57, 74),
+              "figsize": (13.5, 8.2), "suffix": "", "isos": None, "ax_rect": [0.01, 0.13, 0.98, 0.72],
+              # caption statistics: an empty ocean corner (lower left, above the legend)
+              "stats": {"x": 0.005, "ha": "left", "va": "bottom", "y1": 0.105, "y2": 0.06}},
+    "eu": {"title_where": "cropland in the EU and UK", "xlim": (-12, 35), "ylim": (34, 71.5),
+           "figsize": (10.5, 10.2), "suffix": "_eu", "isos": EU27 + ["GB"], "ax_rect": [0.01, 0.12, 0.98, 0.74],
+           # the Barents Sea corner; the lower left is Iberia
+           "stats": {"x": 0.995, "ha": "right", "va": "top", "y1": 0.99, "y2": 0.99}},
+}
+REGION = REGIONS[sys.argv[sys.argv.index("--region") + 1] if "--region" in sys.argv else "world"]
+MASK = PF.MASK.copy()
+if REGION["isos"]:
+    from analysis.country_potential import country_raster
+    _t, _w, _h, _crs = master_grid()
+    _idx, _isos, _names = country_raster(_t, _w, _h)
+    MASK &= np.isin(_idx, [_isos.index(i) + 1 for i in REGION["isos"] if i in _isos])
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "docs/figures"
@@ -52,7 +75,7 @@ def base(ax):
     ax.set_facecolor(SEA)
     ax.add_collection(PolyCollection(LAND, facecolors=NOCROP, edgecolors=LAND_EDGE,
                                      linewidths=0.3, zorder=0))
-    ax.set_xlim(-170, 180); ax.set_ylim(-57, 74)
+    ax.set_xlim(*REGION["xlim"]); ax.set_ylim(*REGION["ylim"])
     ax.set_aspect("equal"); ax.set_xticks([]); ax.set_yticks([])
     for s in ax.spines.values():
         s.set_visible(False)
@@ -100,17 +123,18 @@ def suitability_map(suit, cdr, A):
     arr = np.full(suit.shape, np.nan); arr[MASK] = 100.0 * suit[MASK]
     neg = MASK & (cdr < C.CDR_NEGLIGIBLE_T_HA_YR)
     arr[neg] = np.nan
-    fig = plt.figure(figsize=(13.5, 8.2))
-    ax = fig.add_axes([0.01, 0.13, 0.98, 0.72])
+    fig = plt.figure(figsize=REGION["figsize"])
+    ax = fig.add_axes(REGION["ax_rect"])
     base(ax)
     im = ax.imshow(np.ma.masked_invalid(arr), extent=extent(), origin="upper", cmap=ramp,
                    vmin=0, vmax=100, interpolation="nearest", zorder=2)
     ax.imshow(np.ma.masked_where(~neg, np.ones_like(arr)), extent=extent(), origin="upper",
               cmap=mcolors.ListedColormap([NEGLIGIBLE]), interpolation="nearest", zorder=3)
-    fig.text(0.012, 0.955, "Where enhanced rock weathering makes the most sense",
+    fig.text(0.012, 0.955, "Where enhanced rock weathering makes the most sense"
+             + (" in Europe" if REGION["suffix"] else ""),
              fontsize=22, fontweight="bold", color=INK, ha="left", va="top")
     fig.text(0.012, 0.905,
-             f"Suitability of the world's cropland for basalt at {A:.0f} t/ha, with delivered rock cost. "
+             f"Suitability of {REGION['title_where']} for basalt at {A:.0f} t/ha, with delivered rock cost. "
              "Score follows gross CO₂ removal per hectare, capped by what the drainage water can carry, "
              "then discounted by the haul from the nearest mafic quarry.",
              fontsize=11.5, color=INK2, ha="left", va="top", wrap=True)
@@ -125,12 +149,14 @@ def suitability_map(suit, cdr, A):
                Patch(facecolor=NOCROP, edgecolor=LAND_EDGE, label="Not cropland")]
     ax.legend(handles=handles, loc="lower left", frameon=False, fontsize=9.5,
               bbox_to_anchor=(0.0, 0.0), handlelength=1.4)
-    ax.text(0.995, 0.01, f"Cropland median score {p50:.0f}, top decile above {p90:.0f}",
-            transform=ax.transAxes, ha="right", va="bottom", fontsize=9.5, color=INK2)
+    # Statistics sit above the legend in the empty ocean corner, never over land.
+    st = REGION["stats"]
+    ax.text(st["x"], st["y1"], f"{'EU + UK c' if REGION['suffix'] else 'C'}ropland median score {p50:.0f}, top decile above {p90:.0f}",
+            transform=ax.transAxes, ha=st["ha"], va=st["va"], fontsize=9.5, color=INK2)
     footer(fig, f"ERW Atlas, build of {date.today():%d %b %Y}. Gross removal, not net; economics are "
                 "acquisition and haul only. 0.1° grid, ~10–50 km effective resolution.")
     for ext in ("png", "pdf"):
-        fig.savefig(OUT / f"erw_suitability_econ.{ext}", facecolor="white")
+        fig.savefig(OUT / f"erw_suitability_econ{REGION['suffix']}.{ext}", facecolor="white")
     plt.close(fig)
     print(f"suitability: median {p50:.1f}, p90 {p90:.1f}; negligible on "
           f"{100 * AREA_W[neg].sum() / AREA_W[MASK].sum():.1f}% of area")
@@ -140,12 +166,12 @@ def weathered_map(frac):
     ramp = mcolors.LinearSegmentedColormap.from_list("atlas_frac", RAMP_FRAC)
     top = C.FRAC_RAMP_MAX
     arr = np.full(frac.shape, np.nan); arr[MASK] = 100.0 * np.minimum(frac[MASK], top)
-    fig = plt.figure(figsize=(13.5, 8.2))
-    ax = fig.add_axes([0.01, 0.13, 0.98, 0.72])
+    fig = plt.figure(figsize=REGION["figsize"])
+    ax = fig.add_axes(REGION["ax_rect"])
     base(ax)
     im = ax.imshow(np.ma.masked_invalid(arr), extent=extent(), origin="upper", cmap=ramp,
                    vmin=0, vmax=100 * top, interpolation="nearest", zorder=2)
-    fig.text(0.012, 0.955, "How fast does crushed basalt weather?",
+    fig.text(0.012, 0.955, "How fast does crushed basalt weather?" + (" Europe" if REGION["suffix"] else ""),
              fontsize=22, fontweight="bold", color=INK, ha="left", va="top")
     fig.text(0.012, 0.905,
              f"Share of applied basalt (d50 {C.PSD_REF_D50_UM:.0f} µm) predicted to dissolve in the first "
@@ -162,13 +188,14 @@ def weathered_map(frac):
     lo, hi = C.DISSOLVED_FRAC_OBSERVED_RANGE
     ax.legend(handles=[Patch(facecolor=NOCROP, edgecolor=LAND_EDGE, label="Not cropland")],
               loc="lower left", frameon=False, fontsize=9.5, bbox_to_anchor=(0.0, 0.0), handlelength=1.4)
-    ax.text(0.995, 0.01, f"Cropland p10 / median / p90: {p10:.0f} / {p50:.0f} / {p90:.0f}%; "
-            f"verified deliveries measured {lo * 100:.0f}–{hi * 100:.0f}% at their own grinds and sites",
-            transform=ax.transAxes, ha="right", va="bottom", fontsize=9.5, color=INK2)
+    st = REGION["stats"]
+    ax.text(st["x"], st["y2"], f"{'EU + UK c' if REGION['suffix'] else 'C'}ropland p10 / median / p90: {p10:.0f} / {p50:.0f} / {p90:.0f}%\n"
+            f"Verified deliveries measured {lo * 100:.0f}–{hi * 100:.0f}% at their own grinds and sites",
+            transform=ax.transAxes, ha=st["ha"], va=st["va"], fontsize=9.5, color=INK2, linespacing=1.4)
     footer(fig, f"ERW Atlas, build of {date.today():%d %b %Y}. Rock dissolving, not carbon leaving: "
                 "not bounded by the drainage limit. 0.1° grid, ~10–50 km effective resolution.")
     for ext in ("png", "pdf"):
-        fig.savefig(OUT / f"erw_weathered_year1.{ext}", facecolor="white")
+        fig.savefig(OUT / f"erw_weathered_year1{REGION['suffix']}.{ext}", facecolor="white")
     plt.close(fig)
     print(f"weathered: p10/p50/p90 {p10:.1f}/{p50:.1f}/{p90:.1f}%")
 
@@ -177,7 +204,7 @@ def main() -> int:
     frac, cdr, suit, A = layers()
     suitability_map(suit, cdr, A)
     weathered_map(frac)
-    print(f"wrote {OUT}/erw_suitability_econ.png and erw_weathered_year1.png (+pdf)")
+    print(f"wrote {OUT}/erw_suitability_econ{REGION['suffix']}.png and erw_weathered_year1{REGION['suffix']}.png (+pdf)")
     return 0
 
 

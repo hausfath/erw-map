@@ -690,7 +690,7 @@ documented-parameter ensemble intervals for the largest countries
 (`scripts/analysis/country_table.py`). `docs/figures/erw_suitability_econ.png` and
 `docs/figures/erw_weathered_year1.png` are standalone versions of the viewer's
 suitability-with-economics and year-1 weathering layers, regenerated from the
-build by `scripts/analysis/share_maps.py` (the script also writes PDFs, which are not committed).
+build by `scripts/analysis/share_maps.py`; `--region eu` produces the `_eu` versions for EU27 + UK on a European extent. The script also writes PDFs, which are not committed.
 
 ## Running it
 
