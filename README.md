@@ -682,6 +682,16 @@ onto the rate constants themselves and onto the missing alkaline-branch mechanis
   illustration.
 - Not a site-selection tool.
 
+## Country table and shareable maps
+
+`docs/COUNTRY_POTENTIAL.md` (and `docs/country_potential_shipped.csv`) tabulates
+technical and economic potential by country at the shipped parameters, with the
+documented-parameter ensemble intervals for the largest countries
+(`scripts/analysis/country_table.py`). `docs/figures/erw_suitability_econ.png` and
+`docs/figures/erw_weathered_year1.png` are standalone versions of the viewer's
+suitability-with-economics and year-1 weathering layers, regenerated from the
+build by `scripts/analysis/share_maps.py` (the script also writes PDFs, which are not committed).
+
 ## Running it
 
 ```bash
