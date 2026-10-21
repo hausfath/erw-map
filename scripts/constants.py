@@ -677,6 +677,10 @@ APPLICATION_RATE_PREVIOUS_T_HA_YR = 20.0   # for the changelog and the rate note
 # stays inside its 0.5-4.0 band.
 # ---------------------------------------------------------------------------
 DISSOLVED_FRAC_AT_REF = 0.12
+# 2026-10-21: a fifth supplier's figures (digitised, p16 only) would put the
+# anchor at 0.13-0.14 as a lower bound and up to 0.178 on reconstructed p50s,
+# with the cluster spread at 8.8-11x against the pre-registered 10x rule.
+# HELD at 0.12 until tabulated p50s arrive; docs/VALIDATION.md section 4.
 # One-year fraction weathered across the 11 rate-usable deliveries, each at its
 # OWN grind, rate and site, time-normalised as above. The legend's "measured
 # spread". Not the anchor's basis -- none of them is at the reference condition.
@@ -700,6 +704,9 @@ DISSOLVED_FRAC_REF_REQUIRES_ETA_TR = 1.0                # X = 1 implies infinite
 # confirmed, and one-year values extrapolated from short observations are
 # bracketed rather than trusted (SHORT_OBSERVATION_DAYS in
 # analyse_deployments.py).
+# 2026-10-21: a second, provisional re-sample (fifth supplier, p16, digitised:
+# 50% at 1.07 yr -> 71% at 2.0 yr) IS reproduced by shrinking core at width
+# 1.5-2.3. One constraint each way; the flag stays until tabulated data arrive.
 DISSOLUTION_SHAPE_FAILS_LONGITUDINAL = True
 # In-situ soil pCO2 implied by porewater pH and alkalinity at four site means
 # (one supplier, one region, method unstated): 32,000-56,000 uatm, for flooded
@@ -1786,8 +1793,18 @@ COST_FLOOR = 0.05
 # EXPORT is capped, so extra years buy much less: median $953/tCO2 at 5% and only
 # 6.8% of area under $200. The screen follows FLUX_CEILING_ON for that reason.
 COST_SCREEN_USD_PER_TCO2 = 100.0
-COST_SCREEN_YEARS = 10
+# The viewer and country_potential.py both integrate the application's lifetime
+# carbon to 60 years (TMAX = 60, range(1, 61)); this constant still said 10 from
+# the pre-August basis and only reached the methods report, which therefore
+# printed the wrong horizon. Corrected 2026-10-21 to what the code computes.
+COST_SCREEN_YEARS = 60
 COST_SCREEN_DISCOUNT_RATE = 0.05
+# The screen is a SCENARIO, not a property of the land (supplier review,
+# 2026-10-21): it prices acquisition and haul only, at today's byproduct gate
+# and today's quarry inventory. So the threshold is selectable in the viewer
+# (None = no screen) and the footer always shows the unscreened technical total
+# beside it; the docs carry the full supply curve. Shipped view stays at $100.
+COST_SCREEN_OPTIONS_USD_PER_TCO2 = (100.0, 150.0, 200.0, 300.0, 500.0)
 
 
 def cost_value(cost_usd_t):

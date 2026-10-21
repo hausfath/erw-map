@@ -224,6 +224,43 @@ within-cluster spread is interpretable. Both are now reported by
   grind its k is an upper bound (0.88); including it would put the anchor at 0.18.
   A bound is not an estimate, so it is reported and not used.
 
+**A fifth supplier, provisional (2026-10-21). The anchor is unchanged.** A
+Brazilian supplier shared a report on six commercial projects (about 15,000
+ha, diabase basalt at 10–20 t/ha, d50 67–143 µm by laser, immobile-tracer soil
+mass balance on 0–5 cm). It contains no data table, so eight year-1
+observations and one two-year re-sample were digitised from its figures and
+held in the gitignored calibration set as a lead, not as rows. They are
+**16th-percentile** fractions, so they bound k from below.
+
+- As a fourth known-grind cluster, the lower bound gives cluster k ≈ 1.3 and
+  would move the anchor 0.12 → 0.13–0.14 (World steady-state limited 581 → 616
+  Mt). If the supplier's p50s sit 25–35% above its p16s, as other suppliers'
+  do, the cluster k is 2.6–3.4 and the anchor would reach 0.178 (671 Mt; the
+  median of four clusters then saturates at the mean of the existing middle
+  two). The results hold at a 3×3 and 7×7 lookup window and under both
+  readings of an ambiguous figure.
+- **Spread.** With any p50 reconstruction the cross-supplier spread reaches
+  8.8–11×. The pre-registered rule stands (Zeke, 2026-10-21): if tabulated p50s
+  confirm ≥ 10×, the CO₂ layer is demoted to qualitative.
+- **Grind does not explain it.** This supplier's 67 µm feedstock gives k
+  1.0–1.9; the existing 67 µm cluster gives 0.30. Same grind, 3–6× apart,
+  which weakens "PSD width is the likeliest culprit" and points at hydrology
+  (the supplier's own best predictor is cumulative rainfall in the wet season,
+  R² = 0.71 with one waterlogged temperate project excluded).
+- **A second longitudinal constraint, opposing the first.** One project went
+  from 50% at 1.07 yr to 71% at 2.0 yr (both p16); shrinking core at width
+  1.5–2.3 reproduces it, where the existing re-sampled field flattened faster
+  than any width allows. Caveat: this project is the one the supplier
+  calibrated its own forecast on.
+- **Quality flags.** Three of six projects had no control plots, including the
+  one giving the highest k (4.1); the tracer is chosen per project by a
+  significance test after the fact; 0–5 cm sampling is shallower than any
+  existing supplier's; within-cluster k spans ~7×.
+
+Requested from the supplier: per-observation p50/p16/p84 with bootstrap draws,
+sample dates, coordinates, application rate, sampling depth, tracer and control
+status, PSDs. The rows enter the constancy test only once those arrive.
+
 ### Minimum identifying designs, with power
 
 Residual SD in ln(fw) after removing an operator mean and a common rate slope:

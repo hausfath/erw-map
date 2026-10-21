@@ -860,7 +860,7 @@ showing numbers derived from the NaN fallback.
 | Quarry gate cost | $10/t | operator-reported quarry-fines prices — a **current-procurement** (byproduct) price. At scale, dedicated basalt runs $15–22/t in the US/Europe (US traprock averages $21.33/t, USGS 2023); see `docs/GATE_COST_AT_SCALE.md`. Slider spans $0–25 |
 | Truck haul | regional $/t-km (US/CA 0.10, EU 0.09, BR/LatAm 0.055, IN/S Asia 0.045, CN/SE Asia 0.07, Africa 0.11, else 0.08) on road km + 50 km fixed-trip equivalent ($2.25–5.50/t regionally), × 1.35 tortuosity | per-entry sources and vintages in `constants.TRUCK_RATE_GROUPS` and `docs/TRUCK_RATE_SOURCES.md`; only the US rate is a current primary. Live multiplier under Advanced; see §3b |
 | Haul penalty scale S | $100/t | editorial choice, stated as such |
-| Headline cost screen | **$100/tCO₂** against each application's discounted lifetime carbon at 5% | applies to the footer total when economics is on; acquisition and haul only, not a levelised cost. Was a 10-yr window until Aug 2026. A unit cost, unclamped by the drainage limit (the counted carbon is capped) — prices the drainage-optimal application |
+| Headline cost screen | **$100/tCO₂** against each application's discounted lifetime carbon at 5% (60 yr); **selectable** in the viewer ($100/150/200/300/500 or none) since 2026-10-21 | a scenario, not a limit (§3c): the footer always shows the unscreened technical total beside it. Applies to the footer total when economics is on; acquisition and haul only, not a levelised cost. Was a 10-yr window until Aug 2026. A unit cost, unclamped by the drainage limit (the counted carbon is capped) — prices the drainage-optimal application |
 | SOC exclusion | 5 wt%, P > 0.9 | Puro.earth rule 3.9.1(c) |
 
 ### 3b. The haul model: regional rates plus a fixed per-trip trucking charge
@@ -937,6 +937,45 @@ JS.
 against delivered costs in the verified-delivery fixture — benchmarked is not
 calibrated, and the distance under the rate is still great-circle × 1.35, not
 routed.
+
+### 3c. The cost screen is a scenario: the supply curve (2026-10-21)
+
+A supplier's review made a fair point: with economics on, the headline was
+0.20 GtCO₂/yr, a third of the 0.58 Gt drainage-limited technical potential, so
+a single $100/tCO₂ threshold was one of the main determinants of the number
+readers saw. The physical terms (climate, soil chemistry, drainage) are
+properties of the land; the screen is not. It prices today's byproduct gate
+and today's quarry inventory, and it can move with scale and new quarries.
+
+So the threshold is now the reader's choice. The viewer offers $100 (shipped),
+$150, $200, $300, $500 or no screen, and the footer always shows the technical
+total on a second line. The Economics panel prints the live supply curve at the
+current gate and haul settings. `scripts/analysis/supply_curve.py` writes the
+same curve at the shipped parameters to `docs/supply_curve.json` and
+[`docs/figures/erw_supply_curve.png`](figures/erw_supply_curve.png):
+
+| MtCO₂/yr, steady state, drainage-limited | <$100 | <$150 | <$200 | <$300 | <$500 | no screen |
+|---|---:|---:|---:|---:|---:|---:|
+| World | 197 | 313 | 373 | 446 | 530 | 581 |
+| India | 66 | 87 | 91 | 93 | 93 | 93 |
+| Brazil | 35 | 45 | 50 | 53 | 55 | 58 |
+| United States | 3 | 7 | 13 | 28 | 62 | 67 |
+| China | 12 | 27 | 34 | 39 | 44 | 45 |
+| World, no drainage limit | 387 | 604 | 712 | 847 | 1,002 | 1,126 |
+
+The script asserts it reproduces the shipped $100 headline (197 Mt). The
+carbon-weighted median cell sits at about $137/tCO₂.
+
+What the screen is and is not. It covers rock purchase and truck haul per
+tonne of discounted lifetime carbon, with no grinding, spreading or MRV, so it
+is not a levelised cost. It is demand-side: every quarry is an unlimited source
+(§6 item 8). Both of its cost inputs are mature commodity costs, quarry fines
+and trucking, with little technology-learning headroom of their own. What
+could move the curve is mostly elsewhere: new quarries opening near demand
+(the inventory is static), higher tCO₂ per tonne through feedstock and site
+selection, and the costs the screen leaves out. Those are reasons to read any
+single threshold as a scenario. They are not evidence that a higher threshold
+is the right one.
 
 ### Choices that are not forced by physics
 
@@ -1060,6 +1099,36 @@ likely effect on the map.
    tortuosity, so a monsoon-season Gangetic haul and a Midwest haul are treated
    identically.
 10. **Net removal.** Everything reported is gross alkalinity generation.
+11. **Managed-soil pH (open question, 2026-10-21).** SoilGrids pH(H₂O) is a
+    static prediction trained on soil profiles collected over decades, mostly
+    without a liming signal, so it probably reads low on limed cropland. Brazil's
+    cropland median is 5.3 (72% of area below 5.5). One Brazilian supplier's
+    measured baseline medians are pH(H₂O) 5.85, 6.02 and 5.20 in three regions,
+    against SoilGrids 5.0–5.6 at the same deployments: a +0.2–0.5 bias, real but
+    smaller than the +1 unit liming targets would suggest. In this model higher
+    pH **lowers** potential. η_DIC rises (Brazil 0.68 → 0.98 if cropland is
+    floored at pH 6.0), but the Palandri–Kharaka acid mechanism slows dissolution
+    by more, and the drainage ceiling, which uses no baseline pH, binds anyway.
+    `scripts/analysis/ph_sensitivity.py`, steady state, drainage-limited:
+
+    | Scenario | World | Brazil |
+    |---|---:|---:|
+    | SoilGrids (shipped) | 581 | 58 |
+    | +0.5 on all cropland | 510 | 57 |
+    | +0.5, η_DIC only (rate law unchanged) | 589 | 60 |
+    | cropland floored at pH 6.0 | 560 | 53 |
+
+    The direction rests on the lab rate law's pH exponent, which field data have
+    not confirmed (the same supplier's data show no relation between baseline pH
+    and fraction dissolved across pH 5.2–6.8, R² = 0.03). Where the per-cell label
+    reads *Acid soil: cations neutralise acidity*, a limed field may not be acid.
+    The rescaling uses annual-mean temperature against monthly-weighted layers, so
+    it is a sensitivity rather than a rebuild. A separate claim, that in-situ soil
+    water sits ~0.5 units **above** soil pH, runs opposite to this repo's
+    convention (`constants.PH_CONVENTION`: a dilute slurry reads 0.2–0.5 above
+    in-situ solution at field pCO₂); a CaCl₂-basis soil pH or degassed lysimeter
+    samples would both produce it. Unresolved until paired pH(H₂O), pH(CaCl₂) and
+    in-situ pore-water data arrive.
 
 ### Overlays
 

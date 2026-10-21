@@ -405,6 +405,18 @@ deployable at a price anyone would pay. Leading with the physical figure put the
 less useful number in front. The toggle still switches it off, and the footer states
 its basis either way.
 
+**The $100/tCO₂ screen is a scenario, and since 2026-10-21 the viewer treats it as
+one.** A supplier review pointed out that the screen was doing much of the work in
+the headline (0.20 Gt against 0.58 Gt technical, drainage-limited) while pricing
+only today's byproduct gate and today's quarry inventory. The threshold is now
+selectable ($100, $150, $200, $300, $500 or none), the footer always shows the
+technical total beside the screened one, and the Economics panel prints the live
+supply curve. At the shipped parameters the world drainage-limited potential is
+0.20 / 0.31 / 0.37 / 0.45 / 0.53 / 0.58 GtCO₂/yr across those thresholds
+(`scripts/analysis/supply_curve.py`; METHODOLOGY §3c).
+
+![ERW potential against the cost screen](docs/figures/erw_supply_curve.png)
+
 ### Monthly soil temperature and moisture
 
 Both stand-ins are gone: Lembrechts et al. (2022) soil temperature at 5–15 cm,

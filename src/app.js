@@ -65,6 +65,10 @@
     // the rates became regional.
     gate: E.cost ? E.cost.gateUsdT : 0,
     truckMult: 1,
+    // $/tCO2 screen on the headline total; null = no screen. A scenario, not a
+    // property of the land, so it is the reader's to choose. The footer always
+    // shows the unscreened technical total beside it.
+    screen: E.cost ? (E.cost.screenUsdPerTco2 || null) : null,
   };
 
   const CRIT = E.terms;
@@ -878,8 +882,8 @@
 
      MEMOISED, and it matters more than it looks. The slice depends on psd.width
      alone, but fracOf() called it on every invocation, and fracOf() runs once per
-     sampled cell in cdrOfRow() plus once per year in the cost screen's 10-year
-     loop -- around 14 calls per cell across updateStability() and globalGt(). At
+     sampled cell in cdrOfRow() plus once per year in the cost screen's lifetime
+     (up to 60-year) loop -- around 14 calls per cell across updateStability() and globalGt(). At
      ~45k sampled cells that was ~630k rebuilds of a 64-element Float32Array per
      refresh, which was the whole of a 1.4 s slider response. Nothing about the
      numbers changes: same table, same interpolation, computed once per width. */
@@ -921,8 +925,8 @@
 
   /* Interpolate the slice at a given log10(u). Split out from fracOf() so the
      multi-year cost screen can hoist the logarithm: u scales linearly in t, so
-     log10(u_t) = log10(u_1) + log10(t) and the ten years cost one log instead of
-     ten. Exact arithmetic, not an approximation. */
+     log10(u_t) = log10(u_1) + log10(t) and the screen's years cost one log instead
+     of one per year. Exact arithmetic, not an approximation. */
   function fracAtLog10u(l10u, g, D) {
     if (!(l10u > -Infinity)) return 0;               // X <= 0, or NaN
     const t = (l10u - D.uLog.lo) / (D.uLog.hi - D.uLog.lo) * (g.length - 1);
@@ -1042,13 +1046,34 @@
     // constants: the sliders under Advanced can move both, and a static caption
     // would then describe assumptions the map is no longer using.
     $("econ-sliders").innerHTML = `<p class="why" style="margin-top:10px" ` +
-      `id="econ-basis"></p>`;
+      `id="econ-basis"></p>` +
+      `<div id="screen-wrap" class="slider" style="margin-top:12px"><div class="row">` +
+      `<span class="name">Headline cost screen ($/tCO\u2082)</span></div>` +
+      `<div class="seg" id="screen-seg" style="margin-top:6px">` +
+      screenOptions().map((v) =>
+        `<button class="seg-btn" data-screen="${v === null ? "" : v}">` +
+        `${v === null ? "None" : "$" + v}</button>`).join("") +
+      `</div><p class="why" id="econ-supply" style="margin-top:8px"></p></div>`;
     document.querySelectorAll("#econ-seg .seg-btn").forEach((b) => {
       b.addEventListener("click", () => {
         econ.costExp = +b.dataset.econ ? E.cost.expOn : 0;
         refresh();
       });
     });
+    document.querySelectorAll("#screen-seg .seg-btn").forEach((b) => {
+      b.addEventListener("click", () => {
+        econ.screen = b.dataset.screen === "" ? null : +b.dataset.screen;
+        refresh();
+      });
+    });
+  }
+
+  // Thresholds offered for the headline screen, plus None. Falls back to the
+  // single shipped value if an older engine_constants.js is served.
+  function screenOptions() {
+    const o = (E.cost && E.cost.screenOptions)
+      || (E.cost && E.cost.screenUsdPerTco2 ? [E.cost.screenUsdPerTco2] : []);
+    return [...o, null];
   }
 
   /* The two delivered-cost assumptions, under Advanced.
@@ -1134,11 +1159,18 @@
     // Two distinct effects, and the second is easy to miss: the toggle discounts
     // the MAP by cost, and it also restricts the headline TOTAL to cells under the
     // $/tCO2 screen. Say both.
-    const scr = E.cost && E.cost.screenUsdPerTco2;
+    const scr = econ.screen;
+    $("screen-wrap").classList.toggle("hidden", !on);
+    document.querySelectorAll("#screen-seg .seg-btn").forEach((b) =>
+      b.classList.toggle("active",
+        (b.dataset.screen === "" ? null : +b.dataset.screen) === scr));
     $("econ-readout").textContent = on
-      ? (scr ? `Footer total counts only cells under $${scr}/tCO\u2082 `
-              + `delivered (see Methods). `
-             : "")
+      ? (scr ? `The headline counts only cells where rock purchase and haul `
+              + `come in under $${scr}/tCO\u2082. That is a scenario at today\u2019s `
+              + `prices and quarry inventory, not a physical limit, and it leaves `
+              + `out grinding, spreading and MRV (see Methods). `
+             : "No cost screen on the headline; the map is still discounted by "
+               + "delivered cost. ")
         + "Hover the map for per-cell cost."
       : "Off \u2014 the map shows physical potential; the footer total is "
         + "unrestricted.";
@@ -1505,6 +1537,8 @@
      latitudes, which would bias this toward the boreal margin. */
   let sample = null;
   let lastKeptAreaFrac = 1;      // set by globalGt(); area surviving the cost screen
+  let lastTechGt = null;         // set by globalGt(); the same total with no screen
+  let lastSupply = null;         // set by globalGt(); [{usd, gt}] per screen option
   function buildSample() {
     if (!cpu) return;
     const A = cpu.A, B = cpu.B, out = [];
@@ -1591,7 +1625,13 @@
     // CO2, not per tonne of rock: rock cost is nearly uncorrelated with CDR, so a
     // rock-cost screen barely discriminates, while this one rewards cells that
     // produce enough carbon to justify the haul.
-    const screening = econ.costExp > 0 && E.cost && E.cost.screenUsdPerTco2;
+    // The per-cell $/tCO2 is computed whenever economics is on, so one pass
+    // yields the screened headline, the unscreened technical total and the
+    // supply curve at every offered threshold.
+    const pricing = econ.costExp > 0 && !!E.cost;
+    const screening = pricing && econ.screen !== null;
+    const opts = pricing ? screenOptions().filter((v) => v !== null) : [];
+    const numAt = new Float64Array(opts.length);
     const rate = E.feedstock.rateTHaYr, fl = E.cost ? E.cost.floor : 1;
     // THE FOOTER IS ON A STEADY-STATE BASIS (Aug 2026), not year 1: hold a
     // standing inventory of one application (rate t/ha) of undissolved rock,
@@ -1614,7 +1654,7 @@
     const CPF = cdrPerFrac(), iInf = iInfOf(), ni = niScale();
     const pow = new Float64Array(TMAX + 1), l10t = new Float64Array(TMAX + 1);
     for (let t = 1; t <= TMAX; t++) { pow[t] = Math.pow(1 + DR, t); l10t[t] = Math.log10(t); }
-    let num = 0, den = 0, kept = 0, numC = 0;
+    let num = 0, den = 0, kept = 0, numC = 0, numAll = 0;
     for (const r of sample) {
       const X = xOfRow(r, exps), eDic = eDicOfRow(r, exps);
       const u1 = kU * X;
@@ -1631,7 +1671,8 @@
         if (carbonateOn) credit = carbPhi() * (cdr - ceil);
         cdr = ceil;
       }
-      if (screening) {
+      numAll += (cdr + credit) * r[3];
+      if (pricing) {
         const usdT = costUsdT(fl + rawByte(r[4] === undefined ? 255 : r[4]) * (1 - fl));
         let tonnes = 0, prev = 0;
         for (let t = 1; t <= TMAX; t++) {
@@ -1652,14 +1693,22 @@
           tonnes += yr / pow[t];
           if (cum > 0.9995) break;               // cohort spent
         }
-        if (!(tonnes > 0) || usdT === null
-            || usdT * rate / tonnes >= E.cost.screenUsdPerTco2) { den += r[3]; continue; }
+        const usdCo2 = (tonnes > 0 && usdT !== null) ? usdT * rate / tonnes : Infinity;
+        for (let k = 0; k < opts.length; k++)
+          if (usdCo2 < opts[k]) numAt[k] += (cdr + credit) * r[3];
+        if (screening && usdCo2 >= econ.screen) { den += r[3]; continue; }
         kept += r[3];
       }
       num += (cdr + credit) * r[3]; numC += credit * r[3]; den += r[3];
     }
     if (!(den > 0)) return null;
     lastKeptAreaFrac = screening ? kept / den : 1;
+    {
+      const g = E.stats.evaluatedGha ?? E.stats.croplandGha;
+      lastTechGt = (numAll / den) * g;
+      lastSupply = pricing
+        ? opts.map((v, k) => ({usd: v, gt: (numAt[k] / den) * g})) : null;
+    }
     lastCarbonateGt = (numC / den) * (E.stats.evaluatedGha ?? E.stats.croplandGha);
     // Scale by the EVALUATED area, not all cropland: the sample only covers cells
     // with a computable rate, and multiplying its mean by the full extent would
@@ -1932,7 +1981,16 @@
       hover readout as outcrop-based estimates. The discount
       applies to the haul increment only — every site must buy and crush rock, so
       the gate cost carries no spatial information — and it never zeroes a cell
-      with real physical potential. Truck only, not network-routed.</li>
+      with real physical potential. Truck only, not network-routed.
+      With economics on, the headline total is also screened on rock purchase
+      and haul per tonne of CO₂ (discounted lifetime carbon of one application,
+      ${(E.cost.screenDiscount * 100).toFixed(0)}%). The threshold is a
+      <i>scenario</i>, selectable from ${screenOptions().filter((v) => v !== null)
+        .map((v) => "$" + v).join(", ")} or none, and the footer always shows the
+      unscreened technical total beside it. It reflects today's byproduct gate
+      prices and today's quarry inventory, and it leaves out grinding, spreading
+      and MRV, so it is neither a levelised cost nor a long-run limit on
+      ERW.</li>
       <li><b>Protocol screen.</b> Cells whose soil organic carbon likely exceeds
       ${E.eligibility.socThreshold} wt% (exceedance probability &gt;
       ${E.eligibility.pExcluded} on SoilGrids quantiles; the Puro.earth and
@@ -2168,13 +2226,25 @@
       " Gha of evaluated cropland, recomputed from the grid at the current " +
       "settings; sampled 1 cell in 3 from 8-bit textures.";
     const gha = (E.stats.evaluatedGha ?? E.stats.croplandGha) * lastKeptAreaFrac;
-    const scr = econ.costExp > 0 && E.cost && E.cost.screenUsdPerTco2;
+    const scr = econ.costExp > 0 && E.cost && econ.screen !== null ? econ.screen : null;
+    $("stat-tech").textContent = (gt === null || scr === null || lastTechGt === null)
+      ? ""
+      : `${lastTechGt.toFixed(2)} GtCO\u2082/yr technical potential with no cost screen`;
+    $("stat-tech").classList.toggle("hidden", !$("stat-tech").textContent);
+    const sup = $("econ-supply");
+    if (sup) {
+      sup.textContent = (lastSupply && lastTechGt !== null)
+        ? "Supply curve at current settings (GtCO\u2082/yr, acquisition + haul only): "
+          + lastSupply.map((p) => `<$${p.usd} ${p.gt.toFixed(2)}`).join(" \u00b7 ")
+          + ` \u00b7 no screen ${lastTechGt.toFixed(2)}`
+        : "";
+    }
     $("stat-label").textContent = gt === null
       ? "cropland in scope"
       : `steady-state gross removal \u00b7 ${E.feedstock.rateTHaYr} t/ha of `
         + `rock held`
-        + (scr ? ` \u00b7 cells under $${E.cost.screenUsdPerTco2}/tCO\u2082 `
-               + `delivered` : "")
+        + (scr !== null ? ` \u00b7 cells under $${scr}/tCO\u2082 for rock `
+               + `and haul (a cost scenario)` : "")
         + ` \u00b7 ${gha.toFixed(2)} Gha`
         + (ceilOn ? "" : " \u00b7 drainage limit OFF")
         + (ceilOn && phBasis

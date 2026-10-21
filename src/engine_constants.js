@@ -1579,7 +1579,14 @@ window.ERW = {
   },
   "cost": {
     "screenUsdPerTco2": 100.0,
-    "screenYears": 10,
+    "screenOptions": [
+      100.0,
+      150.0,
+      200.0,
+      300.0,
+      500.0
+    ],
+    "screenYears": 60,
     "screenDiscount": 0.05,
     "floor": 0.05,
     "expDefault": 1.0,

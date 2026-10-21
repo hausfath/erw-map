@@ -5,6 +5,54 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Supplier review, October 2026: the cost screen becomes a scenario; pH and kinetics leads (branch `olivine`)
+
+A Brazilian supplier sent two documents: technical notes on the atlas and a
+multi-year weathering-kinetics report from its commercial deployments. Both
+are referenced anonymously here; named details stay in local-only files.
+
+**Economics (changed).** The supplier argued that a single $100/tCO₂ screen
+should not define the headline, since it prices today's byproduct gate and
+quarry inventory rather than a physical constraint. Agreed in substance:
+
+- The viewer's headline screen is selectable: $100 (shipped), $150, $200, $300,
+  $500 or none (`constants.COST_SCREEN_OPTIONS_USD_PER_TCO2`, emitted as
+  `cost.screenOptions`). The footer always shows the unscreened technical total
+  on a second line, and the Economics panel prints the live supply curve. One
+  pass of `globalGt()` computes all of it; the shipped view and its 0.19 Gt
+  footer (0.197 exact) are unchanged, checked against the previous build in the
+  browser. `tests/cost_sliders.mjs` passes.
+- `scripts/analysis/supply_curve.py` writes `docs/supply_curve.json` and
+  `docs/figures/erw_supply_curve.{png,pdf}` and asserts it reproduces the
+  shipped 197 Mt. World drainage-limited: 197 / 313 / 373 / 446 / 530 / 581
+  MtCO₂/yr at <$100 / 150 / 200 / 300 / 500 / no screen. METHODOLOGY §3c,
+  README, country-table header and methods report updated; copy now calls the
+  threshold a scenario everywhere it appears.
+- **Latent bug fixed:** `COST_SCREEN_YEARS` still read 10 from the pre-August
+  basis while the viewer and `country_potential.py` integrate 60 years. It only
+  reached the methods report, which printed N = 10. Now 60; no number moves.
+  Two stale "10-year" comments in `app.js` corrected. The regenerated methods
+  report also picks up the olivine row in its archetype table, which earlier
+  olivine commits had not regenerated.
+
+**Soil pH (documented, not changed).** METHODOLOGY §6 item 11 and
+`scripts/analysis/ph_sensitivity.py`. SoilGrids likely reads low on limed
+cropland (the supplier's measured regional medians run 0.2–0.5 above it), but
+in this model higher pH lowers potential: cropland floored at pH 6.0 gives
+World 581 → 560 and Brazil 58 → 53 Mt, because the acid-mechanism rate falls
+faster than η_DIC rises and the drainage ceiling uses no baseline pH. A claim
+that soil water runs +0.5 above soil pH conflicts with the repo's documented
+convention and stays open pending paired data.
+
+**Dissolution anchor (held at 0.12).** The kinetics report has no table, so its
+observations were digitised from figures (p16 only) and kept local. As a
+provisional fifth cluster they would move the anchor to 0.13–0.14 (lower bound)
+or up to 0.178, and push the cross-supplier spread to 8.8–11× against the
+pre-registered 10× rule, which stands. Two findings worth keeping either way:
+two suppliers at the same 67 µm grind differ 3–6× in k, and one project's
+two-year re-sample is reproduced by shrinking core. Full note in VALIDATION §4;
+tabulated data requested.
+
 ## Olivine as a switchable second feedstock, with a trace-metal loading cap (branch `olivine`, not yet live)
 
 Zeke asked (2026-09-05) how olivine would change the global picture: more CO2

@@ -835,7 +835,10 @@ $t=0$ and tonnes over years $1..N$:
 \qquad N = {C.COST_SCREEN_YEARS:g},\ r = {C.COST_SCREEN_DISCOUNT_RATE * 100:.0f}\% .
 \end{{equation}}
 When economics is on, the headline total is restricted to cells under
-\${C.COST_SCREEN_USD_PER_TCO2:g}/t\cotwo{{}} on this basis. Per tonne of \cotwo{{}},
+\${C.COST_SCREEN_USD_PER_TCO2:g}/t\cotwo{{}} on this basis by default. The threshold is a
+scenario, not a limit: the viewer offers {', '.join('\\$' + format(v, 'g') for v in C.COST_SCREEN_OPTIONS_USD_PER_TCO2)}
+or no screen, shows the unscreened total beside it, and METHODOLOGY \S3c gives the
+supply curve. Per tonne of \cotwo{{}},
 not per tonne of rock: rock cost is nearly uncorrelated with removal, so a
 rock-cost screen barely discriminates, while this one rewards cells producing
 enough carbon to justify the haul.
