@@ -50,7 +50,7 @@ provisional fifth cluster they would move the anchor to 0.13–0.14 (lower bound
 or up to 0.178, and push the cross-supplier spread to 8.8–11× against the
 pre-registered 10× rule, which stands. Two findings worth keeping either way:
 two suppliers at the same 67 µm grind differ 3–6× in k, and one project's
-two-year re-sample is reproduced by shrinking core. Full note in VALIDATION §4;
+two-year re-sample (49% -> 73%, p16) is reproduced by shrinking core. Full note in VALIDATION §4;
 tabulated data requested.
 
 ## Olivine as a switchable second feedstock, with a trace-metal loading cap (branch `olivine`, not yet live)

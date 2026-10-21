@@ -704,9 +704,9 @@ DISSOLVED_FRAC_REF_REQUIRES_ETA_TR = 1.0                # X = 1 implies infinite
 # confirmed, and one-year values extrapolated from short observations are
 # bracketed rather than trusted (SHORT_OBSERVATION_DAYS in
 # analyse_deployments.py).
-# 2026-10-21: a second, provisional re-sample (fifth supplier, p16, digitised:
-# 50% at 1.07 yr -> 71% at 2.0 yr) IS reproduced by shrinking core at width
-# 1.5-2.3. One constraint each way; the flag stays until tabulated data arrive.
+# 2026-10-21: a second, provisional re-sample (fifth supplier, p16, tabulated:
+# 49% at year 1 -> 73% at year 2) IS reproduced by shrinking core at width
+# 1.5-2.3 (70-74%). One constraint each way; the flag stays until tabulated data arrive.
 DISSOLUTION_SHAPE_FAILS_LONGITUDINAL = True
 # In-situ soil pCO2 implied by porewater pH and alkalinity at four site means
 # (one supplier, one region, method unstated): 32,000-56,000 uatm, for flooded

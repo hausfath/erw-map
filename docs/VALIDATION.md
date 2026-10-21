@@ -247,11 +247,13 @@ held in the gitignored calibration set as a lead, not as rows. They are
   which weakens "PSD width is the likeliest culprit" and points at hydrology
   (the supplier's own best predictor is cumulative rainfall in the wet season,
   R² = 0.71 with one waterlogged temperate project excluded).
-- **A second longitudinal constraint, opposing the first.** One project went
-  from 50% at 1.07 yr to 71% at 2.0 yr (both p16); shrinking core at width
-  1.5–2.3 reproduces it, where the existing re-sampled field flattened faster
-  than any width allows. Caveat: this project is the one the supplier
-  calibrated its own forecast on.
+- **A second longitudinal constraint, opposing the first.** The report's own
+  table gives cumulative p16 fractions of 49% at year 1 and 73% at year 2 (the
+  year-1 value may be a cross-project average; the one two-year project reads
+  ~50% at 1.07 yr and ~71% at 2.0 yr off the figures). Shrinking core at width
+  1.5–2.3 carries 49% at one year to 70–74% at two, where the existing
+  re-sampled field flattened faster than any width allows. Caveat: this
+  project is the one the supplier calibrated its own forecast on.
 - **Quality flags.** Three of six projects had no control plots, including the
   one giving the highest k (4.1); the tracer is chosen per project by a
   significance test after the fact; 0–5 cm sampling is shallower than any

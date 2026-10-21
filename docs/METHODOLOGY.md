@@ -1100,8 +1100,8 @@ likely effect on the map.
    identically.
 10. **Net removal.** Everything reported is gross alkalinity generation.
 11. **Managed-soil pH (open question, 2026-10-21).** SoilGrids pH(H₂O) is a
-    static prediction trained on soil profiles collected over decades, mostly
-    without a liming signal, so it probably reads low on limed cropland. Brazil's
+    static map with no liming or management input, so it probably reads low on
+    limed cropland. Brazil's
     cropland median is 5.3 (72% of area below 5.5). One Brazilian supplier's
     measured baseline medians are pH(H₂O) 5.85, 6.02 and 5.20 in three regions,
     against SoilGrids 5.0–5.6 at the same deployments: a +0.2–0.5 bias, real but
