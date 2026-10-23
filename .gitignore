@@ -59,3 +59,6 @@ calibration_data/
 
 # Draft manuscript. Kept out of the public repo until Zeke decides otherwise.
 paper/
+
+# Internal review notes (pair suppliers with numbers; kept out of the public repo)
+REVIEW_2026-07.md
