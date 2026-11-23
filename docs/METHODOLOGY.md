@@ -603,12 +603,16 @@ existing textures (uniforms `uCarbonate`, `uCarbPhi`, `uSystemWide`), and gate 8
 asserts the browser's φ matches `constants.PEDOGENIC_CARBONATE_PHI` and that both
 ship off.
 
-### Managed pasture: an optional second land class
+### Managed pasture: a second land class in the viewer
 
-The map's domain is cropland (Potapov et al. 2022). The viewer option "Include
-managed pasture", off by default, adds HYDE "pasture" as a second land class:
-0.72 Gha against cropland's 1.21. Nothing in the headline, the gates or the
-paper includes it.
+The build's domain is cropland (Potapov et al. 2022). The viewer option
+"Include managed pasture", **on by default** since 2026-11-23, adds HYDE
+"pasture" as a second land class: 0.72 Gha against cropland's 1.21. The
+viewer's landing map and totals therefore cover cropland plus managed pasture
+(steady state 1.04 Gt/yr drainage-limited; 0.34 Gt on 0.37 Gha under the
+$100/tCO2 screen). The build's headline numbers, the gates, every "of
+cropland" statistic, the country table and the paper remain cropland-only;
+unticking the option returns the viewer to that basis.
 
 **Layer.** HYDE 3.5 (baseline, 2023) pasture area per 5-arc-minute cell, converted to a cell
 fraction (`scripts/prep_pasture.py`), area-averaged onto the 0.1 degree grid
@@ -625,7 +629,7 @@ about 2.5 Gha, which in a scoping run on HYDE 3.2.1 averaged 0.22 tCO2/ha/yr
 drainage-limited at a median drainage of 50 mm/yr.
 
 **Model.** Identical to cropland: same rate law, anchor, 30 t/ha, soil pCO2
-and drainage ceiling. That is the option's main weakness. Pasture is not
+and drainage ceiling. That is the main weakness of having it on by default. Pasture is not
 tilled, so rock stays on the surface, and the dissolution anchor is calibrated
 on cropland deployments. No penalty is applied because none is sourced; the
 pasture numbers are an upper end.

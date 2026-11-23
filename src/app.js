@@ -85,12 +85,13 @@
      is a byte-source swap, not a second model. Off-paddy cells are
      byte-identical in tex5 by build-time assertion. */
   let paddyView = false;
-  /* Managed pasture (HYDE) as a second land class, OFF by default. Cropland
-     stays the map's domain and the basis of every headline number; ticking the
-     option widens the drawn domain (flag bit5) and the area the totals are
-     taken over. Pasture runs the same model as cropland, with no penalty for
-     rock left on an untilled surface, so its numbers are an upper end. */
-  let includePasture = false;
+  /* Managed pasture (HYDE) as a second land class, ON by default in the viewer
+     (Zeke, 2026-11-23). The build's headline, the gates, the "of cropland"
+     statistics and the paper stay cropland-only; the option sets the drawn
+     domain (flag bit5) and the area the viewer's totals are taken over.
+     Pasture runs the same model as cropland, with no penalty for rock left on
+     an untilled surface, so its numbers are an upper end. */
+  let includePasture = true;
   let pastureFrac = null;        // tex6 bytes, CPU-only; r = pasture fraction
   const PAST = () => (includePasture && E.pasture && pastureFrac) ? E.pasture : null;
   const domainBits = () => (PAST() ? 33 : 1);
@@ -1640,7 +1641,8 @@
       ranking, not a site-level prediction.</p></div>
 
       <h3>What this map shows</h3>
-      <p>For each ~11 km cell of the world's cropland, the map estimates how much
+      <p>For each ~11 km cell of the world's cropland${E.pasture ? ` and
+      managed pasture` : ``}, the map estimates how much
       CO₂ crushed basalt spread on that land could remove in its first year, from
       the physics of rock weathering: how fast the rock dissolves in that soil
       and climate, how much of the released alkalinity is stored as dissolved
@@ -1991,7 +1993,7 @@
         <tr><td>Soil pH, SOC + quantiles</td><td>${p.soil}</td></tr>
         <tr><td>Climate</td><td>${p.climate}</td></tr>
         <tr><td>Cropland</td><td>${p.cropland}</td></tr>
-        ${E.pasture ? `<tr><td>Managed pasture (optional)</td><td>${E.pasture.source}, `
+        ${E.pasture ? `<tr><td>Managed pasture</td><td>${E.pasture.source}, `
           + `5 arc-minute; grazing land with aridity index &gt; 0.5, not observed `
           + `management</td></tr>` : ``}
         <tr><td>Drainage</td><td>${p.drainage || "—"}</td></tr>
@@ -2032,7 +2034,7 @@
     const gha = scopeGha() * lastKeptAreaFrac;
     const scr = econ.costExp > 0 && E.cost && E.cost.screenUsdPerTco2;
     $("stat-label").textContent = gt === null
-      ? "cropland in scope"
+      ? `${landNoun()} in scope`
       : `steady-state gross removal \u00b7 ${E.feedstock.rateTHaYr} t/ha of `
         + `rock held`
         + (scr ? ` \u00b7 cells under $${E.cost.screenUsdPerTco2}/tCO\u2082 `
@@ -2208,7 +2210,8 @@
           `${v.toLocaleString()}`).join(", ") + `).`
       : "No quarry inventory built. Run scripts/fetch_quarries.py.";
     $("attrib").textContent =
-      "SoilGrids · WorldClim · Potapov et al. cropland · Natural Earth";
+      "SoilGrids · WorldClim · Potapov et al. cropland"
+      + (E.pasture ? " · HYDE pasture" : "") + " · Natural Earth";
     $("zoomcap").textContent = `Zoom capped — the data is a ${E.labels.grid}`;
     $("method-body").innerHTML = methodsHTML();
 
@@ -2322,8 +2325,8 @@
           refresh();
         });
         $("pasture-hint").textContent =
-          `Adds ${E.pasture.gha.toFixed(2)} Gha, modelled like tilled cropland: `
-          + `an upper end.`;
+          `${E.pasture.gha.toFixed(2)} Gha, modelled like tilled cropland: `
+          + `an upper end. Untick for cropland only.`;
       } else {
         pc.disabled = true;
         $("pasture-hint").textContent = "No pasture layer in this build.";

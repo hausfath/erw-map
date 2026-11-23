@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ERW Atlas — enhanced rock weathering deployment potential</title>
-<meta name="description" content="Global gridded map of enhanced rock weathering potential on croplands, with live re-weighting.">
+<meta name="description" content="Global gridded map of enhanced rock weathering potential on croplands and managed pasture, with live re-weighting.">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -96,7 +96,7 @@
           <p class="hint" id="paddy-hint"></p>
         </div>
         <div id="pasture-block" style="margin-top:14px">
-          <label class="check"><input type="checkbox" id="chk-pasture">
+          <label class="check"><input type="checkbox" id="chk-pasture" checked>
             <span>Include managed pasture</span></label>
           <p class="hint" id="pasture-hint"></p>
         </div>
@@ -128,7 +128,7 @@
 
     <footer>
       <div class="stat"><span id="stat-main">—</span>
-        <label id="stat-label">cropland in scope</label></div>
+        <label id="stat-label">land in scope</label></div>
       <p class="hint" style="margin-top:10px">
         <a class="ext" href="https://github.com/hausfath/erw-map" target="_blank" rel="noopener">Code &amp; data on GitHub</a>
         &middot;

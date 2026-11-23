@@ -5,6 +5,19 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Managed pasture on by default in the viewer
+
+"Include managed pasture" now starts ticked (Zeke, 2026-11-23), so the
+landing map and totals cover cropland plus HYDE managed pasture: steady state
+1.04 Gt/yr drainage-limited against 0.58 for cropland alone, and 0.34 Gt on
+0.37 Gha under the $100 screen against 0.20 on 0.21. Unticking it restores
+the cropland-only view exactly. No rebuild: textures and engine_constants.js
+are unchanged, as are the build headline, gates, "of cropland" statistics,
+country table and paper, all of which stay cropland-only. The pasture caveats
+below (aridity-defined class, no surface-application penalty) now apply to
+the default view, and the About text, stat label, attribution and page
+description name pasture.
+
 ## Managed pasture as an optional second land class (viewer option, off by default)
 
 "Include managed pasture" under Advanced (Zeke, 2026-11-23). Cropland stays
