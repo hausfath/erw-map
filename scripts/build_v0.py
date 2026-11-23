@@ -1007,6 +1007,46 @@ def main() -> int:
     pw = (pasture * area)[m_past_eval] * 100.0          # ha
     past_gha = float((pasture * area)[m_past].sum() * 100.0 / 1e9)
     past_gha_eval = float(pw.sum() / 1e9)
+    # Land-class summary, shared by cropland and pasture so the Methods text can
+    # compare them from one definition. Steady-state basis for the per-hectare
+    # and Gt figures (the footer's basis); year-1 for the cap-binding share, to
+    # match fluxCeiling.bindsAreaFrac.
+    def _class_stats(sel, w_ha):
+        tot = max(float(w_ha.sum()), 1e-9)
+        ss_u = np.nan_to_num(cdr_ss)[sel]
+        ss_c = np.nan_to_num(np.minimum(cdr_ss, ceiling))[sel]
+        qv = q[sel] * 1000.0
+        ok = np.isfinite(qv)
+        o = np.argsort(qv[ok]); cw = np.cumsum(w_ha[ok][o]) / w_ha[ok].sum()
+        return {
+            "ssLimitedGt": round(float((ss_c * w_ha).sum() / 1e9), 3),
+            "ssUncappedGt": round(float((ss_u * w_ha).sum() / 1e9), 3),
+            "ssLimitedTHa": round(float((ss_c * w_ha).sum() / tot), 2),
+            "ssBindsAreaFrac": round(float((w_ha * (ss_u > ss_c)).sum() / tot), 4),
+            "medianDrainageMm": int(round(float(qv[ok][o][np.searchsorted(cw, 0.5)]))),
+            "phBelow55Frac": round(float((w_ha * (ph[sel] < 5.5)).sum() / tot), 4),
+        }
+
+    # Wet/dry contrast: area-weighted mean over the wettest 5% of cropland by
+    # drainage against the driest 5%, for drainage itself and for year-1 gross
+    # removal with and without the limit. Emitted so the Methods sentence
+    # cannot go stale (it read 125x / 10x from the pre-September anchor).
+    _mc = m & np.isfinite(q) & np.isfinite(cdr)
+    _w = (crop * area)[_mc]
+    _o = np.argsort(q[_mc]); _cw = np.cumsum(_w[_o]) / _w.sum()
+    def _wd(x):
+        v = np.nan_to_num(x)[_mc][_o]
+        f = lambda sel: float((v[sel] * _w[_o][sel]).sum() / _w[_o][sel].sum())
+        return round(f(_cw >= 0.95) / max(f(_cw <= 0.05), 1e-12), 1)
+    wet_dry_stats = {"drainage": _wd(q), "limited": _wd(cdr),
+                     "uncapped": _wd(cdr_uncapped)}
+    print(f"  wet/dry contrast (wettest vs driest 5% of cropland by drainage): "
+          f"drainage {wet_dry_stats['drainage']:.0f}x, year-1 removal "
+          f"{wet_dry_stats['limited']:.0f}x limited, "
+          f"{wet_dry_stats['uncapped']:.1f}x uncapped")
+    _mce = m & np.isfinite(L1)
+    cropland_class = _class_stats(_mce, (crop * area)[_mce] * 100.0)
+
     pasture_stats = None
     if pasture_source is not None:
         p_cap = float((np.nan_to_num(cdr)[m_past_eval] * pw).sum() / 1e9)
@@ -1022,7 +1062,17 @@ def main() -> int:
                          "evaluatedGha": round(past_gha_eval, 3),
                          "year1LimitedGt": round(p_cap, 3),
                          "year1UncappedGt": round(p_unc, 3),
+                         "year1BindsAreaFrac": round(p_bind, 4),
+                         **_class_stats(m_past_eval, pw),
+                         "cropland": cropland_class,
                          "source": pasture_source}
+        print(f"    steady state: pasture {pasture_stats['ssLimitedGt']:.3f} Gt "
+              f"limited ({pasture_stats['ssLimitedTHa']:.2f} t/ha), cropland "
+              f"{cropland_class['ssLimitedGt']:.3f} ({cropland_class['ssLimitedTHa']:.2f}); "
+              f"median drainage {pasture_stats['medianDrainageMm']} vs "
+              f"{cropland_class['medianDrainageMm']} mm/yr; pH < 5.5 on "
+              f"{pasture_stats['phBelow55Frac']:.1%} vs "
+              f"{cropland_class['phBelow55Frac']:.1%}")
 
     # ---- Save floats for aggregates and hover readout
     PROC.mkdir(parents=True, exist_ok=True)
@@ -1077,7 +1127,8 @@ def main() -> int:
             warm_cool=wc_ratio, exceed_med=e50,
             paddy_area_frac_of_cropland=float(
                 (aw * (f_flood > 0)[m]).sum() / aw.sum()),
-            paddy_source=paddy_source, wider=wider_stakes)
+            paddy_source=paddy_source, wider=wider_stakes,
+            wet_dry=wet_dry_stats)
     print()
     print("done. Open src/index.html over HTTP:")
     print("  python3 -m http.server 8000 --directory src")
@@ -1448,7 +1499,8 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
             ceiling_binds=0.0, ceiling_med=0.0,
             warm_cool=(None, None), exceed_med=0.0, crop_codes=(),
             paddy_area_frac_of_cropland=0.0,
-            paddy_source="unknown", wider=None, pasture=None) -> None:
+            paddy_source="unknown", wider=None, pasture=None,
+            wet_dry=None) -> None:
     if gha_eval is None:
         gha_eval = gha
     # PASS THESE IN, never reach for main()'s locals. Reading a caller local from
@@ -1546,6 +1598,8 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
             # the ceiling does not scale with how much rock is on the field.
             # Median exceedance of the ceiling, for the "not applied" notice.
             "exceedMedian": round(float(exceed_med), 2),
+            # Wettest vs driest 5% of cropland by drainage (see main()).
+            "wetDry": wet_dry,
             "realisedShareOfStoich": round(
                 float(ceiling_med) / C.APPLICATION_RATE_T_HA_YR
                 / (cdr_per_frac / C.APPLICATION_RATE_T_HA_YR), 4),
@@ -1668,8 +1722,8 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
                 "PRECIPITATION stands in for a soil-moisture climatology",
             ]) + [
                 "the moisture term is a weak wetted-surface modulator, not the "
-                "aridity signal: the wet/dry carbon contrast is ~10x with the "
-                "drainage limit off (the default) and ~125x with it on",
+                "aridity signal: the wet/dry carbon contrast comes mostly from "
+                "the drainage limit (see fluxCeiling.wetDry)",
                 "irrigation: drainage q includes irrigation return flow but the "
                 "soil-water balance does not, so the two disagree on irrigated "
                 "cropland",

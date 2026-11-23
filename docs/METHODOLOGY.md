@@ -315,6 +315,12 @@ An earlier version of this section claimed the map had no aridity signal and tha
 Wet/dry compares the area-weighted mean of the wettest 5% of cropland by drainage
 against the driest 5% — a 141× contrast in `q` itself, and 149× in the ceiling.
 
+*This table is the August 2026 sweep, run at the dissolution anchor then in
+force (0.25). At the current anchor (0.12) the shipped build gives 110× with the
+limit and 13× without it, against the same 141× in `q`; the build prints the
+current values and emits them as `fluxCeiling.wetDry`, which is what the Methods
+panel quotes. The conclusion is unchanged.*
+
 **Two corrections fall out.** First, η_transport in isolation is the wrong quantity
 to judge: it spans only 4.4× wet-to-dry, but delivered carbon spans **9.9×**
 uncapped, because the dissolution response to X is nonlinear. Second and more

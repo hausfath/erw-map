@@ -5,6 +5,30 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Methods statistics verified; pasture comparison added
+
+Every hardcoded statistic left in the Methods panel was recomputed
+(Zeke, 2026-11-23). Confirmed: supplier spread 7.4x; forsterite 12% of
+volume and 80% of Ca+Mg release at the reference condition; mixture
+activation energy 63-68 kJ/mol over pH 4.5-8.5; Gudbrandsson bias +1.19 log
+units on the cropland range (+1.14 over all 25 points); MgO implied up to
+1.96x stated; FAOSTAT gap 0.36 Gha; Mayer PHREEQC ratio 0.949-0.996;
+drainage contrast 141x. STALE and fixed: the wet/dry removal contrast read
+"125x with the limit, 10x without", which was the August sweep at the old
+0.25 anchor. The shipped build gives 110x and 13x. The build now prints
+these and emits `fluxCeiling.wetDry`, and the panel reads them from there;
+METHODOLOGY's D_w table carries a note saying which anchor it was run at.
+The stale provenance note that called the limit-off state "the default" is
+corrected. Literature figures quoted in the panel (cation retention, export
+lags, net-versus-gross range, BET ratio) were not re-read against their
+sources in this pass.
+
+The build also emits steady-state land-class statistics for cropland and
+managed pasture (Gt, t/ha, cap-binding share, median drainage, share below
+pH 5.5), and the Methods panel uses them in a new "Cropland and managed
+pasture" paragraph and beside the cap-binding share. Textures are
+byte-identical; engine_constants.js gained fields only.
+
 ## Sidebar and popup language sweep
 
 Copy only; no number, texture or model change (Zeke, 2026-11-23).

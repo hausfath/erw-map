@@ -201,6 +201,21 @@ window.ERW = {
     "evaluatedGha": 0.715,
     "year1LimitedGt": 0.481,
     "year1UncappedGt": 1.132,
+    "year1BindsAreaFrac": 0.7276,
+    "ssLimitedGt": 0.457,
+    "ssUncappedGt": 1.083,
+    "ssLimitedTHa": 0.64,
+    "ssBindsAreaFrac": 0.6614,
+    "medianDrainageMm": 275,
+    "phBelow55Frac": 0.1717,
+    "cropland": {
+      "ssLimitedGt": 0.581,
+      "ssUncappedGt": 1.126,
+      "ssLimitedTHa": 0.48,
+      "ssBindsAreaFrac": 0.6144,
+      "medianDrainageMm": 178,
+      "phBelow55Frac": 0.0701
+    },
     "source": "HYDE 3.5, 2023"
   },
   "paddyView": {
@@ -255,6 +270,11 @@ window.ERW = {
     "warmCoolUncapped": 5.61,
     "warmCoolCeiling": 1.5,
     "exceedMedian": 1.82,
+    "wetDry": {
+      "drainage": 141.1,
+      "limited": 110.1,
+      "uncapped": 13.0
+    },
     "realisedShareOfStoich": 0.0451
   },
   "dissolution": {
@@ -1658,7 +1678,7 @@ window.ERW = {
     "paddy": "GRPI Landsat inundation months x SPAM2010 rice area (all rice, irrigated and rainfed)",
     "feedstock": "GLiM full-resolution basic igneous outcrop + USGS MRDS mafic-hosted stone producers, ANM SIGMINE titles (Brazil) and OSM quarries; truck-only haul, not routed",
     "substitutions": [
-      "the moisture term is a weak wetted-surface modulator, not the aridity signal: the wet/dry carbon contrast is ~10x with the drainage limit off (the default) and ~125x with it on",
+      "the moisture term is a weak wetted-surface modulator, not the aridity signal: the wet/dry carbon contrast comes mostly from the drainage limit (see fluxCeiling.wetDry)",
       "irrigation: drainage q includes irrigation return flow but the soil-water balance does not, so the two disagree on irrigated cropland",
       "kinetics over-predict measured basalt release; activation energy is ~2x too high (see the kinetics test)"
     ],

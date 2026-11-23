@@ -1642,6 +1642,10 @@
     const mayer = `<a href="https://doi.org/${FC.mayerDoi ?? "10.21203/rs.3.rs-7811095/v1"}"
       target="_blank" rel="noopener">Mayer et&nbsp;al.&nbsp;2025</a>`;
     const st = WA.stakes;
+    const wd = FC.wetDry;
+    // Cropland vs managed pasture, steady state, all from the build payload.
+    const PA = E.pasture && E.pasture.cropland ? E.pasture : null;
+    const CL = PA ? PA.cropland : null;
     return `
       <h2>Methods, caveats &amp; sources</h2>
       <p class="hint">${E.labels.grid}, ${E.labels.effectiveRes}. Protocol screens
@@ -1675,6 +1679,21 @@
       cells every decade or two. Where the drainage limit binds, the field
       holds only as much rock as the drainage can carry the carbon from. The
       two bases give similar global totals but differ by region.</p>
+      ${PA ? `<p><b>Cropland and managed pasture.</b> At steady state with the
+      drainage limit on, cropland gives ${CL.ssLimitedGt.toFixed(2)} GtCO₂/yr
+      on ${E.stats.evaluatedGha.toFixed(2)} Gha, and managed pasture adds
+      ${PA.ssLimitedGt.toFixed(2)} on ${PA.gha.toFixed(2)} Gha
+      (${CL.ssUncappedGt.toFixed(2)} and ${PA.ssUncappedGt.toFixed(2)} without
+      the limit). Pasture yields more per hectare in the model,
+      ${PA.ssLimitedTHa.toFixed(2)} against ${CL.ssLimitedTHa.toFixed(2)}
+      tCO₂/ha/yr, because this pasture class is by definition the wetter part
+      of the world's grazing land: median drainage is
+      ${PA.medianDrainageMm} mm/yr, against ${CL.medianDrainageMm} on
+      cropland. It is also more acid, with ${pct(PA.phBelow55Frac)}% of its
+      area below pH 5.5 against ${pct(CL.phBelow55Frac)}%. The pasture figures
+      are an upper end, for the reasons under Known limitations, and the
+      sidebar total includes pasture unless it is switched off under
+      Advanced.</p>` : ``}
       <p><b>Gross, not net.</b> Every CO₂ figure is gross removal at the field.
       ${ceilOn
         ? "Carbonate saturation enters only as a cap on what drainage can carry."
@@ -1845,7 +1864,8 @@
       ${ceilOn ? `<p><b>Water, not rock, sets the limit on most land.</b>
       Removal is capped at what drainage can hold as bicarbonate: about
       ${fmtT(FC.medianTco2HaYr)} tCO₂/ha/yr at the median cell. The cap binds on
-      <b>${bindsPct}% of cropland</b> in year 1, and where it binds, the
+      <b>${bindsPct}% of cropland</b> in year 1${PA && PA.year1BindsAreaFrac
+        ? ` (${pct(PA.year1BindsAreaFrac)}% of managed pasture)` : ``}, and where it binds, the
       dissolution rate, the rock type, the grind and the application rate no
       longer change the answer. At ${E.feedstock.rateTHaYr}&nbsp;t/ha the
       median cell exports
@@ -1868,7 +1888,9 @@
       well enough measured, so the pasture numbers are an upper end. The HYDE
       class is also defined by climate, not by observed management: it does not
       show which land is fertilised or reachable by a spreader. Drier rangeland
-      is left out.</p>` : ``}
+      is left out. The calibration, the wet-to-dry contrast and the other
+      &ldquo;of cropland&rdquo; figures on this page were not recomputed with
+      pasture included.</p>` : ``}
       <p><b>The rate law runs faster than laboratory basalt.</b> Against
       Gudbrandsson et al. (2011), who dissolved crystalline basalt at pH 2–11
       and 5–75&nbsp;°C, the Ca+Mg release the map uses is too high by about
@@ -1899,10 +1921,11 @@
       more than 20% of gross removal, and up to ~80% at badly chosen sites.
       The loss varies from place to place. Nothing here is validated against
       measured net removal.</p>
-      <p><b>The wet-to-dry contrast comes from the drainage limit.</b> With the
-      limit on, gross removal spans about 125× from the wettest to the driest
-      5% of cropland, close to the 141× contrast in the drainage data. With it
-      off the span falls to about 10×.</p>
+      ${wd ? `<p><b>The wet-to-dry contrast comes from the drainage limit.</b>
+      With the limit on, year-1 gross removal spans about
+      ${wd.limited.toFixed(0)}× from the wettest to the driest 5% of cropland,
+      against ${wd.drainage.toFixed(0)}× in the drainage data. With it off the
+      span falls to about ${wd.uncapped.toFixed(0)}×.</p>` : ``}
       <p><b>Irrigation is only half included.</b> The drainage data include
       irrigation return flow; the soil-moisture data do not. On irrigated land
       the two disagree about how wet the field is.</p>
