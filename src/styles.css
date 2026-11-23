@@ -74,6 +74,13 @@ body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font); }
 #advanced[open] summary::before { content: "\25BE"; }
 #advanced[open] summary { margin-bottom: 4px; }
 
+/* sub-headings inside Advanced, so each caption reads with its own controls */
+.subhead {
+  margin: 20px 0 0; padding-top: 14px; border-top: 1px solid var(--line);
+  font-size: 11px; font-weight: 600; color: var(--ink2);
+}
+.subhead + .slider, .subhead + div > .slider:first-child { margin-top: 10px; }
+
 .btn-row { display: flex; gap: 8px; margin-top: 14px; }
 .mini {
   flex: 1; padding: 6px; font: inherit; font-size: 11px; cursor: pointer;
@@ -108,14 +115,16 @@ body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--font); }
 #readout {
   position: absolute; pointer-events: none; z-index: 5;
   background: rgba(10,14,20,.94); border: 1px solid var(--line); border-radius: 7px;
-  padding: 9px 11px; font-size: 11.5px; max-width: 270px; color: #e6edf3;
+  padding: 9px 11px; font-size: 11.5px; max-width: 330px; color: #e6edf3;
   box-shadow: 0 6px 22px rgba(0,0,0,.45);
 }
 #readout .rt { font-weight: 600; margin-bottom: 5px; font-size: 12px; }
 #readout .rt-ll { font-weight: 400; color: #9fb0c0; font-size: 11px; }
 #readout table { border-collapse: collapse; width: 100%; }
-#readout td { padding: 1px 0; }
-#readout td.k { color: #9fb0c0; padding-right: 10px; }
+#readout td { padding: 1px 0; vertical-align: top; }
+#readout tr.sec td { padding-top: 5px; }
+#readout tr.item td.k { padding-left: 10px; color: #c3cfda; }
+#readout td.k { color: #9fb0c0; padding-right: 12px; white-space: nowrap; }
 #readout td.v { font-family: var(--mono); text-align: right; }
 #readout .flag { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--line); font-size: 10.5px; }
 #readout .flag.warn { color: var(--warn); }

@@ -5,6 +5,34 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Sidebar and popup language sweep
+
+Copy only; no number, texture or model change (Zeke, 2026-11-23).
+Advanced is split under four sub-headings (Feedstock, Land, Cost
+assumptions, Term sensitivity) so each caption sits with its own controls;
+the cost-assumption caption used to read as if it belonged to the pasture
+option above it. Captions across the sidebar are shortened and de-jargoned:
+"Median grain size", "Trucking cost", "Rock price at the quarry", "the
+total below" for "footer total", "an upper end" for "upper bound", term
+captions in plain words (edited in build_v0.py and by hand in
+engine_constants.js, identical strings), "Reset terms". The hover popup
+lists land classes and crops one per row with shares right-aligned, drops
+entries that round to 0%, no longer wraps its labels, and is positioned from
+its measured size so it stays on screen.
+
+The Methods modal got the same pass: about a fifth shorter, shorter
+sentences, a bulleted layer list, plain row names in the tables, and no
+build history or dates (those live here). Managed pasture is now described
+(a "Land" step, an assumptions row, and its own limitation). Three fixes
+made on the way: (1) the "two bases coincide within ~7%" claim was stale,
+since year-1 0.633 against steady-state 0.581 Gt is 9%, and the payload does
+not carry the year-1 total to bind it, so the sentence now carries no
+number; (2) the cap-binding share and the system-wide stakes are read from
+the payload in place of hardcoded "~77%", "~13%" and "~2%"; (3) the
+Sources row for rice paddy said "SPAM2010 irrigated rice" although the build
+has used all rice since 2026-08-24 (provenance string corrected in
+build_v0.py and engine_constants.js).
+
 ## Managed pasture on by default in the viewer
 
 "Include managed pasture" now starts ticked (Zeke, 2026-11-23), so the

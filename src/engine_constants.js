@@ -13,17 +13,17 @@ window.ERW = {
     {
       "key": "reactivity",
       "label": "Dissolution rate",
-      "hint": "Palandri-Kharaka Ca+Mg release, relative to pH 6.5 / 15 C"
+      "hint": "How fast basalt dissolves at the local soil pH and temperature"
     },
     {
       "key": "eta_dic",
       "label": "Acid soil: cations neutralise acidity",
-      "hint": "Carbonate-equilibrium efficiency (Bertagni & Porporato): in acid soil water part of the released alkalinity neutralises free acidity instead of forming bicarbonate. Counted as lost, which is the protocols' conservative reading; some of it may still form bicarbonate downstream"
+      "hint": "In acid soils part of the dissolved rock neutralises acid instead of capturing CO\u2082. Counted as lost, as crediting protocols do"
     },
     {
       "key": "drainage",
       "label": "Slow drainage slows dissolution",
-      "hint": "q/(q+Dw) on WaterGAP2-2e total runoff: with little water passing, pore water sits near saturation and the rock dissolves more slowly (Maher & Chamberlain). A rate effect -- distinct from the export cap"
+      "hint": "Where little water drains through, soil water saturates and the rock dissolves more slowly. Separate from the export cap"
     }
   ],
   "crops": {
@@ -1655,7 +1655,7 @@ window.ERW = {
     "climate": "Lembrechts monthly soil T (5-15 cm) + TerraClimate extractable storage on SoilGrids retention",
     "cropland": "Potapov et al. 2022 percent-cropland, 3 km",
     "drainage": "WaterGAP2-2e total runoff (qtot) via ISIMIP3a, 0.5 deg",
-    "paddy": "GRPI Landsat inundation months x SPAM2010 irrigated rice",
+    "paddy": "GRPI Landsat inundation months x SPAM2010 rice area (all rice, irrigated and rainfed)",
     "feedstock": "GLiM full-resolution basic igneous outcrop + USGS MRDS mafic-hosted stone producers, ANM SIGMINE titles (Brazil) and OSM quarries; truck-only haul, not routed",
     "substitutions": [
       "the moisture term is a weak wetted-surface modulator, not the aridity signal: the wet/dry carbon contrast is ~10x with the drainage limit off (the default) and ~125x with it on",

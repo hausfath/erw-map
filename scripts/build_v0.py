@@ -1464,18 +1464,13 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
                  "dlon": abs(transform.a), "dlat": abs(transform.e)},
         "terms": [
             {"key": "reactivity", "label": "Dissolution rate",
-             "hint": "Palandri-Kharaka Ca+Mg release, relative to pH 6.5 / 15 C"},
+             "hint": "How fast basalt dissolves at the local soil pH and temperature"},
             {"key": "eta_dic", "label": "Acid soil: cations neutralise acidity",
-             "hint": "Carbonate-equilibrium efficiency (Bertagni & Porporato): in "
-                     "acid soil water part of the released alkalinity neutralises "
-                     "free acidity instead of forming bicarbonate. Counted as lost, "
-                     "which is the protocols' conservative reading; some of it may "
-                     "still form bicarbonate downstream"},
+             "hint": "In acid soils part of the dissolved rock neutralises acid instead of"
+                     " capturing CO\u2082. Counted as lost, as crediting protocols do"},
             {"key": "drainage", "label": "Slow drainage slows dissolution",
-             "hint": f"q/(q+Dw) on {C.DRAINAGE_LABELS[C.DRAINAGE_VARIABLE]}: with "
-                     f"little water passing, pore water sits near saturation and "
-                     f"the rock dissolves more slowly (Maher & Chamberlain). A rate "
-                     f"effect -- distinct from the export cap"},
+             "hint": "Where little water drains through, soil water saturates and the "
+                     "rock dissolves more slowly. Separate from the export cap"},
         ],
         # Crop labels for the readout. names[] is 1-based to match the packed
         # ids, with index 0 the "no SPAM crop" slot. Descriptive only -- nothing
@@ -1661,7 +1656,7 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
             "cropland": "Potapov et al. 2022 percent-cropland, 3 km",
             "drainage": (f"{C.DRAINAGE_LABELS[C.DRAINAGE_VARIABLE]} "
                          f"({C.DRAINAGE_VARIABLE}) via ISIMIP3a, 0.5 deg"),
-            "paddy": "GRPI Landsat inundation months x SPAM2010 irrigated rice",
+            "paddy": "GRPI Landsat inundation months x SPAM2010 rice area (all rice, irrigated and rainfed)",
             "feedstock": ("GLiM full-resolution basic igneous outcrop + USGS MRDS "
                           "mafic-hosted stone producers, ANM SIGMINE titles "
                           "(Brazil) and OSM quarries; truck-only haul, not routed"),

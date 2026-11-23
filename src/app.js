@@ -953,15 +953,15 @@
     // the roughness-multiplier check, is in Methods.
     const rows = [
       {k: "d50", host: "psd-sliders",
-       label: "Grain size d50 (\u00b5m)",
+       label: "Median grain size (\u00b5m)",
        min: P.d50Range[0], max: P.d50Range[1], step: 5,
        why: `Half the rock mass is finer than this. 2026 field deliveries ` +
             `span ${P.deliveryRangeUm[0]}\u2013${P.deliveryRangeUm[1]} \u00b5m.`},
       {k: "width", host: "adv-psd-slider",
        label: "Grind distribution width",
        min: P.widthRange[0], max: P.widthRange[1], step: 0.05,
-       why: "Rosin\u2013Rammler n: lower is a broader grind with more fines " +
-            "and more reactive surface at the same d50."},
+       why: "Lower means a wider spread of grain sizes, with more fines " +
+            "that weather faster."},
     ];
     rows.forEach((r) => {
       const d = document.createElement("div");
@@ -991,7 +991,7 @@
     // pass exactly through the reference, so rel is exactly 1 here rather than the
     // 1.01 an interpolated grid used to give -- say so plainly instead.
     $("psd-readout").textContent = atRef
-      ? "The reference grind, against which the other settings are compared"
+      ? "Reference grind."
       : (rel >= 1 ? rel.toFixed(2) + "\u00d7 faster" : (1 / rel).toFixed(2) + "\u00d7 slower")
         + " weathering than the reference grind";
     $("psd-tag").textContent = atRef ? "Reference" : "Custom";
@@ -1038,14 +1038,13 @@
     const gr = E.cost.gateRange || [0, 15];
     const tr = E.cost.truckMultRange || [0.25, 2.5];
     const rows = [
-      {k: "truckMult", label: "Haul rate \u00d7 regional baseline",
+      {k: "truckMult", label: "Trucking cost (\u00d7 regional rate)",
        min: tr[0], max: tr[1], step: 0.05,
-       why: "Scales the regional $/t-km rates, fixed trip charge included. " +
-            "Moves the map."},
-      {k: "gate", label: "Quarry gate ($/t)",
+       why: "Scales trucking rates in every region. Changes the map."},
+      {k: "gate", label: "Rock price at the quarry ($/t)",
        min: gr[0], max: gr[1], step: 0.5,
-       why: "Rock price at the quarry (default: today\u2019s byproduct " +
-            "price). Moves reported $/t and the screen, not the map colour."},
+       why: "Default is today\u2019s byproduct price. Changes reported " +
+            "costs and the total, not the map colours."},
     ];
     rows.forEach((r) => {
       const d = document.createElement("div");
@@ -1072,12 +1071,12 @@
     // At the reference, "1.00x the regional baselines" is a tautology dressed as
     // a measurement -- the same trap the grind readout documents. Say it plainly.
     $("econ-assumption-readout").textContent = ref
-      ? "The build\u2019s own assumptions, against which the map was generated"
+      ? "Default cost assumptions."
       : (Math.abs(k - 1) < 1e-9
-          ? "Gate cost changed; reported cost moves, the map does not"
-          : "Haul " + (k >= 1 ? k.toFixed(2) + "\u00d7 dearer" : (1 / k).toFixed(2)
+          ? "Rock price changed: reported costs move, the map colours do not."
+          : "Trucking " + (k >= 1 ? k.toFixed(2) + "\u00d7 dearer" : (1 / k).toFixed(2)
              + "\u00d7 cheaper")
-            + " than the regional baselines, fixed trip charge included");
+            + " than the regional rates.");
   }
 
   function syncEcon() {
@@ -1092,19 +1091,19 @@
         `from the nearest mafic quarry ` +
         `(US $${E.cost.truckRates ? E.cost.truckRates["US/Canada"] : "?"}/t-km, ` +
         `India $${E.cost.truckRates ? E.cost.truckRates["India/South Asia"] : "?"}).` +
-        (econAtRef() ? "" : ` <b>Adjusted from the build\u2019s defaults.</b>`);
+        (econAtRef() ? "" : ` <b>Adjusted from the defaults.</b>`);
     }
     // Two distinct effects, and the second is easy to miss: the toggle discounts
     // the MAP by cost, and it also restricts the headline TOTAL to cells under the
     // $/tCO2 screen. Say both.
     const scr = E.cost && E.cost.screenUsdPerTco2;
     $("econ-readout").textContent = on
-      ? (scr ? `Footer total counts only cells under $${scr}/tCO\u2082 `
-              + `delivered (see Methods). `
+      ? (scr ? `The total below counts only land under $${scr}/tCO\u2082 `
+              + `delivered. `
              : "")
-        + "Hover the map for per-cell cost."
-      : "Off \u2014 the map shows physical potential; the footer total is "
-        + "unrestricted.";
+        + "Hover the map for local cost."
+      : "Off: the map and the total below show physical potential, with no "
+        + "cost limit.";
   }
 
   /* The drainage-limit control's caption. States what the bound is, that it is
@@ -1117,10 +1116,10 @@
           ? `<b>On, pH-target basis.</b> Pore water is held at `
             + `pH ≤ ${FC.phTarget ?? 7.5} — soils never approach calcite `
             + `saturation (see Methods).`
-          : `<b>On — the default.</b> CO₂ is capped at what the drainage water `
-            + `can carry as bicarbonate (Mayer et al. 2025 agree — see Methods).`)
-      : `<b>Off.</b> The CO₂ layer becomes an upper limit on dissolution, not `
-        + `carbon shown to leave the field — see Methods.`;
+          : `<b>On.</b> Removal is capped at what drainage water can carry `
+            + `away as bicarbonate.`)
+      : `<b>Off.</b> Shows how much rock could dissolve, whether or not the `
+        + `carbon can leave the field.`;
     const fb = $("flux-basis");
     if (fb) fb.classList.toggle("hidden", !ceilOn);
   }
@@ -1135,22 +1134,24 @@
       ch.innerHTML = !ceilOn
         ? `Needs the drainage limit on.`
         : (carbonateOn
-          ? `<b>On.</b> Excess Ca where the limit binds is credited as calcite, 1 CO₂ `
-            + `per Ca, on the feedstock's Ca share. Counted separately in the footer. `
-            + `An upper bound: retention competes, and durability is untested.`
-          : `Excess Ca where the limit binds precipitates as calcite, storing 1 CO₂ `
-            + `per Ca. Adds up to ${g(st.carbonateGt)} Gt/yr. Upper bound; durability untested.`);
+          ? `<b>On.</b> Calcium the drainage cannot carry is credited as solid `
+            + `carbonate, shown separately in the total below. An upper end; `
+            + `durability untested.`
+          : `Calcium the drainage cannot carry can form solid carbonate in the `
+            + `soil. Adds up to ${g(st.carbonateGt)} Gt/yr; an upper end, `
+            + `durability untested.`);
     }
     const sb = $("chk-systemwide"), sh = $("systemwide-hint");
     if (sb) {
       sb.checked = systemWide;
       sh.innerHTML = systemWide
-        ? `<b>On.</b> Acid-soil efficiency set to 1: acidity neutralised in the field `
-          + `would otherwise consume river alkalinity downstream.`
-        : `Counts acidity neutralised in acid soils as removal (it would otherwise `
-          + `consume river alkalinity downstream). `
+        ? `<b>On.</b> Acid neutralised in the field counts as removal, since it `
+          + `would otherwise release CO₂ downstream.`
+        : `In acid soils some rock neutralises acid instead of capturing CO₂. `
+          + `This counts it, since that acid would otherwise release CO₂ `
+          + `downstream. `
           + (st.systemWideUncappedPct !== undefined
-              ? `+${Math.round(st.systemWideUncappedPct)}% uncapped, +${Math.round(st.systemWideLimitedPct)}% with the limit.`
+              ? `+${Math.round(st.systemWideUncappedPct)}% without the drainage limit, +${Math.round(st.systemWideLimitedPct)}% with it.`
               : "");
     }
   }
@@ -1160,10 +1161,9 @@
     if (!el) return;
     const af = E.paddyView ? (E.paddyView.areaFrac * 100).toFixed(0) : "?";
     el.innerHTML = paddyView
-      ? `<b>On.</b> Cells with any paddy (${af}% of cropland) are shown as `
-        + `100% paddy fields — the view a paddy project sees. Other cells are `
-        + `untouched.`
-      : `Shows paddy-bearing cells (${af}% of cropland) as 100% paddy fields, `
+      ? `<b>On.</b> Cells with any rice paddy (${af}% of cropland) are shown `
+        + `as fully paddy. Other cells are unchanged.`
+      : `Shows cells with any rice paddy (${af}% of cropland) as fully paddy, `
         + `as a paddy project would see them.`;
   }
 
@@ -1208,6 +1208,16 @@
   }
 
   /* Re-render the readout for lastCell. Called by onMove and by refresh(). */
+  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  /* Readout rows for a short list of [name, share 0-1] pairs. */
+  function listRows(title, items) {
+    const rows = items.filter(([, x]) => Math.round(x * 100) > 0);
+    if (!rows.length) return ``;
+    return `<tr class="sec"><td class="k" colspan="2">${title}</td></tr>` +
+      rows.map(([n, x]) => `<tr class="item"><td class="k">${n}</td>` +
+        `<td class="v">${Math.round(x * 100)}%</td></tr>`).join("");
+  }
+
   function renderReadout() {
     const box = document.getElementById("readout");
     const cell = lastCell, ev = lastPos;
@@ -1282,29 +1292,24 @@
         ? `<tr><td class="k">Accounting</td><td class="v">system-wide (acid-soil efficiency set to 1)</td></tr>` : ``) +
       `<tr><td class="k">Limiting factor</td><td class="v">${limLabel}</td></tr>` +
       `<tr><td class="k">Soil pH (0–15 cm)</td><td class="v">${soilPh.toFixed(1)}</td></tr>` +
-      // Only with the pasture option on, where a cell can be in the map for
-      // either land class and the reader needs to know which.
+      // Land classes and crops are short lists, so each gets a heading row and
+      // one indented row per entry: name left, share right. Entries that round
+      // to 0% are dropped, and a heading with no entries is not drawn.
+      // The land rows show only with the pasture option on, where a cell can
+      // be in the map for either class and the reader needs to know which.
       (PAST()
-        ? `<tr><td class="k">Land in cell</td><td class="v">cropland ` +
-          `${Math.round((flags & 1 ? B[i] : 0) / 2.55)}% · managed pasture ` +
-          `${Math.round((flags & 32 ? pastureFrac[i] : 0) / 2.55)}%</td></tr>`
+        ? listRows("Land in cell", [
+            ["Cropland", (flags & 1 ? B[i] : 0) / 255],
+            ["Managed pasture", (flags & 32 ? pastureFrac[i] : 0) / 255]])
         : ``) +
       // Context, not an input. The model reads crop identity nowhere except rice,
       // and then only through soil pCO2 -- so this sits below the physics rows
-      // rather than among them. Two crops because one is a minority of the cell
-      // more often than not: median dominant share 46%. "of cropped area" is
-      // load-bearing wording, since SPAM's denominator is not the cropland
-      // fraction used elsewhere in this box.
+      // rather than among them. Shares are of SPAM's cropped area, which is not
+      // the cropland fraction above. "Rest", not "other": SPAM's own vocabulary
+      // already contains "other cereals", "other oilcrops" and so on.
       (cropList
-        ? `<tr><td class="k">Grown here</td><td class="v">` +
-          cropList.map((c) => `${c.name} ${Math.round(c.share * 100)}%`).join(" · ") +
-          // "rest", not "other": SPAM's own vocabulary already contains
-          // "other cereals", "other oilcrops" and so on, and a row reading
-          // "other oilcrops 41% · other 44%" makes the remainder look like
-          // another crop category.
-          (cropRest >= E.crops.minShare
-            ? ` · rest ${Math.round(cropRest * 100)}%` : ``) +
-          `</td></tr>`
+        ? listRows("Grown here", cropList.map((c) => [cap(c.name), c.share])
+            .concat(cropRest >= E.crops.minShare ? [["Rest", cropRest]] : []))
         : ``) +
       (econOn && usdT !== null
         ? `<tr><td class="k">Delivered rock</td><td class="v">$${usdT.toFixed(0)}/t · $${(usdT / E.cost.tco2PerT).toFixed(0)}/tCO₂</td></tr>`
@@ -1318,8 +1323,10 @@
     box.classList.remove("hidden");
     const wrap = $("map-wrap").getBoundingClientRect();
     let x = ev.clientX - wrap.left + 14, y = ev.clientY - wrap.top + 14;
-    if (x + 280 > wrap.width) x = ev.clientX - wrap.left - 292;
-    if (y + 210 > wrap.height) y = Math.max(6, ev.clientY - wrap.top - 220);
+    // Measured, not assumed: the box grows with the land and crop rows.
+    const bw = box.offsetWidth, bh = box.offsetHeight;
+    if (x + bw + 6 > wrap.width) x = Math.max(6, ev.clientX - wrap.left - bw - 14);
+    if (y + bh + 6 > wrap.height) y = Math.max(6, ev.clientY - wrap.top - bh - 14);
     box.style.left = x + "px"; box.style.top = y + "px";
   }
 
@@ -1348,8 +1355,8 @@
       `<span>${isFrac ? "% weathered in year 1" : "suitability"}</span>` +
       `<span>${isFrac ? "&ge;&nbsp;" + ((E.fracRampMax || 1) * 100).toFixed(0) : "100"}</span></div>` +
       (isFrac
-        ? `<p class="hint">Measured one-year weathering across the verified 2026
-             deliveries spans <b>${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%</b>,
+        ? `<p class="hint">Verified 2026 field deliveries weathered
+             <b>${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%</b> in a year,
              each at its own grind and site. Moves with the grind setting.</p>`
         : `<p class="hint">Score &rarr; gross CO₂ removal: ` +
           E.cdrKnots.filter(([, y]) => y > 0)
@@ -1363,9 +1370,9 @@
 
   function eligRows() {
     return `<div class="lrow" style="margin-top:9px"><span class="sw" style="background:#4d2929"></span>` +
-      `<span class="lbl">Fails SOC &gt; ${E.eligibility.socThreshold} wt% screen</span></div>` +
+      `<span class="lbl">Organic soil (carbon &gt; ${E.eligibility.socThreshold}%): excluded</span></div>` +
       `<div class="lrow"><span class="sw" style="background:#6b7078"></span>` +
-      `<span class="lbl">No climate input — not evaluated</span></div>`;
+      `<span class="lbl">No climate data: not evaluated</span></div>`;
   }
 
   /* Fraction of cropland area whose decile moves away from the neutral default.
@@ -1591,9 +1598,9 @@
     // passes over 45k cells and a sort -- to rediscover an identity, which was the
     // bulk of the map's sluggishness on the grind and economics controls.
     if (atDefault) {
-      $("stability").textContent = "At the physical defaults.";
+      $("stability").textContent = "All terms at full weight.";
       // Set the tag on this path too. The early return skipped it at first, which
-      // left the summary reading "Down-weighted" after a Reset to physics.
+      // left the summary reading "Down-weighted" after a reset.
       $("weight-tag").textContent = "Physics and economics";
       return;
     }
@@ -1617,9 +1624,9 @@
     const pct = tot ? moved / tot : 0;
     $("stability").textContent =
       pct < 0.001
-        ? "At the physical defaults."
-        : `${(pct * 100).toFixed(0)}% of ${landNoun()} area ranks in a different `
-          + `decile than under the physical defaults.`;
+        ? "All terms at full weight."
+        : `${(pct * 100).toFixed(0)}% of ${landNoun()} area moves to a different `
+          + `tenth of the ranking.`;
     $("weight-tag").textContent = pct < 0.001 ? "Physics and economics" : "Down-weighted";
   }
 
@@ -1629,389 +1636,323 @@
     const obs = E.dissolvedFracObserved;
     const knots = E.cdrKnots.filter(([, y]) => y > 0)
       .map(([x, y]) => `${(y * 100).toFixed(0)} = ${x}`).join(", ");
+    const pct = (x, nd = 0) => (x * 100).toFixed(nd);
+    const fmtT = (x) => (x === undefined || x === null ? "?" : x.toFixed(2));
+    const bindsPct = FC.bindsAreaFrac ? pct(FC.bindsAreaFrac) : "?";
+    const mayer = `<a href="https://doi.org/${FC.mayerDoi ?? "10.21203/rs.3.rs-7811095/v1"}"
+      target="_blank" rel="noopener">Mayer et&nbsp;al.&nbsp;2025</a>`;
+    const st = WA.stakes;
     return `
       <h2>Methods, caveats &amp; sources</h2>
       <p class="hint">${E.labels.grid}, ${E.labels.effectiveRes}. Protocol screens
       <code>${E.eligibility.version}</code>.</p>
 
-      <div class="flagbox"><p><b>This is a v0 preview.</b> The kinetics
-      over-predict an independent laboratory test, the grind-width input is
-      assumed rather than measured, and the absolute CO₂ scale is uncertain to
-      a factor of a few (see Known limitations). Treat the map as a relative
-      ranking, not a site-level prediction.</p></div>
+      <div class="flagbox"><p><b>This is a preview.</b> Use the map to compare
+      places, not to predict what one field will do. The absolute CO₂ numbers
+      are uncertain by a factor of a few, for the reasons under Known
+      limitations.</p></div>
 
       <h3>What this map shows</h3>
       <p>For each ~11 km cell of the world's cropland${E.pasture ? ` and
-      managed pasture` : ``}, the map estimates how much
-      CO₂ crushed basalt spread on that land could remove in its first year, from
-      the physics of rock weathering: how fast the rock dissolves in that soil
-      and climate, how much of the released alkalinity is stored as dissolved
-      inorganic carbon, and whether drainage carries it out of the soil. The
-      three layers are three views of the same calculation:
-      <b>Suitability</b>, a 0–100 score of gross CO₂ removal;
-      <b>Limiting factor</b>, the term that costs each cell the most; and
-      <b>Weathered in year&nbsp;1</b>, the fraction of applied rock predicted to
-      dissolve — the quantity field trials can measure.</p>
-      <p>Read the limiting-factor layer with ${ceilOn ? "three caveats. First, " +
-      "<b>&ldquo;export capped by drainage&rdquo; is a bound, not a term</b>: where " +
-      "the drainage-concentration ceiling binds it outranks all three factors, " +
-      "because no rate can push more carbon out than the water can hold. That is " +
-      "most of the map. Second, the two drainage classes are different physics: " +
-      "<b>&ldquo;slow drainage slows dissolution&rdquo;</b> is the Maher&ndash;Chamberlain " +
-      "rate term q/(q+D<sub>w</sub>), which throttles how fast rock dissolves when " +
-      "pore water sits near saturation, while the export cap bounds how much " +
-      "carbon can leave once dissolved. Third, among" : "one caveat. Among"} the three terms, the two
-      efficiency terms have a natural zero (efficiency&nbsp;=&nbsp;1) but the
-      dissolution term is measured against a reference condition (pH&nbsp;6.5,
-      15&nbsp;°C), so the answer moves with that choice: a reference
-      0.5&nbsp;pH units lower and 5&nbsp;°C warmer would make dissolution rank
-      largest more often. It shows which term is furthest from its best case, not
-      an absolute ranking of mechanisms.</p>
-      <p>It is a screening map, not a site-selection tool: zoom is capped on
-      purpose, and every CO₂ figure is gross removal. Two time bases coexist:
-      the <b>map layers and hover readout are year-1</b> (the quantity field
-      trials can measure), while the <b>footer total is a steady state</b> —
-      hold ${E.feedstock.rateTHaYr} t/ha of undissolved rock on each field
-      (less where the drainage limit binds — carbon above the limit cannot
-      leave, so the operator holds only what drains), reapplying as the
-      modelled kinetics dissolve it, capped at one full application per year.
-      Fast tropical cells run at the cap; slow cool cells reapply every decade
-      or two. The two bases nearly coincide globally (within ~7%) but differ
-      regionally with weathering speed. The cost screen is a <i>unit</i> cost
-      — $/tCO₂ is unchanged by scaling the application down, so the screen
-      decides where hauling rock is worth it and the drainage limit decides
-      how much carbon each hectare then yields.
+      managed pasture` : ``}, the map estimates how much CO₂ crushed basalt
+      spread on that land could remove. The estimate follows the rock through
+      three steps: how fast it dissolves in that soil and climate, how much of
+      what dissolves ends up as dissolved carbon instead of neutralising soil
+      acid, and whether enough water drains through the soil to carry that
+      carbon away.</p>
+      <p>The three map layers are views of one calculation:</p>
+      <ul>
+      <li><b>Suitability</b>: a 0–100 score of gross CO₂ removal per hectare.</li>
+      <li><b>Limiting factor</b>: what holds each cell back the most.</li>
+      <li><b>Weathered in year&nbsp;1</b>: the share of the applied rock predicted
+      to dissolve in the first year, which is what field trials measure.</li>
+      </ul>
+      <p><b>Two time bases.</b> The map layers and the hover popup describe the
+      first year after one application. The total at the bottom of the sidebar
+      is a steady state: each field holds ${E.feedstock.rateTHaYr} t/ha of
+      undissolved rock, topped up as it dissolves, with at most one full
+      application per year. Warm, wet cells reapply every year; cool, slow
+      cells every decade or two. Where the drainage limit binds, the field
+      holds only as much rock as the drainage can carry the carbon from. The
+      two bases give similar global totals but differ by region.</p>
+      <p><b>Gross, not net.</b> Every CO₂ figure is gross removal at the field.
       ${ceilOn
-        ? "Carbonate saturation enters only as an upper bound on what the drainage " +
-          "can carry, not as a modelled precipitation loss; cation retention in the " +
-          "soil, riverine re-release and strong-acid competition are all still " +
-          "outstanding."
-        : "Nothing downstream of dissolution is deducted: not the drainage limit " +
-          "(computed, but switched off — see Known limitations), not cation " +
-          "retention in the soil, not riverine re-release, and not strong-acid " +
-          "competition."}</p>
+        ? "Carbonate saturation enters only as a cap on what drainage can carry."
+        : "With the drainage limit switched off, nothing after dissolution is deducted."}
+      Cations held back in the soil, re-release in rivers and competition from
+      strong acids are not deducted. It is a screening map, and zoom is capped
+      on purpose.</p>
+      <p><b>Reading the limiting-factor layer.</b>
+      ${ceilOn ? `&ldquo;Export capped by drainage&rdquo; means the water leaving
+      the field cannot hold more carbon, whatever the rock does; it covers most
+      of the map. &ldquo;Slow drainage slows dissolution&rdquo; is a different
+      effect: with little water passing, soil water sits near saturation and
+      the rock itself dissolves more slowly. ` : ``}Among the three rate terms,
+      the layer shows which is furthest from its best case. Dissolution is
+      measured against a reference condition (pH&nbsp;6.5, 15&nbsp;°C), so a
+      different reference would change how often it ranks first.</p>
 
       <h3>How it is computed</h3>
       <ol>
-      <li><b>Dissolution rate.</b> The Palandri &amp; Kharaka (2004,
-      USGS OFR 2004-1068) three-mechanism rate law for basalt, driven by soil pH
-      (SoilGrids, 0–15 cm) and monthly soil temperature (Lembrechts et al. 2022,
-      5–15 cm), moisture-limited by the degree of soil-water saturation — a
-      TerraClimate extractable-storage climatology divided through SoilGrids
-      field capacity, wilting point and pore volume over 0–100 cm. The
-      rate is computed month by month and then averaged, because weathering needs
-      warm and wet at the same time. (An index first-order in hydrogen-ion
-      activity, as in Cascade, is close to a rescaled soil-pH map; the
-      three-mechanism law compresses that pH leverage by more than two orders of
-      magnitude.)</li>
-      <li><b>Reactive surface area.</b> A Rosin–Rammler particle-size
-      distribution from the grind controls (reference d50 ${E.psd.refD50} µm,
-      width ${E.psd.refWidth}). Geometric area, not BET; rate is linear in
-      surface area.</li>
-      <li><b>Acid-soil efficiency.</b> The carbonate-equilibrium efficiency
-      of Bertagni &amp; Porporato (2022), with zero free parameters. In acid soil
-      water part of the released alkalinity neutralises free acidity instead of
-      forming bicarbonate, so fast dissolution in very acid soil stores less
-      carbon <i>in the field water</i>. The map counts that share as lost, which
-      is the protocols' conservative reading; some of it may still end up as
-      bicarbonate downstream, where the acidity it neutralised would otherwise
-      have consumed river alkalinity. Setting this efficiency to 1 everywhere
-      would raise the uncapped total by ~13% and the drainage-limited total by
-      ~2%, because the acid soils it bites are mostly drainage-bound anyway. Soil
-      pCO₂ is raised in rice paddies, mapped as GRPI inundation months ×
-      SPAM all-technology rice area (all rice, not irrigated-only, since 2026-08-24 — rainfed lowland paddy is flooded too).
-      The Advanced <i>paddy-field view</i> re-evaluates every paddy-bearing cell
-      at 100% paddy (observed inundation months kept) — the like-for-like basis
-      for a project whose fields are all paddy, since the cell mean dilutes
-      flooded-soil chemistry by the cell’s non-rice share.</li>
-      <li><b>Slow drainage slows dissolution.</b> η = q/(q + D_w) on ${E.provenance.drainage}
-      (Maher &amp; Chamberlain 2014; D_w = ${p.dw ? p.dw.value : "?"} m/yr): with
-      little water passing, pore water sits near saturation and the rock
-      dissolves more slowly. This is a rate term, and it is distinct from the
-      drainage limit below, which caps how much carbon can leave once
-      dissolved. Total runoff rather than groundwater recharge, because recharge
-      is zero in river deltas where the water table is at the surface and
-      drainage leaves laterally.</li>
-      <li><b>Gross CO₂ removal.</b> The product of the terms sets how far each
-      particle's surface retreats, and a shrinking-core integral over the
-      grain-size distribution turns that into the fraction of rock dissolved in
-      year one — so the fine tail is spent early and coarse grains persist.
-      Anchored so that, at each verified 2026 delivery's own cells and grind,
-      the model reproduces the median supplier's measured one-year weathering
-      (measured fractions span
-      ${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%; the implied
-      site-and-grind-corrected multipliers spread ~7× across suppliers and
-      rise with grain size, which is reported rather than tuned away).
-      At ${E.feedstock.rateTHaYr} t/ha of basalt holding
-      ${E.feedstock.tco2PerT} tCO₂/t, that fraction becomes tCO₂/ha/yr.</li>
-      <li><b>Drainage limit.</b> Gross removal is then capped at
-      q·[HCO₃⁻]<sub>max</sub>·44: the carbon must leave dissolved in the water
-      that leaves the field, and the concentration is bounded by carbonate
-      saturation at each cell's own soil pCO₂ and temperature. Applied by default since
-      2026-08-24; it is the binding term on ~77% of cropland (95% before the
-      dissolution anchor was re-derived from the verified deliveries). The same bound is
-      published independently as "carrying capacity" (Mayer et al. 2025), whose
-      54 PHREEQC cases this solve reproduces to 0.95–1.00.</li>
-      <li><b>Wider accounting</b> (two options, both off by default; the
-      protocols credit neither). <i>Solid carbonate:</i> where the drainage
-      limit binds, the excess Ca precipitates as calcite, 2 HCO₃⁻ + Ca²⁺ →
-      CaCO₃ + CO₂ + H₂O, storing one CO₂ per Ca instead of two. The option
-      credits (1/2)·f<sub>Ca</sub> of the excess (f<sub>Ca</sub> = ${WA.fCa},
-      the feedstock's Ca share; Mg carbonates are kinetically inhibited), which
-      adds ${WA.stakes ? WA.stakes.carbonateGt.toFixed(2) : "?"} Gt/yr at
-      steady state (${WA.stakes ? WA.stakes.carbonateAllCationGt.toFixed(2) : "?"}
-      if every excess cation precipitated). It is an upper bound: cation
-      retention competes for the same excess and is not modelled, and the
-      carbonate persists only while the soil stays near saturation — most of the
-      excess sits in soils acidic enough to redissolve it once amendment stops.
-      <i>System-wide accounting:</i> sets the acid-soil efficiency to 1, on the
-      argument that acidity neutralised in the field would otherwise consume
-      river or ocean alkalinity and release CO₂ downstream, so the export is
-      still removal unless the baseline acid sink is non-carbonate (aluminium
-      mobilisation, exchange). Stake:
-      ${WA.stakes ? `+${WA.stakes.systemWideUncappedPct}% uncapped, +${WA.stakes.systemWideLimitedPct}% with the limit` : "see build"}.
-      The footer reports the carbonate part separately and labels both.</li>
-      <li><b>Suitability.</b> A piecewise-linear score of gross CO₂ removal —
-      ${knots} tCO₂/ha/yr — so zero removal scores zero by construction, and
-      100 sits at about the most a metre of drainage can carry at calcite
-      saturation (the map's capped maximum is just under it). The
-      Advanced exponents lower one term at a time to test how much of the map
-      depends on trusting it; they are not importance weights, because the terms
-      are not substitutable.</li>
-      <li><b>Delivered cost (optional).</b> $${E.cost.gateUsdT}/t at the quarry
-      gate, plus trucking at regional rates on road distance <i>plus
-      ${E.cost.haulFixedKm} km</i> — the fixed trip time (the hauler's loading,
-      tipping and positioning, ~$2.25–5.50/t by region; the quarry's own loading
-      service is already inside the f.o.b. gate price) \u2014
-      ${Object.entries(E.cost.truckRates || {}).map(([k, v]) => `${k} $${v}`)
-        .join(", ")}, elsewhere $${E.cost.truckRateDefault}/t-km
-      (sources and vintages in docs/TRUCK_RATE_SOURCES.md; only the US rate is
-      current) \u2014 over
-      ${E.cost.tortuosity}× great-circle distance to the nearest mafic-hosted
-      quarry (US MRDS, Brazil ANM, Mexico DENUE, France BRGM, OSM) <i>or</i> to mafic
-      outcrop (GLiM) scaled by ${E.cost.outcropToQuarry}× — the
-      quarry-to-outcrop ratio measured where both are known — whichever is
-      nearer. Cells with no quarry register within ~250 km are flagged in the
-      hover readout as outcrop-based estimates. The discount
-      applies to the haul increment only — every site must buy and crush rock, so
-      the gate cost carries no spatial information — and it never zeroes a cell
-      with real physical potential. Truck only, not network-routed.</li>
-      <li><b>Protocol screen.</b> Cells whose soil organic carbon likely exceeds
-      ${E.eligibility.socThreshold} wt% (exceedance probability &gt;
-      ${E.eligibility.pExcluded} on SoilGrids quantiles; the Puro.earth and
-      Isometric exclusion) are drawn dark red. Only
-      ${(E.eligibility.excludedShareCropland * 100).toFixed(2)}% of cropland is
-      confidently excluded — high-SOC soils are a peatland and boreal phenomenon,
-      not a farmland one.</li>
+      <li><b>Land.</b> Cropland is the Potapov et al. (2022) map.
+      ${E.pasture ? `Managed pasture is the HYDE &ldquo;pasture&rdquo; class
+      (${E.pasture.source}): grazing land where the aridity index is above 0.5,
+      ${E.pasture.gha.toFixed(2)} Gha after removing overlap with cropland. It
+      is included by default and can be switched off under Advanced. Figures
+      quoted &ldquo;of cropland&rdquo; on this page refer to cropland only.` : ``}
+      A cell enters the map when a land class covers at least 1% of it.</li>
+      <li><b>Dissolution rate.</b> The Palandri &amp; Kharaka (2004) rate law for
+      the minerals in basalt, driven by soil pH (SoilGrids, 0–15 cm) and monthly
+      soil temperature (Lembrechts et al. 2022, 5–15 cm), and reduced where the
+      soil is dry (TerraClimate soil water against SoilGrids water-holding
+      capacity, 0–100 cm). The rate is computed month by month and then
+      averaged, because weathering needs warmth and water at the same time.</li>
+      <li><b>Grain size.</b> A Rosin–Rammler particle-size distribution set by
+      the grind controls (reference: median ${E.psd.refD50} µm, width
+      ${E.psd.refWidth}). Finer rock has more surface and dissolves faster; the
+      rate is proportional to geometric surface area.</li>
+      <li><b>Acid-soil efficiency.</b> In acid soil water, part of what the rock
+      releases neutralises acidity instead of forming bicarbonate (Bertagni
+      &amp; Porporato 2022; no fitted parameters). The map counts that share as
+      lost, as crediting protocols do, although some of it may still become
+      bicarbonate downstream. ${st ? `Counting all of it would raise the
+      cropland total by ${Math.round(st.systemWideUncappedPct)}% without the
+      drainage limit and ${Math.round(st.systemWideLimitedPct)}% with it,
+      because most acid soils are drainage-limited anyway.` : ``} Rice paddies
+      are given a higher soil CO₂ level, mapped from satellite inundation
+      months (GRPI) and SPAM rice area. The Advanced paddy-field view treats
+      every cell with any paddy as fully paddy, which is what a project working
+      only on paddy fields would see.</li>
+      <li><b>Slow drainage slows dissolution.</b> η = q/(q + D<sub>w</sub>),
+      with q from ${E.provenance.drainage} and D<sub>w</sub> =
+      ${p.dw ? p.dw.value : "?"} m/yr (Maher &amp; Chamberlain 2014). With little
+      water passing, soil water sits near saturation and the rock dissolves
+      more slowly. Total runoff is used in place of groundwater recharge,
+      because recharge is zero in river deltas, where water leaves sideways.</li>
+      <li><b>Weathered in year 1 and gross CO₂.</b> The terms above set how fast
+      each grain's surface retreats. Summing over the grain-size distribution
+      gives the share of rock dissolved in the first year: fines go early and
+      coarse grains persist. The overall level comes from one calibration. At
+      the sites and grinds of the verified 2026 field deliveries, the model
+      reproduces the median supplier's measured one-year weathering (measured
+      range ${pct(obs[0])}–${pct(obs[1])}%). After correcting for site and
+      grind, suppliers still differ by about 7×, and the gap grows with grain
+      size; that spread is reported, not tuned away. At
+      ${E.feedstock.rateTHaYr} t/ha of basalt holding ${E.feedstock.tco2PerT}
+      tCO₂/t, the dissolved share becomes tCO₂/ha/yr.</li>
+      <li><b>Drainage limit.</b> Removal is capped at
+      q × [HCO₃⁻]<sub>max</sub> × 44. The carbon has to leave dissolved in the
+      water that drains from the field, and that water can hold only so much
+      bicarbonate before carbonate minerals form. The maximum is set by calcite
+      saturation at each cell's soil CO₂ and temperature. In year 1 the cap
+      binds on ${bindsPct}% of cropland. ${mayer} publish the same bound as
+      &ldquo;carrying capacity&rdquo;, and this model reproduces their 54
+      PHREEQC cases to within 0.95–1.00.</li>
+      <li><b>Wider accounting</b> (two options, off by default; crediting
+      protocols count neither). <i>Solid carbonate:</i> where drainage is the
+      limit, calcium the water cannot carry precipitates as calcite, storing
+      one CO₂ per calcium instead of two. The option credits that on the
+      feedstock's calcium share (${WA.fCa}; magnesium carbonates form too
+      slowly to count), which adds ${st ? fmtT(st.carbonateGt) : "?"} Gt/yr on
+      cropland at steady state. It is an upper end: cations held in the soil
+      compete for the same calcium, and the carbonate lasts only while the soil
+      stays near saturation. <i>System-wide accounting:</i> sets the acid-soil
+      efficiency to 1, on the argument that acid neutralised in the field would
+      otherwise consume alkalinity in rivers or the ocean and release CO₂
+      there. That holds unless the acid would have been neutralised some other
+      way, for example by mobilising aluminium. The sidebar total reports the
+      carbonate part separately and labels both options.</li>
+      <li><b>Suitability.</b> A score of gross CO₂ removal with fixed steps:
+      ${knots} tCO₂/ha/yr. Zero removal scores zero, and 100 is about the most
+      a metre of drainage can carry at calcite saturation. The Advanced term
+      sliders fade one term at a time to show how much of the map depends on
+      it. They are not importance weights.</li>
+      <li><b>Delivered cost (optional).</b> $${E.cost.gateUsdT}/t for rock at
+      the quarry, plus trucking at a regional rate
+      (${Object.entries(E.cost.truckRates || {}).map(([k, v]) => `${k} $${v}`)
+        .join(", ")}, elsewhere $${E.cost.truckRateDefault} per tonne-km). The
+      distance is ${E.cost.tortuosity}× the straight line to the nearest
+      mafic-rock quarry (US MRDS, Brazil ANM, Mexico DENUE, France BRGM, OSM),
+      plus ${E.cost.haulFixedKm} km to cover loading and tipping time. Where no
+      quarry is on record, the nearest mapped mafic outcrop (GLiM) stands in at
+      ${E.cost.outcropToQuarry}× its distance, and the popup flags the cost as
+      an outcrop-based estimate. Only the trucking part lowers a cell's score,
+      since every site pays for rock, and it never takes a cell to zero. With
+      Economics on, the total counts only land under
+      $${E.cost.screenUsdPerTco2}/tCO₂ delivered, judged against the carbon the
+      rock removes over its lifetime (discounted at
+      ${pct(E.cost.screenDiscount || 0)}% a year).</li>
+      <li><b>Protocol screen.</b> Cells whose soil organic carbon probably
+      exceeds ${E.eligibility.socThreshold}% by weight are drawn dark red (the
+      Puro.earth and Isometric exclusion; exceedance probability above
+      ${E.eligibility.pExcluded} on SoilGrids quantiles). That is
+      ${pct(E.eligibility.excludedShareCropland, 2)}% of cropland: high-carbon
+      soils are mostly peatland and boreal, not farmland.</li>
       </ol>
 
       <h3>Key assumptions</h3>
       <table>
         <tr><th>Assumption</th><th>Value</th></tr>
         <tr><td>Application rate</td><td>${E.feedstock.rateTHaYr} t/ha/yr</td></tr>
-        <tr><td>Feedstock</td><td>delivered basalt, ${E.feedstock.tco2PerT} tCO₂/t
-          (Ca+Mg basis; supplier mean of the verified deliveries' feedstock
+        <tr><td>Feedstock</td><td>basalt as delivered, ${E.feedstock.tco2PerT}
+          tCO₂/t (Ca+Mg basis; supplier mean of the verified deliveries'
           assays)</td></tr>
-        <tr><td>Reference grind</td><td>d50 ${E.psd.refD50} µm, width
+        <tr><td>Reference grind</td><td>median ${E.psd.refD50} µm, width
           ${E.psd.refWidth} (width assumed; narrow for a commercial crush)</td></tr>
-        <tr><td>Year-1 dissolved fraction at reference</td>
-          <td>${(E.dissolvedFracAtRef * 100).toFixed(0)}%, calibrated so the model
-          reproduces the verified deliveries at their own sites and grinds
-          (measured one-year fractions
-          ${(obs[0] * 100).toFixed(0)}–${(obs[1] * 100).toFixed(0)}%)</td></tr>
-        <tr><td>Quarry gate cost</td><td>$${E.cost.gateUsdT}/t, from
-          operator-reported quarry-fines prices — today's byproduct deals, not
-          an at-scale price (US traprock averages $21.33/t, USGS 2023; see
-          docs/GATE_COST_AT_SCALE.md)</td></tr>
-        <tr><td>Trucking</td><td>regional $/t-km (US
+        <tr><td>Weathered in year 1 at the reference grind and site</td>
+          <td>${pct(E.dissolvedFracAtRef)}%, calibrated to the verified
+          deliveries at their own sites and grinds (measured
+          ${pct(obs[0])}–${pct(obs[1])}%)</td></tr>
+        <tr><td>Rock price at the quarry</td><td>$${E.cost.gateUsdT}/t, from
+          operator-reported prices for quarry fines. These are today's
+          byproduct deals, not a price at scale (US traprock averages $21.33/t,
+          USGS 2023; see docs/GATE_COST_AT_SCALE.md)</td></tr>
+        <tr><td>Trucking</td><td>regional rate per tonne-km (US
           $${E.cost.truckRates ? E.cost.truckRates["US/Canada"] : "?"}, Brazil
           $${E.cost.truckRates ? E.cost.truckRates["Brazil/Latin America"] : "?"},
           India $${E.cost.truckRates ? E.cost.truckRates["India/South Asia"] : "?"})
-          on road km + ${E.cost.haulFixedKm} km fixed-trip equivalent, ×
-          ${E.cost.tortuosity} road tortuosity</td></tr>
-        <tr><td>D_w (transport limitation)</td><td>${p.dw ? p.dw.value : "?"} m/yr
+          over ${E.cost.tortuosity}× straight-line distance plus
+          ${E.cost.haulFixedKm} km</td></tr>
+        <tr><td>D<sub>w</sub> (slow-drainage term)</td><td>${p.dw ? p.dw.value : "?"} m/yr
           (published range ${p.dw ? p.dw.range.join("–") : "?"})</td></tr>
-        <tr><td>Drainage ceiling, calcite Ω${ceilOn ? "" : " (not applied)"}</td><td>${FC.omega ? Number(FC.omega).toFixed(2) : "—"}
-          (SI&nbsp;0.5, the central case of Mayer et&nbsp;al.&nbsp;2025 and the
-          saturation observed in amended pore waters; strict case
-          ${FC.omegaStrict ?? "—"}, permissive Ω&nbsp;=&nbsp;10)</td></tr>
-        <tr><td>Dissolved Mg</td><td>${FC.mgMM ?? "—"}&nbsp;mmol/L
-          (explicit, basalt-typical; Mg escapes the calcite constraint, so
-          Mg-rich feedstocks raise the ceiling — 5&nbsp;mmol/L for olivine
-          roughly doubles it)</td></tr>
+        <tr><td>Drainage limit: calcite saturation${ceilOn ? "" : " (not applied)"}</td>
+          <td>Ω = ${FC.omega ? Number(FC.omega).toFixed(2) : "—"} (saturation
+          index 0.5, the central case of Mayer et&nbsp;al.&nbsp;2025 and what is
+          observed in amended soil water; strict case Ω =
+          ${FC.omegaStrict ?? "—"}, permissive Ω&nbsp;=&nbsp;10)${phBasis
+            ? `. <b>Pore-water pH held at ≤ ${FC.phTarget ?? 7.5}</b> in this
+              session` : ``}</td></tr>
+        <tr><td>Dissolved magnesium</td><td>${FC.mgMM ?? "—"}&nbsp;mmol/L,
+          typical for basalt. Magnesium is not limited by calcite, so
+          magnesium-rich rock raises the limit</td></tr>
         <tr><td>Activity coefficients</td><td>${FC.activities ? "Davies, iterated"
-          : "none"} — the solve reproduces all 54 PHREEQC cases of
-          Mayer et&nbsp;al.&nbsp;2025 to 0.95–1.00 (gate&nbsp;13d)</td></tr>
-        <tr><td>Ceiling basis${phBasis ? "" : " (option)"}</td>
-          <td>${phBasis ? `<b>pH-target: pore water held at
-          pH&nbsp;≤&nbsp;${FC.phTarget ?? 7.5}</b> (in-situ at field pCO₂,
-          ~0.5–1 unit below lab soil pH), keeping calcite Ω&nbsp;≈&nbsp;0.3 on
-          drained cropland; saturation still binds first where its pH is lower
-          (paddies). Selected in the sidebar — the headline basis is
-          saturation.`
-          : `calcite saturation (the headline basis and the Mayer et&nbsp;al.
-          2025 anchor). A stricter pore-water pH bound was offered until
-          2026-09-02 and withdrawn: a pore-water pH is not the agronomic soil pH
-          it was read as (a lab paste reads 0.3–1 units higher at its lower
-          CO₂), and a soil-pH bound needs the field's acid budget — fertiliser
-          nitrification and harvest removal — which the map does not yet carry.`}</td></tr>
+          : "none"}</td></tr>
+        ${E.pasture ? `<tr><td>Managed pasture</td><td>same model and application
+          rate as cropland, with no penalty for rock left on an untilled
+          surface</td></tr>` : ``}
       </table>
 
       <h3>Known limitations</h3>
-      <div class="flagbox"><p><b>Weathered cations do not all leave the soil, and
-      the map does not model the ones that stay.</b> Field measurements find
-      <b>10–50× more base cations retained</b> in exchange sites, iron and
-      manganese oxide pools and neoformed clays than are exported in leachate
-      (Hammes et al. 2025), with retarded fractions of 93–98% (te Pas et al.
-      2025). This map reports the export that would occur at steady state with no
-      lag, so the CO₂ figures are still likely high — by a factor of roughly 2–4
-      against the trials that have measured drainage chemistry directly. Modelled
-      export lag times reach 5–22 years (Kanzaki et al. 2025). This is the largest
-      missing term and it is blocked on data, not effort.</p></div>
-      ${ceilOn ? `<p><b>The carbon is bounded by the water that carries it.</b>
-      Gross CO₂ removal is capped at what the drainage can hold as bicarbonate
-      without carbonate precipitating — around ${FC.medianTco2HaYr ? FC.medianTco2HaYr.toFixed(2) : "0.22"}
-      tCO₂/ha/yr at the median cell. The cap binds on
-      <b>${FC.bindsAreaFrac ? (FC.bindsAreaFrac * 100).toFixed(0) : "97"}% of
-      cropland</b>, and where it binds the dissolution rate, mineral mix, grind
-      <i>and application rate</i> no longer change the answer. Spreading more rock
-      than the drainage can carry the carbon from raises the share of the map that
-      is transport-limited rather than raising the tonnage. At
-      ${E.feedstock.rateTHaYr}&nbsp;t/ha the median cell realises just
-      ${FC.realisedShareOfStoich ? (FC.realisedShareOfStoich * 100).toFixed(1) : "—"}%
-      of the feedstock's stoichiometric CO₂ potential as exported carbon.
-      This is a <i>maximum-efficient</i> bound, not an absolute one: past it,
-      calcite precipitation does not stop removal but halves its marginal
-      efficiency (a precipitated Ca carries one carbon instead of balancing
-      two bicarbonates). The same bound — recharge × maximum DIC — is
-      published independently as "carrying capacity" by
-      <a href="https://doi.org/${FC.mayerDoi ?? "10.21203/rs.3.rs-7811095/v1"}"
-      target="_blank" rel="noopener">Mayer et&nbsp;al.&nbsp;2025</a>
-      (Terradot; preprint), whose 54 PHREEQC cases this model's carbonate
-      solve reproduces to 0.95–1.00.</p>`
-      : `<div class="flagbox"><p><b>The drainage limit is switched OFF in this
-      session — the shipped default applies it.</b> With it off, nothing bounds
-      the reported carbon by the water available to carry it: the CO₂ layer
-      becomes an upper limit on dissolution, not carbon that can be shown to
-      leave the field. The bound it ignores is roughly
-      ${FC.medianTco2HaYr ? FC.medianTco2HaYr.toFixed(2) : "0.40"} tCO₂/ha/yr at
-      the median cell, and the unbounded figures exceed it on
-      <b>${FC.bindsAreaFrac ? (FC.bindsAreaFrac * 100).toFixed(0) : "95"}% of
-      cropland</b> by a median factor of about
-      ${FC.exceedMedian ? FC.exceedMedian.toFixed(0) : "4"}×. This off state is
-      the map's pre-review historical behaviour (the bound was held out of the
-      defaults 2026-08-03 to 2026-08-24 pending outside scrutiny, which arrived
-      as <a href="https://doi.org/${FC.mayerDoi ?? "10.21203/rs.3.rs-7811095/v1"}"
-      target="_blank" rel="noopener">Mayer et&nbsp;al.&nbsp;2025</a> — Terradot;
-      preprint, not yet peer-reviewed — whose "carrying capacity" is the same
-      bound, and whose 54 PHREEQC cases this model's carbonate solve reproduces
-      to 0.95–1.00, gate&nbsp;13d). Turn the toggle back on to restore the
-      shipped behaviour.</p></div>`}
-      <p><b>The kinetics over-predict an independent laboratory test.</b> Against
-      Gudbrandsson et al. (2011) crystalline-basalt dissolution (pH 2–11,
-      5–75 °C), the Ca+Mg charge sum the map actually uses over-predicts by
-      about <b>+1.2 log units</b> on the shipped mineral weighting — worse than
-      the per-element figures (Ca +0.5, Mg +1.6) suggest. The bias grows with
-      temperature: the apparent activation energy here (62–69 kJ/mol) is roughly
-      2× the measured ~${E.kinetics.measuredEaKJ} kJ/mol
+      <div class="flagbox"><p><b>Much of what dissolves stays in the soil, and
+      the map does not model that.</b> Field studies find 10–50× more base
+      cations held on soil particles, in iron and manganese oxides and in new
+      clays than leave in drainage water (Hammes et al. 2025), with 93–98%
+      held back (te Pas et al. 2025). The map reports what would leave at
+      steady state with no delay, so its CO₂ figures are probably high, by
+      roughly 2–4× against trials that measured drainage chemistry directly.
+      Modelled delays run 5–22 years (Kanzaki et al. 2025). This is the largest
+      missing piece, and it waits on data.</p></div>
+      ${ceilOn ? `<p><b>Water, not rock, sets the limit on most land.</b>
+      Removal is capped at what drainage can hold as bicarbonate: about
+      ${fmtT(FC.medianTco2HaYr)} tCO₂/ha/yr at the median cell. The cap binds on
+      <b>${bindsPct}% of cropland</b> in year 1, and where it binds, the
+      dissolution rate, the rock type, the grind and the application rate no
+      longer change the answer. At ${E.feedstock.rateTHaYr}&nbsp;t/ha the
+      median cell exports
+      ${FC.realisedShareOfStoich ? pct(FC.realisedShareOfStoich, 1) : "—"}% of
+      the carbon the rock could in principle capture. Past the cap, removal
+      does not stop; each further calcium stores one carbon as solid carbonate
+      instead of two as bicarbonate. The supporting evidence is one
+      company-funded preprint (${mayer}, Terradot), not yet peer-reviewed.</p>`
+      : `<div class="flagbox"><p><b>The drainage limit is switched off in this
+      session.</b> The CO₂ layer now shows how much rock could dissolve, not
+      carbon that can be shown to leave the field. The limit it ignores is
+      about ${fmtT(FC.medianTco2HaYr)} tCO₂/ha/yr at the median cell, and the
+      uncapped figures exceed it on <b>${bindsPct}% of cropland</b>, by a
+      median factor of about
+      ${FC.exceedMedian ? FC.exceedMedian.toFixed(1) : "?"}×. Turn it back on
+      in the sidebar to return to the default.</p></div>`}
+      ${E.pasture ? `<p><b>Managed pasture is treated like tilled cropland.</b>
+      Pasture is not tilled, so rock stays on the surface, and the calibration
+      comes from cropland deployments. No penalty is applied because none is
+      well enough measured, so the pasture numbers are an upper end. The HYDE
+      class is also defined by climate, not by observed management: it does not
+      show which land is fertilised or reachable by a spreader. Drier rangeland
+      is left out.</p>` : ``}
+      <p><b>The rate law runs faster than laboratory basalt.</b> Against
+      Gudbrandsson et al. (2011), who dissolved crystalline basalt at pH 2–11
+      and 5–75&nbsp;°C, the Ca+Mg release the map uses is too high by about
+      <b>1.2 log units</b>. The error grows with temperature: the model's
+      effective activation energy (62–69 kJ/mol) is roughly twice the measured
+      ~${E.kinetics.measuredEaKJ} kJ/mol
       (${E.kinetics.measuredEaRange[0]}–${E.kinetics.measuredEaRange[1]} across
-      pH), and Schaef &amp; McGrail (2009) measure 30 kJ/mol on Columbia River
-      basalt from an independent laboratory; Cascade's ${E.kinetics.cascadeEaKJ}
-      has the same problem, so it is wrong for a reason we share. This inflates
-      the tropics-versus-temperate contrast by roughly 2×.
+      pH), and Schaef &amp; McGrail (2009) measured 30 kJ/mol on Columbia River
+      basalt. That overstates the advantage of warm climates by roughly 2×.
       ${ceilOn
-        ? "It no longer propagates to the CO₂ layer over most of the map, though: " +
-          "the drainage ceiling above binds first and does not reward warmth, so the " +
-          "tropical tilt now shows up in &ldquo;weathered in year 1&rdquo; rather " +
-          "than in the tonnage."
-        : "With the drainage limit switched off it propagates in full to the CO₂ " +
-          "layer, so the warm-climate advantage this map shows is roughly 2× too " +
-          "strong on the kinetics alone, before the drainage bound is even " +
-          "considered."}</p>
-      <p><b>The mineral mix is olivine-dominated.</b> Forsterite is 12% of the
-      modelled rock by volume but supplies 80% of its base-cation release, so the
-      map's pH and temperature response is closer to olivine's than to basalt's.
-      Independently, the archetypes' mineral modes imply up to 2× their stated
-      MgO, which is a second line of evidence for the same problem. Both are
-      recorded rather than retuned, because the fix is a modelling decision that
-      needs its own review.</p>
-      <p><b>Surface area sets the absolute scale and is uncertain by orders of
-      magnitude.</b> Geometric and BET areas differ by 130–670× at ERW grain
-      sizes. The roughness multiplier λ (about
-      ${Math.round(E.psd.betMeasured / E.psd.refSsa)} to match a measured
-      ${E.psd.betMeasured} m²/g BET) is reported as a plausibility
-      <i>diagnostic</i> only — it does not enter the calculation, because the map
-      works in rate <i>ratios</i> and a constant multiplier cancels. What does set
-      the level is the dissolved-fraction anchor, calibrated to field-reported
-      year-one weathering.</p>
-      <p><b>Gross, not net.</b> In-soil carbonate precipitation, riverine
-      re-release and strong-acid competition plausibly claim more than 20% of
-      gross removal — the top of the published range (~80%) belongs to
-      particularly suboptimal siting — and the gap is spatially variable.
-      Nothing here is validated against net measured removal.</p>
-      <p><b>The aridity contrast comes from the drainage limit.</b> With it
-      applied — the default — gross removal spans ~125&times; from the wettest
-      to the driest 5% of cropland, close to the 141&times; contrast in the
-      drainage data itself. Switching the limit off collapses the span to
-      ~10&times;, which understates how strongly water availability
-      discriminates sites.</p>
-      <p><b>Irrigation is half-visible.</b> Drainage includes irrigation return
-      flow; the soil-water balance behind the moisture term does not. On irrigated
-      land the two disagree about how wet the field is.</p>
-      <p><b>Cropland is herbaceous-only.</b> The mask reproduces Potapov et al.
-      (2022) to 0.1%, but excludes perennial woody crops, temporary meadows and
-      long fallow (~0.36 Gha vs FAOSTAT). Woody crops are protocol-eligible and a
-      live deployment setting, so addressable area is understated, mostly in the
-      tropics.</p>
-      <p><b>Quarry inventories are uneven.</b> MRDS is reliable mainly for the
-      US and static since 2011; mining titles (Brazil), business directories
-      (Mexico DENUE, France BRGM) and crowd-sourced points overstate producing
-      quarries. Register coverage exists for the US, Brazil, Mexico and France;
-      OSM crowd coverage is dense in Europe and usable in India, SE Asia, Japan
-      and Brazil; China and Turkey yielded nothing from two Overpass instances.
-      Elsewhere the cost rests on the outcrop bound and is flagged per cell in
-      the hover. Haul distance is great-circle × tortuosity, not
-      road-routed.</p>
-      <p><b>The haul rates are benchmarked, not calibrated.</b> Trucking is
-      priced with regional rates (only the US entry is current — USDA grain-truck
-      rates; Brazil, China and Europe rest on 2007 World Bank corridor prices
-      inflated by US CPI, India on a 2021 national average) plus a fixed trip
-      charge of ${E.cost ? E.cost.haulFixedKm : 50} km-equivalent priced at the
-      regional rate. Nothing validates
-      the resulting cost surface against real delivered costs, and haul distance
-      is modelled, not routed. The rate multiplier and gate cost are sliders
-      under Advanced so the dependence is visible rather than buried; sources and
-      vintages are in docs/TRUCK_RATE_SOURCES.md.</p>
-      <p><b>Screening probabilities are not calibrated.</b> SoilGrids quantiles
-      describe ~250 m block averages, not sampled fields, so field-scale
-      threshold exceedance is understated; the SOC screen is a screening
-      likelihood, not an eligibility probability.</p>
+        ? "Over most of the map this no longer reaches the CO₂ layer, because " +
+          "the drainage limit binds first and does not reward warmth. It shows " +
+          "up in &ldquo;weathered in year 1&rdquo; instead."
+        : "With the drainage limit off, it carries through in full to the CO₂ layer."}</p>
+      <p><b>The modelled rock behaves too much like olivine.</b> Forsterite is
+      12% of the modelled rock by volume but supplies 80% of its cation
+      release, so the response to pH and temperature is closer to olivine's
+      than to basalt's. The mineral recipe also implies up to twice the stated
+      MgO. Both are recorded here and left unchanged pending a separate
+      review.</p>
+      <p><b>Surface area is very uncertain.</b> Geometric and measured (BET)
+      surface areas differ by 130–670× at these grain sizes. This does not
+      enter the map directly, because the map works in rate ratios and the
+      level is set by the field calibration, but it is why the level cannot be
+      derived from laboratory rates alone.</p>
+      <p><b>Net removal is lower than gross.</b> Carbonate forming in the soil,
+      re-release in rivers and competition from strong acids plausibly take
+      more than 20% of gross removal, and up to ~80% at badly chosen sites.
+      The loss varies from place to place. Nothing here is validated against
+      measured net removal.</p>
+      <p><b>The wet-to-dry contrast comes from the drainage limit.</b> With the
+      limit on, gross removal spans about 125× from the wettest to the driest
+      5% of cropland, close to the 141× contrast in the drainage data. With it
+      off the span falls to about 10×.</p>
+      <p><b>Irrigation is only half included.</b> The drainage data include
+      irrigation return flow; the soil-moisture data do not. On irrigated land
+      the two disagree about how wet the field is.</p>
+      <p><b>Cropland means field crops.</b> The mask matches Potapov et al.
+      (2022) to 0.1% but leaves out orchards and other woody crops, temporary
+      meadows and long fallow (about 0.36 Gha against FAOSTAT). Woody crops are
+      eligible under the protocols and already in use, so usable area is
+      understated, mostly in the tropics.</p>
+      <p><b>Quarry records are uneven.</b> Registers exist for the US (MRDS,
+      static since 2011), Brazil, Mexico and France; mining titles and business
+      directories overstate working quarries. OpenStreetMap coverage is dense
+      in Europe and usable in India, Southeast Asia, Japan and Brazil, and
+      close to empty for China and Turkey. Elsewhere the cost rests on mapped
+      outcrop and is flagged in the popup.</p>
+      <p><b>Trucking costs are not validated.</b> Only the US rate is current
+      (USDA grain-truck rates). Brazil, China and Europe rest on 2007 World
+      Bank corridor prices adjusted for inflation, and India on a 2021 national
+      average. Distances are straight lines scaled up, not road routes, and
+      nothing checks the result against real delivered costs. The trucking and
+      rock-price sliders under Advanced show how much this matters; sources are
+      in docs/TRUCK_RATE_SOURCES.md.</p>
+      <p><b>The organic-soil screen is approximate.</b> SoilGrids describes
+      ~250 m averages, not sampled fields, so the chance that a given field
+      exceeds the threshold is understated.</p>
 
       <h3>Sources</h3>
       <table>
         <tr><th>Layer</th><th>Source</th></tr>
-        <tr><td>Soil pH, SOC + quantiles</td><td>${p.soil}</td></tr>
+        <tr><td>Soil pH and organic carbon</td><td>${p.soil}</td></tr>
         <tr><td>Climate</td><td>${p.climate}</td></tr>
         <tr><td>Cropland</td><td>${p.cropland}</td></tr>
         ${E.pasture ? `<tr><td>Managed pasture</td><td>${E.pasture.source}, `
-          + `5 arc-minute; grazing land with aridity index &gt; 0.5, not observed `
-          + `management</td></tr>` : ``}
+          + `5 arc-minute; grazing land with aridity index &gt; 0.5</td></tr>` : ``}
+        <tr><td>Crops grown</td><td>${p.crops || "—"}</td></tr>
         <tr><td>Drainage</td><td>${p.drainage || "—"}</td></tr>
         <tr><td>Rice paddy</td><td>${p.paddy || "—"}</td></tr>
-        <tr><td>Feedstock supply</td><td>${p.feedstock || "—"}</td></tr>
-        <tr><td>Kinetics</td><td>Palandri &amp; Kharaka 2004, USGS OFR 2004-1068</td></tr>
-        <tr><td>Carbonate system</td><td>Plummer &amp; Busenberg 1982, GCA 46, 1011</td></tr>
-        <tr><td>Efficiency term</td><td>Bertagni &amp; Porporato 2022, STE 838, 156524</td></tr>
-        <tr><td>Transport limitation</td><td>Maher &amp; Chamberlain 2014, Science 343, 1502</td></tr>
-        <tr><td>Kinetics test</td><td>Gudbrandsson et al. 2011, GCA 75</td></tr>
-        <tr><td>Eligibility</td><td>Puro.earth ERW Edition 2025 v2 (approved
+        <tr><td>Rock supply</td><td>${p.feedstock || "—"}</td></tr>
+        <tr><td>Dissolution rates</td><td>Palandri &amp; Kharaka 2004, USGS OFR 2004-1068</td></tr>
+        <tr><td>Carbonate chemistry</td><td>Plummer &amp; Busenberg 1982, GCA 46, 1011</td></tr>
+        <tr><td>Acid-soil efficiency</td><td>Bertagni &amp; Porporato 2022, STE 838, 156524</td></tr>
+        <tr><td>Slow-drainage term</td><td>Maher &amp; Chamberlain 2014, Science 343, 1502</td></tr>
+        <tr><td>Drainage limit</td><td>${mayer} (preprint)</td></tr>
+        <tr><td>Laboratory rate test</td><td>Gudbrandsson et al. 2011, GCA 75</td></tr>
+        <tr><td>Protocol screens</td><td>Puro.earth ERW Edition 2025 v2 (approved
           Mar 2026); Isometric EW-in-agriculture v1.2</td></tr>
         <tr><td>Coastlines</td><td>Natural Earth 110m (public domain)</td></tr>
         <tr><td>Region names</td><td>Natural Earth 10m admin-1 (public domain)</td></tr>
       </table>
-      <p>Code MIT; each dataset keeps its own licence. The full development
-      history — what changed between preview builds, the defects found on the
-      way, and why each call was made — is in the
+      <p>Code is MIT-licensed; each dataset keeps its own licence. The history
+      of changes between builds is in the
       <a class="ext" href="https://github.com/hausfath/erw-map/blob/main/CHANGELOG.md"
       target="_blank" rel="noopener">changelog on GitHub</a>.</p>`;
   }
@@ -2037,7 +1978,7 @@
       ? `${landNoun()} in scope`
       : `steady-state gross removal \u00b7 ${E.feedstock.rateTHaYr} t/ha of `
         + `rock held`
-        + (scr ? ` \u00b7 cells under $${E.cost.screenUsdPerTco2}/tCO\u2082 `
+        + (scr ? ` \u00b7 land under $${E.cost.screenUsdPerTco2}/tCO\u2082 `
                + `delivered` : "")
         + ` \u00b7 ${gha.toFixed(2)} Gha`
         + (ceilOn ? "" : " \u00b7 drainage limit OFF")
@@ -2252,8 +2193,8 @@
       showMafic = e.target.checked; refresh();
     });
     $("mafic-hint").innerHTML =
-      `<span style="color:#8c7a63">\u25a0</span> GLiM mafic and ultramafic ` +
-      `outcrop, on and off cropland. Outcrop is not a quarry \u2014 see Methods.`;
+      `<span style="color:#8c7a63">\u25a0</span> Mafic and ultramafic rock at the ` +
+      `surface (GLiM). An outcrop is not necessarily a quarry.`;
     // Drainage limit. The bound is shipped in the texture whether or not it is
     // applied, so this is a real switch rather than a request for a rebuild. A
     // top-level control since 2026-08-24, when the bound became the shipped
@@ -2325,8 +2266,8 @@
           refresh();
         });
         $("pasture-hint").textContent =
-          `${E.pasture.gha.toFixed(2)} Gha, modelled like tilled cropland: `
-          + `an upper end. Untick for cropland only.`;
+          `Adds grazing land in wetter climates (${E.pasture.gha.toFixed(2)} Gha). `
+          + `Modelled like tilled cropland, so an upper end.`;
       } else {
         pc.disabled = true;
         $("pasture-hint").textContent = "No pasture layer in this build.";
