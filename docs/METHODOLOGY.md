@@ -603,6 +603,38 @@ existing textures (uniforms `uCarbonate`, `uCarbPhi`, `uSystemWide`), and gate 8
 asserts the browser's φ matches `constants.PEDOGENIC_CARBONATE_PHI` and that both
 ship off.
 
+### Managed pasture: an optional second land class
+
+The map's domain is cropland (Potapov et al. 2022). The viewer option "Include
+managed pasture", off by default, adds HYDE "pasture" as a second land class:
+0.72 Gha against cropland's 1.21. Nothing in the headline, the gates or the
+paper includes it.
+
+**Layer.** HYDE 3.5 (baseline, 2023) pasture area per 5-arc-minute cell, converted to a cell
+fraction (`scripts/prep_pasture.py`), area-averaged onto the 0.1 degree grid
+and capped at one minus the cell's cropland fraction, because the two products
+are independent and sum past 1 in about 16,500 cells (0.05 Gha of pasture
+before the cap, 0.01 Gha removed by it). Cells enter at the same 1% floor as
+cropland.
+
+**What HYDE means by pasture.** FAO "permanent meadows and pastures" split by
+climate: grazing land with an aridity index above 0.5 is pasture, "assumed to
+be more intensively managed"; the rest is rangeland. It is not a map of land
+that is fertilised, limed or reachable by a spreader. Rangeland is left out:
+about 2.5 Gha, which in a scoping run on HYDE 3.2.1 averaged 0.22 tCO2/ha/yr
+drainage-limited at a median drainage of 50 mm/yr.
+
+**Model.** Identical to cropland: same rate law, anchor, 30 t/ha, soil pCO2
+and drainage ceiling. That is the option's main weakness. Pasture is not
+tilled, so rock stays on the surface, and the dissolution anchor is calibrated
+on cropland deployments. No penalty is applied because none is sourced; the
+pasture numbers are an upper end.
+
+**What it adds** (steady state): 0.46 Gt/yr drainage-limited and 1.08
+uncapped, against cropland's 0.58 and 1.13; 0.14 Gt on 0.15 Gha under the
+$100/tCO2 screen against 0.20 on 0.21. The limit binds on 66% of pasture area
+(61% of cropland). 17% of pasture is below pH 5.5 (7% of cropland).
+
 ### What "per year" means: two bases, one per surface
 
 Since August 2026 the tool carries two time bases deliberately. The **map layers

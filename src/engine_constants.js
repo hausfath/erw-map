@@ -196,6 +196,13 @@ window.ERW = {
       "uncappedGt": 1.126
     }
   },
+  "pasture": {
+    "gha": 0.716,
+    "evaluatedGha": 0.715,
+    "year1LimitedGt": 0.481,
+    "year1UncappedGt": 1.132,
+    "source": "HYDE 3.5, 2023"
+  },
   "paddyView": {
     "areaFrac": 0.1503,
     "source": "GRPI months x SPAM all-rice fraction"

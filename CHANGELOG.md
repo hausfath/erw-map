@@ -5,6 +5,44 @@ way and the reasoning behind each reversal. The map's Methods modal describes
 the model as it stands; this file describes how it got there. Newest changes
 first within each build.
 
+## Managed pasture as an optional second land class (viewer option, off by default)
+
+"Include managed pasture" under Advanced (Zeke, 2026-11-23). Cropland stays
+the map's domain and the basis of every headline, gate and "of cropland"
+statistic; the option widens the drawn domain and the area the totals are
+taken over. Layer: HYDE "pasture" at 5 arc-minutes (scripts/prep_pasture.py
+-> data/interim/pasture_frac.tif), area-averaged onto the grid and capped at
+1 - cropland fraction (0.735 -> 0.720 Gha; 0.716 Gha in cells at or above
+the 1% floor). HYDE 3.5 baseline, year 2023, the last year the release notes
+give as covered (its 2024 and 2025 grids are extensions). Utrecht's server
+puts a browser check in front of scripted clients, so the download is a
+manual step. HYDE 3.2.1 (2017), used while developing, has 0.791 Gha of
+pasture and gave 0.50 Gt where 3.5 gives 0.46.
+
+What it adds, same model and 30 t/ha as cropland: steady state 0.46 Gt/yr
+drainage-limited (1.08 uncapped) against cropland's 0.58 (1.13); 0.14 Gt on
+0.15 Gha under the $100 screen against 0.20 on 0.21. Year-1 basis 0.48
+(1.13). Pasture is better land per hectare than cropland (0.64 against 0.48
+t/ha/yr limited) because HYDE's pasture class is by construction the humid
+part of grazing land. Rangeland is left out: about 2.5 Gha, and in a scoping
+run on HYDE 3.2.1 it averaged 0.22 t/ha/yr with 29% of its area having
+essentially no drainage ceiling.
+
+Two things the option does NOT establish. (1) HYDE's pasture/rangeland split
+is an aridity threshold, "assumed to be more intensively managed", not a map
+of fertilised or spreader-accessible land. (2) No surface-application
+penalty: pasture is untilled, the dissolution anchor comes from cropland
+deployments, and the one rangeland field study on file reports 11-24% of
+maximum over three years. Read the pasture numbers as an upper end.
+
+Mechanics: flag bit0 keeps its meaning (cropland domain); bit5 marks the
+pasture domain; the physics bytes in tex1-tex5 are now written on the union,
+and tex6.r carries the pasture fraction (CPU-only). Verified against main:
+every byte inside the cropland domain is identical apart from bit5, and
+nothing changed outside cropland-or-pasture, so with the option off the
+viewer draws and totals exactly what it did. Paper and country table
+untouched.
+
 ## Pore-water pH-target basis withdrawn from the sidebar
 
 The "Hold pH <= 7.5" ceiling basis (2026-08-26) is no longer exposed (Zeke,

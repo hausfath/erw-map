@@ -85,6 +85,18 @@
      is a byte-source swap, not a second model. Off-paddy cells are
      byte-identical in tex5 by build-time assertion. */
   let paddyView = false;
+  /* Managed pasture (HYDE) as a second land class, OFF by default. Cropland
+     stays the map's domain and the basis of every headline number; ticking the
+     option widens the drawn domain (flag bit5) and the area the totals are
+     taken over. Pasture runs the same model as cropland, with no penalty for
+     rock left on an untilled surface, so its numbers are an upper end. */
+  let includePasture = false;
+  let pastureFrac = null;        // tex6 bytes, CPU-only; r = pasture fraction
+  const PAST = () => (includePasture && E.pasture && pastureFrac) ? E.pasture : null;
+  const domainBits = () => (PAST() ? 33 : 1);
+  const scopeGha = () => (E.stats.evaluatedGha ?? E.stats.croplandGha)
+                         + (PAST() ? PAST().evaluatedGha : 0);
+  const landNoun = () => (PAST() ? "cropland and managed pasture" : "cropland");
   /* Ceiling basis: false = calcite saturation (the headline basis, and the
      external anchor via Mayer et al. 2025); true = pore water held at
      pH <= FC.phTarget, the agronomically-constrained option. tex4.g/b carry
@@ -195,6 +207,7 @@
 
   uniform sampler2D uA, uB, uC, uD, uE, uRamp, uRampFrac;
   uniform int uPaddyView;      // 1 = swap L1/eta/ceiling bytes from tex5
+  uniform int uDomainBits;     // 1 = cropland; 33 = cropland or managed pasture
   uniform int uPhBasis;        // 1 = ceiling held at the pH target (tex4.g/b)
   uniform int uSystemWide;     // 1 = acid-soil efficiency set to 1 (wider accounting)
   uniform int uCarbonate;      // 1 = credit solid carbonate where the limit binds
@@ -286,7 +299,7 @@
     float mafic = uShowMafic == 1 ? texelFetch(uD, px, 0).r : 0.0;
 
     int flags = int(b.g * 255.0 + 0.5);
-    if ((flags & 1) == 0) {
+    if ((flags & uDomainBits) == 0) {
       // Outside the cropland domain the map is otherwise transparent, but three
       // quarters of mafic outcrop lives out here and "where is the nearest
       // feedstock" is a question about exactly that land.
@@ -506,6 +519,21 @@
   /* Region ids for the readout header, CPU-only: admin.png packs a 16-bit
      Natural Earth admin-1 id into R,G. Optional — the readout falls back to
      bare coordinates if the texture or the name table is missing. */
+  async function loadPastureFrac() {
+    if (!E.pasture) return;
+    try {
+      const blob = await (await fetch("textures/tex6.png")).blob();
+      const bmp = await createImageBitmap(blob, {
+        premultiplyAlpha: "none", colorSpaceConversion: "none",
+      });
+      const cv = document.createElement("canvas");
+      cv.width = G.width; cv.height = G.height;
+      const ctx = cv.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(bmp, 0, 0);
+      pastureFrac = ctx.getImageData(0, 0, G.width, G.height).data;
+    } catch (e) { pastureFrac = null; }
+  }
+
   let adminIds = null;
   async function loadAdminIds() {
     try {
@@ -637,6 +665,7 @@
     gl.uniform2f(u("uCeilEnc"), FC.enc.lo, FC.enc.hi);
     gl.uniform1i(u("uCeilOn"), ceilOn ? 1 : 0);
     gl.uniform1i(u("uPaddyView"), paddyView ? 1 : 0);
+    gl.uniform1i(u("uDomainBits"), domainBits());
     gl.uniform1i(u("uPhBasis"), phBasis ? 1 : 0);
     gl.uniform1i(u("uSystemWide"), systemWide ? 1 : 0);
     gl.uniform1i(u("uCarbonate"), carbonateOn ? 1 : 0);
@@ -1184,7 +1213,7 @@
     if (!cell || !ev || !cpu) { box.classList.add("hidden"); return; }
     const B = cpu.B, i = cell.i;
     const flags = B[i + 1];
-    if (!(flags & 1)) { box.classList.add("hidden"); return; }
+    if (!(flags & domainBits())) { box.classList.add("hidden"); return; }
 
     // No climate input: every downstream number would be an artefact of the
     // encoder's NaN fallback, so show none of them.
@@ -1252,6 +1281,13 @@
         ? `<tr><td class="k">Accounting</td><td class="v">system-wide (acid-soil efficiency set to 1)</td></tr>` : ``) +
       `<tr><td class="k">Limiting factor</td><td class="v">${limLabel}</td></tr>` +
       `<tr><td class="k">Soil pH (0–15 cm)</td><td class="v">${soilPh.toFixed(1)}</td></tr>` +
+      // Only with the pasture option on, where a cell can be in the map for
+      // either land class and the reader needs to know which.
+      (PAST()
+        ? `<tr><td class="k">Land in cell</td><td class="v">cropland ` +
+          `${Math.round((flags & 1 ? B[i] : 0) / 2.55)}% · managed pasture ` +
+          `${Math.round((flags & 32 ? pastureFrac[i] : 0) / 2.55)}%</td></tr>`
+        : ``) +
       // Context, not an input. The model reads crop identity nowhere except rice,
       // and then only through soil pCO2 -- so this sits below the physics rows
       // rather than among them. Two crops because one is a minority of the cell
@@ -1346,8 +1382,13 @@
       const wLat = Math.cos(lat * Math.PI / 180);      // area weight
       for (let gx = 0; gx < G.width; gx += step) {
         const i = (gy * G.width + gx) * 4;
-        if (!(B[i + 1] & 1)) continue;
-        const crop = B[i] / 255;
+        const fl = B[i + 1];
+        if (!(fl & domainBits())) continue;
+        // Area weight: the cell's cropland, plus its managed pasture when the
+        // option is on. Each class counts only where its own domain bit is set.
+        let crop = (fl & 1) ? B[i] / 255 : 0;
+        if (crop < 0.01) crop = 0;
+        if (PAST() && (fl & 32)) crop += pastureFrac[i] / 255;
         if (crop < 0.01) continue;
         out.push([A[i], A[i + 1], A[i + 2], crop * wLat, cpu.C[i + 2], B[i + 2],
                   cpu.E[i], cpu.E[i + 1], cpu.E[i + 2],
@@ -1480,11 +1521,11 @@
     }
     if (!(den > 0)) return null;
     lastKeptAreaFrac = screening ? kept / den : 1;
-    lastCarbonateGt = (numC / den) * (E.stats.evaluatedGha ?? E.stats.croplandGha);
+    lastCarbonateGt = (numC / den) * scopeGha();
     // Scale by the EVALUATED area, not all cropland: the sample only covers cells
     // with a computable rate, and multiplying its mean by the full extent would
     // credit removal to the cells we declined to evaluate.
-    const gha = E.stats.evaluatedGha ?? E.stats.croplandGha;
+    const gha = scopeGha();
     return (num / den) * gha;                              // t/ha/yr x Gha -> Gt
   }
 
@@ -1528,6 +1569,7 @@
   function neutralBase() {
     const key = ssaShift().toFixed(6) + "|" + econ.costExp + "|" + (ceilOn ? 1 : 0)
               + "|" + (paddyView ? 1 : 0) + "|" + (phBasis ? 1 : 0)
+              + "|" + (PAST() ? 1 : 0)
               + "|" + (carbonateOn ? 1 : 0) + "|" + (systemWide ? 1 : 0)
               + "|" + econ.gate.toFixed(4) + "|" + econ.truckMult.toFixed(6);
     if (baseKey !== key || !baseScores) {
@@ -1575,7 +1617,7 @@
     $("stability").textContent =
       pct < 0.001
         ? "At the physical defaults."
-        : `${(pct * 100).toFixed(0)}% of cropland area ranks in a different `
+        : `${(pct * 100).toFixed(0)}% of ${landNoun()} area ranks in a different `
           + `decile than under the physical defaults.`;
     $("weight-tag").textContent = pct < 0.001 ? "Physics and economics" : "Down-weighted";
   }
@@ -1949,6 +1991,9 @@
         <tr><td>Soil pH, SOC + quantiles</td><td>${p.soil}</td></tr>
         <tr><td>Climate</td><td>${p.climate}</td></tr>
         <tr><td>Cropland</td><td>${p.cropland}</td></tr>
+        ${E.pasture ? `<tr><td>Managed pasture (optional)</td><td>${E.pasture.source}, `
+          + `5 arc-minute; grazing land with aridity index &gt; 0.5, not observed `
+          + `management</td></tr>` : ``}
         <tr><td>Drainage</td><td>${p.drainage || "—"}</td></tr>
         <tr><td>Rice paddy</td><td>${p.paddy || "—"}</td></tr>
         <tr><td>Feedstock supply</td><td>${p.feedstock || "—"}</td></tr>
@@ -1981,10 +2026,10 @@
       "Steady state maintaining a standing rock inventory, reapplication paced " +
       "by the modeled dissolution and capped at one application per year -- not " +
       "the year-1 basis the map layers use. Area-weighted over " +
-      (E.stats.evaluatedGha ?? E.stats.croplandGha).toFixed(2) +
-      " Gha of evaluated cropland, recomputed from the grid at the current " +
+      scopeGha().toFixed(2) +
+      " Gha of evaluated " + landNoun() + ", recomputed from the grid at the current " +
       "settings; sampled 1 cell in 3 from 8-bit textures.";
-    const gha = (E.stats.evaluatedGha ?? E.stats.croplandGha) * lastKeptAreaFrac;
+    const gha = scopeGha() * lastKeptAreaFrac;
     const scr = econ.costExp > 0 && E.cost && E.cost.screenUsdPerTco2;
     $("stat-label").textContent = gt === null
       ? "cropland in scope"
@@ -1997,6 +2042,7 @@
         + (ceilOn && phBasis
             ? ` \u00b7 pH \u2264 ${FC.phTarget ?? 7.5} basis` : "")
         + (paddyView ? " \u00b7 paddy-field view" : "")
+        + (PAST() ? " \u00b7 incl. managed pasture" : "")
         + (carbonateOn && ceilOn
             ? ` \u00b7 of which ${lastCarbonateGt.toFixed(2)} Gt solid carbonate` : "")
         + (systemWide ? " \u00b7 system-wide accounting" : "");
@@ -2173,7 +2219,7 @@
       loadTexture("textures/tex1.png", 0), loadTexture("textures/tex2.png", 1),
       loadTexture("textures/tex3.png", 2), loadAdminIds(),
       loadTexture("textures/tex4.png", 5), loadCropMix(),
-      loadTexture("textures/tex5.png", 6),
+      loadTexture("textures/tex5.png", 6), loadPastureFrac(),
     ]);
     texA = a.tex; texB = b.tex; texC = cTex.tex; texD = dTex.tex;
     cpu = decodeToCPU(a.bmp, b.bmp, cTex.bmp, eTex.bmp, dTex.bmp);
@@ -2262,6 +2308,26 @@
         refresh();
       });
       syncPaddy();
+    }
+
+    // Managed pasture. Changes which cells are in the domain and their area
+    // weights, so the sample is rebuilt; the scores cache is keyed on it.
+    const pc = $("chk-pasture");
+    if (pc) {
+      if (E.pasture && pastureFrac) {
+        pc.checked = includePasture;
+        pc.addEventListener("change", (e) => {
+          includePasture = e.target.checked;
+          buildSample();
+          refresh();
+        });
+        $("pasture-hint").textContent =
+          `Adds ${E.pasture.gha.toFixed(2)} Gha, modelled like tilled cropland: `
+          + `an upper end.`;
+      } else {
+        pc.disabled = true;
+        $("pasture-hint").textContent = "No pasture layer in this build.";
+      }
     }
 
     $("btn-reset").onclick = () => {

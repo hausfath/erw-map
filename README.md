@@ -685,6 +685,8 @@ scripts/
   test_kinetics.py        11 pre-registered gates -- run before anything else
   analyse_deployments.py  what the verified 2026 deliveries can and cannot test
   fetch_v0.sh             v0 inputs (SoilGrids WCS, WorldClim, Potapov cropland)
+  prep_pasture.py         HYDE pasture grid -> data/interim/pasture_frac.tif
+                          (optional layer; HYDE is a manual download)
   build_v0.py             layers, area gate, PNG textures, generated JS constants
   serve.sh                local HTTP server for the map
   extract_pk_fixture.py   re-extracts kinetic constants from the primary PDF

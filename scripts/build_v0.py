@@ -208,6 +208,32 @@ def main() -> int:
 
     area = cell_area_km2(transform, w, h)
 
+    # Managed pasture, an OPTIONAL second land class (scripts/prep_pasture.py).
+    # It is carried beside cropland, never merged into it: every gate, headline
+    # and "of cropland" statistic below stays cropland-only, and the viewer adds
+    # pasture only when its option is ticked. HYDE "pasture" is grazing land
+    # with an aridity index above 0.5, a climate split, not observed management.
+    # Capped at the land the cell has left after its own cropland, since the two
+    # products were made independently and can sum past 1.
+    past_path = INTERIM / "pasture_frac.tif"
+    pasture = np.zeros_like(crop)
+    pasture_source = None
+    if past_path.exists():
+        with rasterio.open(past_path) as s_:
+            ptags = s_.tags()
+        pasture = onto_grid(past_path, transform, w, h, crs) \
+            / float(ptags.get("scale", 1.0))
+        pasture = np.clip(np.nan_to_num(pasture, nan=0.0), 0.0, 1.0)
+        raw_gha = float((pasture * area).sum() * 100.0 / 1e9)
+        pasture = np.minimum(pasture, 1.0 - crop)
+        pasture_source = ptags.get("source", "HYDE")
+        print(f"managed pasture [{pasture_source}]: {raw_gha:.3f} Gha on the grid, "
+              f"{float((pasture * area).sum() * 100.0 / 1e9):.3f} Gha after the "
+              f"cap at 1 - cropland fraction")
+    else:
+        print("managed pasture: data/interim/pasture_frac.tif absent, "
+              "no pasture layer in this build")
+
     # ---- GATE 1: area closure. FATAL. Tests the latitude weighting with no ERW
     # science involved, against the cropland product's OWN published total.
     gha = float(np.nansum(crop * area)) * 100.0 / 1e9          # km2 -> ha -> Gha
@@ -971,11 +997,39 @@ def main() -> int:
     else:
         n_q = 0
 
+    # ---- Managed pasture: reported beside cropland, never added to it here.
+    # Same physics, same application rate, same year-1 basis as the cropland
+    # lines above. UPPER-END by construction: pasture is not tilled, so rock
+    # stays on the surface, while the dissolution anchor comes from cropland
+    # deployments. No surface-application penalty is applied.
+    m_past = (pasture >= C.CROPLAND_MIN_FRACTION) & np.isfinite(ph)
+    m_past_eval = m_past & np.isfinite(L1)
+    pw = (pasture * area)[m_past_eval] * 100.0          # ha
+    past_gha = float((pasture * area)[m_past].sum() * 100.0 / 1e9)
+    past_gha_eval = float(pw.sum() / 1e9)
+    pasture_stats = None
+    if pasture_source is not None:
+        p_cap = float((np.nan_to_num(cdr)[m_past_eval] * pw).sum() / 1e9)
+        p_unc = float((np.nan_to_num(cdr_uncapped)[m_past_eval] * pw).sum() / 1e9)
+        p_bind = float((pw * (np.nan_to_num(ceiling)[m_past_eval]
+                              < np.nan_to_num(cdr_uncapped)[m_past_eval])).sum()
+                       / max(pw.sum(), 1e-9))
+        print(f"  managed pasture (optional layer): {past_gha:.3f} Gha in scope, "
+              f"{past_gha_eval:.3f} Gha evaluated; year-1 gross {p_cap:.3f} Gt "
+              f"drainage-limited, {p_unc:.3f} Gt uncapped; limit binds on "
+              f"{p_bind:.1%} of pasture area")
+        pasture_stats = {"gha": round(past_gha, 3),
+                         "evaluatedGha": round(past_gha_eval, 3),
+                         "year1LimitedGt": round(p_cap, 3),
+                         "year1UncappedGt": round(p_unc, 3),
+                         "source": pasture_source}
+
     # ---- Save floats for aggregates and hover readout
     PROC.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         PROC / "v0_layers.npz",
         ph=ph, tair=tair, precip=precip, soc=soc, crop=crop, area=area,
+        pasture=pasture.astype("float32"),
         L1=L1.astype("float32"), eta=eta.astype("float32"),
         eta_tr=eta_tr.astype("float32"), cdr=cdr.astype("float32"),
         cdr_uncapped=cdr_uncapped.astype("float32"),
@@ -1011,13 +1065,14 @@ def main() -> int:
                    no_input=no_input, mafic_frac=mafic_frac,
                    L1_pad=L1_pad, eta_pad=eta_pad, ceiling_pad=ceiling_pad,
                    paddy_sel=f_flood > 0,
-                   ceiling_ph=ceiling_ph, ceiling_ph_pad=ceiling_ph_pad)
+                   ceiling_ph=ceiling_ph, ceiling_ph_pad=ceiling_ph_pad,
+                   pasture=pasture, valid_past=m_past)
     gha_eval = float(((crop * area)[m & np.isfinite(L1)]).sum() * 100.0 / 1e9)
     emit_js(transform, w, h, gha, p50,
             cdr_per_frac=C.APPLICATION_RATE_T_HA_YR * ceil_t,
             clim_source=clim_source, monthly=monthly, n_quarries=n_q,
             gha_eval=gha_eval, soc_excluded=excl, soc_marginal=marg,
-            crop_codes=crop_codes,
+            crop_codes=crop_codes, pasture=pasture_stats,
             ceiling_binds=bound, ceiling_med=wq(ceiling, (0.5,))[0],
             warm_cool=wc_ratio, exceed_med=e50,
             paddy_area_frac_of_cropland=float(
@@ -1134,11 +1189,22 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
                    *, cascade, ph, L1, eta, eta_tr, v_cost, cost_conf,
                    ceiling, cdr_per_frac, no_input, mafic_frac,
                    L1_pad, eta_pad, ceiling_pad, paddy_sel,
-                   ceiling_ph, ceiling_ph_pad) -> None:
+                   ceiling_ph, ceiling_ph_pad,
+                   pasture=None, valid_past=None) -> None:
     from PIL import Image
     out = SRC / "textures"
     out.mkdir(parents=True, exist_ok=True)
     h, w = crop.shape
+
+    # `valid` is the CROPLAND domain and stays the meaning of flag bit0, so a
+    # viewer with the pasture option off draws exactly what it drew before.
+    # The physics bytes are written on the UNION with managed pasture (flag
+    # bit5), because the pasture option needs them on pasture-only cells; with
+    # the option off those cells fail the bit0 test and are never read.
+    if pasture is None or valid_past is None:
+        pasture, valid_past = np.zeros_like(crop), np.zeros(crop.shape, bool)
+    crop_valid = valid
+    valid = crop_valid | valid_past
 
     def rgba(r, g, b):
         a = np.full((h, w), 255, dtype="uint8")   # alpha ALWAYS 255, never data
@@ -1162,7 +1228,8 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
     # Bit-packed flags. NEAREST filtering only; bilinear across a flag boundary
     # would interpolate garbage bit patterns.
     flags = np.zeros((h, w), dtype="uint8")
-    flags |= np.where(valid, 1, 0).astype("uint8")                       # bit0 in-domain
+    flags |= np.where(crop_valid, 1, 0).astype("uint8")                  # bit0 in cropland domain
+    flags |= np.where(valid_past, 32, 0).astype("uint8")                 # bit5 in managed-pasture domain
     flags |= np.where(p_soc > C.P_EXCEED_EXCLUDED, 2, 0).astype("uint8")  # bit1 excluded
     # bit2 was a MARGINAL state (0.1 < P <= 0.9), drawn as a hatch. Removed in an
     # earlier build: it covered 53% of cropland, which made it the dominant visual
@@ -1212,7 +1279,7 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
     # A linear encoding would quantise all but the acid tropics to zero -- which
     # is itself the point of the comparison, but it has to be visible, not lost
     # in the 8-bit floor.
-    casc = np.where(valid & (cascade > 0), cascade, np.nan)
+    casc = np.where(crop_valid & (cascade > 0), cascade, np.nan)
     med = float(np.nanmedian(casc))
     with np.errstate(divide="ignore", invalid="ignore"):
         lc = np.log10(casc / med)
@@ -1282,9 +1349,14 @@ def write_textures(crop, p_soc, ph_warn, cdr, valid,
     g5 = np.where(paddy_sel, g5, g1)
     b5 = np.where(paddy_sel, b5, b2)
 
+    # tex6.r = managed-pasture fraction of the cell, same encoding as tex2.r
+    # for cropland. g and b are spare.
+    r6 = np.rint(np.clip(pasture, 0, 1) * 255).astype("uint8")
+    z6 = np.zeros((h, w), dtype="uint8")
+
     for name, img in (("tex1", rgba(r1, g1, b1)), ("tex2", rgba(r2, flags, b2)),
                       ("tex3", rgba(r3, g3, b3)), ("tex4", rgba(r4, g4, b4)),
-                      ("tex5", rgba(r5, g5, b5))):
+                      ("tex5", rgba(r5, g5, b5)), ("tex6", rgba(r6, z6, z6))):
         p = out / f"{name}.png"
         img.save(p, optimize=True)
         print(f"  wrote {p} ({p.stat().st_size / 1e6:.2f} MB)")
@@ -1376,7 +1448,7 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
             ceiling_binds=0.0, ceiling_med=0.0,
             warm_cool=(None, None), exceed_med=0.0, crop_codes=(),
             paddy_area_frac_of_cropland=0.0,
-            paddy_source="unknown", wider=None) -> None:
+            paddy_source="unknown", wider=None, pasture=None) -> None:
     if gha_eval is None:
         gha_eval = gha
     # PASS THESE IN, never reach for main()'s locals. Reading a caller local from
@@ -1442,6 +1514,9 @@ def emit_js(transform, w, h, gha, cdr_p50, cdr_per_frac=1.0, gha_eval=None,
                                      "fCa": round(C.PEDOGENIC_CARBONATE_F_CA, 4),
                                      "co2PerCa": C.PEDOGENIC_CARBONATE_CO2_PER_CA,
                                      "stakes": None},
+        # Managed pasture: null when the build had no pasture layer, which is
+        # what disables the viewer option. Its area is NOT in stats.croplandGha.
+        "pasture": pasture,
         "paddyView": {
             "areaFrac": round(float(paddy_area_frac_of_cropland), 4),
             "source": paddy_source,
